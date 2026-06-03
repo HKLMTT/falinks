@@ -6,7 +6,8 @@
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
-    "smoke": "tsx scripts/smoke-relay.ts"
+    "smoke": "tsx scripts/smoke-relay.ts",
+    "up": "tsx src/index.ts"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
