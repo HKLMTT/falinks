@@ -42,6 +42,8 @@ end tell`;
 
 export class ITerm2Driver implements TerminalDriver {
   async launch(opts: LaunchOpts): Promise<string> {
+    // 注：opts.command 视为受信任（来自本机配置，可含 flags），故不做 shQuote；
+    // cwd 是路径、需 shQuote 防空格/引号。若 Plan 1B 起 command 改为动态来源，需同等处理。
     const cmd = escapeAppleScript(`cd ${shQuote(opts.cwd)} && ${opts.command}`);
     const script = `tell application "iTerm2"
   set w to (create window with default profile)
