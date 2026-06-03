@@ -2,6 +2,11 @@ import { spawn } from 'node:child_process';
 import { escapeAppleScript } from './applescript.js';
 import type { LaunchOpts, TerminalDriver } from './driver.js';
 
+/** POSIX 单引号转义：把字符串安全地用于 shell 命令中的一个参数。 */
+export function shQuote(s: string): string {
+  return `'${s.replace(/'/g, `'\\''`)}'`;
+}
+
 /** 执行一段 AppleScript（经 osascript stdin），返回 trim 后的 stdout。 */
 function osascript(script: string): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -37,7 +42,7 @@ end tell`;
 
 export class ITerm2Driver implements TerminalDriver {
   async launch(opts: LaunchOpts): Promise<string> {
-    const cmd = escapeAppleScript(`cd ${opts.cwd} && ${opts.command}`);
+    const cmd = escapeAppleScript(`cd ${shQuote(opts.cwd)} && ${opts.command}`);
     const script = `tell application "iTerm2"
   set w to (create window with default profile)
   tell current session of w
