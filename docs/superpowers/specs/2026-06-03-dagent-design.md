@@ -94,7 +94,8 @@ osascript -> tell <matched session> to write text "<整条消息，行间用真�
 - `who()` —— 查询在线 roster（含 `boss`）及各自角色/状态。
 
 **Prompt 约定**（写入每个员工 bootstrap）：开机先调 `register`；**收到形如「来自 X」的消息后，务必用 `sendmsg(to="X", ...)` 回复，不要只在本窗口里作答**；收尾调 `idle`。
-> ⚠️ 这条"务必用 sendmsg 回复"是 B2 的核心风险：依赖模型在长上下文里持续遵守。**兜底**：dagent 在注入后读屏，若一段时间内目标既未调 `sendmsg` 也未 `idle`，抓取其窗口新增输出作为回复回传（读屏已证可行）。回传机制的最终形态（纯工具 / 工具+读屏兜底 / 纯读屏）在第 1 个实现里程碑用真实双 agent 闭环敲定。
+> ✅ **B2 已敲定（2026-06-04 Phase 1B 里程碑，两个真实 Claude agent）**：经 bootstrap 引导，agent **可靠地用 `sendmsg` 工具回复并调 `idle`**——观察到完整 `seed→alice──sendmsg──>bob──sendmsg──>alice` 往返（`bobGotMsg=true aliceGotReply=true`）。**结论：采用纯工具回传，无需读屏兜底。** 读屏保留用于启动就绪检测与诊断。
+> ⚠️ **注入提交可靠性（里程碑实测的关键修正）**：单次 `write text "..." newline YES` 对 Claude TUI 的"提交"不可靠（TUI 初始化/刚结束回合时末尾 CR 会被吞）。可靠做法是 **两步提交：先 `write text` 正文（不提交，LF=插入换行）→ settle(~600ms)→ 单独发一个回车**。此逻辑封装在 `ITerm2Driver.inject(submit=true)` 内部，对上层透明。
 
 ## 7. 路由：mesh + 角色规则
 
@@ -192,8 +193,12 @@ dagent CLI 子命令，让"老板"以特殊成员 `boss` 参与（`boss` 出现�
 - [x] iTerm 会话寻址需遍历匹配（不支持 `session id "X"`）。✅（已纳入设计）
 - [x] 启动有前置对话（信任文件夹），需读屏处理后再注入。✅（已纳入设计）
 
-**仍需在第 1 实现里程碑验证：**
-- [ ] **B2 回传可靠性**：claude/codex 是否能被 bootstrap 可靠引导用 `sendmsg` 回复；不行则启用读屏兜底。需真实 MCP 总线方能测。
-- [ ] Claude Code 连远程 HTTP 总线时按 per-agent URL 路径区分 sender 的稳定性（`claude mcp add --transport http` + 独立路径/header）。
-- [ ] 注入前清空输入框的可靠机制。
+**Phase 1B 里程碑已验证（2026-06-04，两个真实 Claude agent）：**
+- [x] **B2 回传可靠性**：经 bootstrap 引导，agent 可靠用 `sendmsg` 回复 + `idle`，观察到完整 A↔B 往返。**纯工具回传，无需读屏兜底。**✅
+- [x] Claude Code 连远程 HTTP 总线（`--mcp-config` 指向 `/agent/<name>/mcp`），按路径区分 sender 稳定工作，且 claude 会调 register/sendmsg/idle。✅
+- [x] **注入提交可靠性**：单次 `write text+newline` 提交不可靠 → 改为 driver 内部"正文不提交 + settle + 单独回车"两步提交。✅（已纳入 `ITerm2Driver`）
+
+**仍待验证（非阻塞）：**
+- [ ] 注入前清空输入框的可靠机制（里程碑中输入框均为空，未触发；多 agent 高频时需关注）。
 - [ ] osascript 每次注入/读屏延迟与高频下的稳定性（量级 ~50–150ms）。
+- [ ] Codex 真实接入（里程碑用 claude×2；Codex 启动 flag 待按其当前版本校准）。
