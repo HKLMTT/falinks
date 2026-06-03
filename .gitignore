@@ -1,3 +1,4 @@
 spike/keylog.out
 spike/*.id
 node_modules/
+spike/mcp/server.log
