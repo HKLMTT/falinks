@@ -25,6 +25,7 @@ async function main() {
   console.log('--- alice screen ---\n' + screen);
 
   // 额外验证（Task 5 审查要求）：特殊字符往返 + 无效 id 报错
+  router.onIdle('alice'); // alice 处理完第一条，回到 idle，才能投递下一条
   router.send('boss', 'alice', 'quote:" back:\\ end');
   await sleep(1200);
   const screen2 = await driver.readScreen(sid);
