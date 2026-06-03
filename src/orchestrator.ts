@@ -10,7 +10,7 @@ export function formatMessage(msg: Message): string {
   );
 }
 
-/** 用 driver 构造一个 Deliverer：注入格式化文本并提交。 */
+/** 用 driver 构造一个 Deliverer：注入格式化文本并提交（提交的可靠性由 driver 负责）。 */
 export function makeDeliverer(driver: TerminalDriver): Deliverer {
   return {
     deliver(agent: AgentRuntime, msg: Message): void {

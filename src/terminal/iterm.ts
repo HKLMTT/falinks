@@ -41,6 +41,9 @@ end tell`;
 }
 
 export class ITerm2Driver implements TerminalDriver {
+  /** 两步提交之间的 settle 延时（ms）：让 TUI 稳定，避免回车被吞。 */
+  static SUBMIT_SETTLE_MS = 600;
+
   async launch(opts: LaunchOpts): Promise<string> {
     // 注：opts.command 视为受信任（来自本机配置，可含 flags），故不做 shQuote；
     // cwd 是路径、需 shQuote 防空格/引号。若 Plan 1B 起 command 改为动态来源，需同等处理。
@@ -58,6 +61,18 @@ end tell`;
   }
 
   async inject(sessionId: string, text: string, submit: boolean): Promise<void> {
+    // 单次 write-text+newline 对 Claude TUI 的"提交"不可靠（初始化/刚结束回合时
+    // 末尾 CR 会被吃掉，Phase 1B 里程碑实测）。可靠做法：先写正文（不提交，LF=插入换行），
+    // settle 后单独发一个回车提交。submit=false 时只写正文。
+    await this.write(sessionId, text, false);
+    if (submit) {
+      await new Promise((r) => setTimeout(r, ITerm2Driver.SUBMIT_SETTLE_MS));
+      await this.write(sessionId, '', true);
+    }
+  }
+
+  /** 单次 `write text`：往匹配 session 写文本，submit=true 时末尾附回车提交。 */
+  private async write(sessionId: string, text: string, submit: boolean): Promise<void> {
     const nl = submit ? 'YES' : 'NO';
     const action = `tell s to write text "${escapeAppleScript(text)}" newline ${nl}
           return "OK"`;
