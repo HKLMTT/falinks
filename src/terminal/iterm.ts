@@ -92,4 +92,34 @@ end tell`;
           return "OK"`;
     await osascript(onSession(sessionId, action));
   }
+
+  async splitFrom(anchorSessionId: string, direction: 'vertical' | 'horizontal', opts: LaunchOpts): Promise<string> {
+    const verb = direction === 'vertical' ? 'split vertically' : 'split horizontally';
+    const cmd = escapeAppleScript(`cd ${shQuote(opts.cwd)} && ${opts.command}`);
+    const script = `tell application "iTerm2"
+  repeat with w in windows
+    repeat with t in tabs of w
+      repeat with s in sessions of t
+        if (id of s) is "${anchorSessionId}" then
+          tell s
+            set newp to (${verb} with default profile)
+          end tell
+          tell newp to write text "${cmd}"
+          return (id of newp)
+        end if
+      end repeat
+    end repeat
+  end repeat
+  return "NOT_FOUND"
+end tell`;
+    const id = await osascript(script);
+    if (!id || id === 'NOT_FOUND') throw new Error(`splitFrom: anchor not found: ${anchorSessionId}`);
+    return id;
+  }
+
+  async closePane(sessionId: string): Promise<void> {
+    const action = `close s
+          return "OK"`;
+    await osascript(onSession(sessionId, action));
+  }
 }
