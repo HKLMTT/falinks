@@ -9,6 +9,8 @@ const PATH_RE = /^\/agent\/([^/]+)\/mcp$/;
 export interface BusDeps {
   router: Router;
   getSessionId(name: string): string | undefined;
+  onAddAgent?(spec: { name: string; cli: string; cwd: string; role?: string; bootstrap?: string }): Promise<{ ok: boolean; error?: string }>;
+  onRemoveAgent?(name: string): Promise<{ ok: boolean; error?: string }>;
 }
 
 export interface Bus {
@@ -84,6 +86,16 @@ export function startBus(deps: BusDeps, port: number): Promise<Bus> {
           if (router.send('boss', a.name, String(abody.message))) sent.push(a.name);
         }
         return sendJson({ sent });
+      }
+      if (req.method === 'POST' && url.pathname === '/admin/add') {
+        if (!deps.onAddAgent) return sendJson({ ok: false, error: 'add not supported' });
+        const r = await deps.onAddAgent({ name: String(abody.name), cli: String(abody.cli), cwd: String(abody.cwd), role: abody.role, bootstrap: abody.bootstrap });
+        return sendJson(r);
+      }
+      if (req.method === 'POST' && url.pathname === '/admin/remove') {
+        if (!deps.onRemoveAgent) return sendJson({ ok: false, error: 'remove not supported' });
+        const r = await deps.onRemoveAgent(String(abody.name));
+        return sendJson(r);
       }
       res.writeHead(404); res.end('unknown admin route');
       return;
