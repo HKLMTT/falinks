@@ -64,9 +64,15 @@ function doctor() {
 async function main() {
   const [cmd, ...rest] = process.argv.slice(2);
   switch (cmd) {
-    case 'up':
-      await up(rest[0] ?? 'falinks.config.json');
+    case 'up': {
+      const cfgPath = rest[0] ?? 'falinks.config.json';
+      if (!existsSync(cfgPath)) {
+        console.error(`没找到配置 ${cfgPath}。\n先在当前目录运行 \`falinks init\` 生成默认配置，或指定路径：falinks up <config.json>`);
+        process.exit(1);
+      }
+      await up(cfgPath);
       break;
+    }
     case 'console':
       await import('./console/main.js');
       break;
