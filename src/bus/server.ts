@@ -127,7 +127,14 @@ export function startBus(deps: BusDeps, port: number): Promise<Bus> {
     await transport.handleRequest(req, res, body);
   });
 
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
+    httpServer.once('error', (e: NodeJS.ErrnoException) => {
+      if (e.code === 'EADDRINUSE') {
+        console.error(`端口 ${port} 已被占用 —— 可能已有一个 falinks 在运行。先 Ctrl-C 关掉它，或在配置里改 busPort。`);
+        process.exit(1);
+      }
+      reject(e);
+    });
     httpServer.listen(port, '127.0.0.1', () => {
       const addr = httpServer.address();
       const actualPort = typeof addr === 'object' && addr ? addr.port : port;
