@@ -1,14 +1,37 @@
 {
-  "name": "dagent",
-  "version": "0.0.1",
-  "private": true,
+  "name": "falinks",
+  "version": "0.1.0",
+  "description": "把多个终端 AI CLI（Claude Code、Codex…）编排成一间办公室：分屏真实窗口里的员工，通过 MCP 总线互相对话协作，外加一个控制台。",
+  "keywords": [
+    "ai",
+    "agents",
+    "multi-agent",
+    "orchestration",
+    "claude-code",
+    "codex",
+    "mcp",
+    "iterm2",
+    "cli"
+  ],
+  "license": "MIT",
   "type": "module",
+  "bin": {
+    "falinks": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "falinks.config.example.json",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
+    "build": "tsc -p tsconfig.build.json",
     "test": "vitest run",
     "test:watch": "vitest",
-    "smoke": "tsx scripts/smoke-relay.ts",
-    "dagent": "tsx src/cli.ts",
-    "up": "tsx src/cli.ts up"
+    "dev": "tsx src/cli.ts",
+    "prepublishOnly": "npm run build"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

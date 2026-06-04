@@ -126,7 +126,7 @@ export function App({ port }: { port: number }) {
 
   return (
     <Box flexDirection="column" height="100%">
-      <Text bold>dagent 控制台</Text>
+      <Text bold>falinks 控制台</Text>
       <Box flexDirection="column" marginTop={1}>
         <Text underline>花名册</Text>
         {roster.map((a) => (
