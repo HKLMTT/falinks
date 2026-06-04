@@ -1,17 +1,17 @@
 import { shQuote } from '../terminal/iterm.js';
 
 export interface McpConfigFile {
-  mcpServers: { dagent: { type: 'http'; url: string } };
+  mcpServers: { falinks: { type: 'http'; url: string } };
 }
 
-/** dagent 总线上某 agent 的 MCP URL。 */
+/** falinks 总线上某 agent 的 MCP URL。 */
 export function busUrl(agentName: string, busPort: number): string {
   return `http://127.0.0.1:${busPort}/agent/${agentName}/mcp`;
 }
 
 /** Claude Code 的 --mcp-config 文件内容。 */
 export function mcpConfigFor(agentName: string, busPort: number): McpConfigFile {
-  return { mcpServers: { dagent: { type: 'http', url: busUrl(agentName, busPort) } } };
+  return { mcpServers: { falinks: { type: 'http', url: busUrl(agentName, busPort) } } };
 }
 
 export interface LaunchSpec {
@@ -23,7 +23,7 @@ export interface LaunchSpec {
 
 export interface AgentLaunch {
   command: string;
-  /** claude: true（启动就绪后由 dagent 注入 bootstrap）；codex: false（bootstrap 已作为初始 prompt 传入命令）。 */
+  /** claude: true（启动就绪后由 falinks 注入 bootstrap）；codex: false（bootstrap 已作为初始 prompt 传入命令）。 */
   needsBootstrapInject: boolean;
 }
 
@@ -41,8 +41,8 @@ export function buildAgentLaunch(cli: string, spec: LaunchSpec): AgentLaunch {
       const url = busUrl(spec.name, spec.busPort);
       const command =
         `codex --no-alt-screen --dangerously-bypass-approvals-and-sandbox` +
-        ` -c 'mcp_servers.dagent.transport="streamable_http"'` +
-        ` -c 'mcp_servers.dagent.url="${url}"'` +
+        ` -c 'mcp_servers.falinks.transport="streamable_http"'` +
+        ` -c 'mcp_servers.falinks.url="${url}"'` +
         ` ${shQuote(spec.bootstrap)}`;
       return { command, needsBootstrapInject: false };
     }

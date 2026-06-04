@@ -9,7 +9,7 @@ test('busUrl points at the agent path', () => {
 
 test('mcpConfigFor builds an http MCP config pointing at the agent path', () => {
   expect(mcpConfigFor('alice', 7878)).toEqual({
-    mcpServers: { dagent: { type: 'http', url: 'http://127.0.0.1:7878/agent/alice/mcp' } },
+    mcpServers: { falinks: { type: 'http', url: 'http://127.0.0.1:7878/agent/alice/mcp' } },
   });
 });
 
@@ -24,8 +24,8 @@ test('codex launch: no-alt-screen + bypass + inline MCP url + bootstrap as promp
   expect(r.command).toContain('codex');
   expect(r.command).toContain('--no-alt-screen');
   expect(r.command).toContain('--dangerously-bypass-approvals-and-sandbox');
-  expect(r.command).toContain('mcp_servers.dagent.transport="streamable_http"');
-  expect(r.command).toContain('mcp_servers.dagent.url="http://127.0.0.1:7878/agent/alice/mcp"');
+  expect(r.command).toContain('mcp_servers.falinks.transport="streamable_http"');
+  expect(r.command).toContain('mcp_servers.falinks.url="http://127.0.0.1:7878/agent/alice/mcp"');
   expect(r.command).toContain("'你是 alice。调 register。'");
   expect(r.needsBootstrapInject).toBe(false);
 });

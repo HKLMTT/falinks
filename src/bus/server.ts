@@ -24,9 +24,9 @@ function ok(obj: unknown) {
 
 function serverForAgent(agentName: string, deps: BusDeps): McpServer {
   const { router } = deps;
-  const server = new McpServer({ name: `dagent-bus-${agentName}`, version: '1.0.0' }, { capabilities: {} });
+  const server = new McpServer({ name: `falinks-bus-${agentName}`, version: '1.0.0' }, { capabilities: {} });
 
-  server.registerTool('register', { description: '报到：告知 dagent 你已就绪', inputSchema: {} }, async () => {
+  server.registerTool('register', { description: '报到：告知 falinks 你已就绪', inputSchema: {} }, async () => {
     const sid = deps.getSessionId(agentName);
     if (!sid) return ok({ ok: false, error: 'no session for agent' });
     router.register(agentName, sid);

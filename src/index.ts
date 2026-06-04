@@ -14,7 +14,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /** 全员通用协作规则（前缀到每个员工的 bootstrap）。核心：省 token、禁客套。 */
 const HOUSE_RULES =
-  '【dagent 协作规则】你是办公室里的 AI 员工，通过 dagent 的 MCP 工具协作。' +
+  '【falinks 协作规则】你是办公室里的 AI 员工，通过 falinks 的 MCP 工具协作。' +
   '① 开机立刻调用 register 报到。' +
   '② 收到形如「【来自 X】…」的消息后，只有当你有实质内容（答案/数据/明确问题）时，才用 sendmsg(to="X", message="…") 回复。' +
   '③ 严禁发送任何寒暄、确认、客套或表情——例如「收到」「好的」「谢谢」「不客气」「没问题」「👍」一律不要发，这些纯属浪费。' +
@@ -32,7 +32,7 @@ export async function up(configPath: string) {
   router.addVirtual('boss');
 
   const sessions = new Map<string, string>();
-  const tmp = mkdtempSync(join(tmpdir(), 'dagent-'));
+  const tmp = mkdtempSync(join(tmpdir(), 'falinks-'));
   let bus: Bus;
   let lastRight = '';
 

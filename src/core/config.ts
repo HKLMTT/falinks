@@ -14,7 +14,7 @@ export interface GuardConfig {
   loopWindow: number;
 }
 
-export interface DagentConfig {
+export interface FalinksConfig {
   busPort: number;
   agents: AgentConfig[];
   routes: Record<string, AgentName>;
@@ -22,7 +22,7 @@ export interface DagentConfig {
 }
 
 /** 校验并归一化原始配置对象。抛错即配置非法。 */
-export function parseConfig(raw: any): DagentConfig {
+export function parseConfig(raw: any): FalinksConfig {
   if (!raw || typeof raw !== 'object') throw new Error('config must be an object');
   if (typeof raw.busPort !== 'number') throw new Error('config.busPort must be a number');
   if (!Array.isArray(raw.agents) || raw.agents.length === 0)
