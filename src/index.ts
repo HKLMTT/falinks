@@ -40,13 +40,22 @@ export async function up(configPath: string) {
     const sid = await driver.splitFrom(anchor, dir, { cwd: a.cwd, command });
     sessions.set(a.name, sid);
     router.addAgent(a.name, a.role);
-    // claude：启动后读屏处理信任对话并注入 bootstrap。codex：bootstrap 已作为初始 prompt 传入命令，自启即处理。
     if (needsBootstrapInject) {
+      // claude：处理信任对话；就绪后注入 bootstrap。
       for (let i = 0; i < 30; i++) {
         await sleep(700);
         const state = detectScreenState(await driver.readScreen(sid));
         if (state === 'trust-dialog') { await driver.inject(sid, '', true); continue; }
         if (state === 'ready') { await driver.inject(sid, bootstrap, true); break; }
+      }
+    } else {
+      // codex：bootstrap 已作为初始 prompt 传入；只需清掉它自己的"信任目录"对话（按默认"1. Yes"=回车）。
+      for (let i = 0; i < 12; i++) {
+        await sleep(700);
+        if (detectScreenState(await driver.readScreen(sid)) === 'trust-dialog') {
+          await driver.inject(sid, '', true);
+          break;
+        }
       }
     }
     return sid;

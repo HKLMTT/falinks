@@ -26,9 +26,9 @@ export function makeDeliverer(driver: TerminalDriver): Deliverer {
 
 export type ScreenState = 'trust-dialog' | 'ready' | 'starting';
 
-/** 从读屏文本判断 CLI 启动阶段（用于决定注入信任选择 / bootstrap）。 */
+/** 从读屏文本判断 CLI 启动阶段（用于决定注入信任选择 / bootstrap）。兼容 Claude 与 Codex 的信任对话。 */
 export function detectScreenState(screen: string): ScreenState {
-  if (/trust this folder|you trust\?/i.test(screen)) return 'trust-dialog';
+  if (/trust this folder|you trust\?|trust the contents of this directory/i.test(screen)) return 'trust-dialog';
   if (/❯/.test(screen)) return 'ready';
   return 'starting';
 }
