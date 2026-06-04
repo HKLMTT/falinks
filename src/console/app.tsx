@@ -145,7 +145,7 @@ export function App({ port }: { port: number }) {
         <Text color="cyan" bold>╔═╗╔═╗╦  ╦╔╗╔╦╔═╔═╗</Text>
         <Text color="cyan" bold>╠╣ ╠═╣║  ║║║║╠╩╗╚═╗</Text>
         <Text color="cyan" bold>╚  ╩ ╩╩═╝╩╝╚╝╩ ╩╚═╝</Text>
-        <Text dimColor>v{VERSION} · 一屋 AI 员工的终端办公室</Text>
+        <Text dimColor>v{VERSION} · 一屋 AI 牛马，您只管动嘴 🐴</Text>
       </Box>
       <Box flexDirection="column" marginTop={1}>
         <Text underline>花名册</Text>
