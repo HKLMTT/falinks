@@ -104,8 +104,8 @@ export function App({ port }: { port: number }) {
     }
   };
 
-  // 统一的补全下拉：/ 命令优先，否则 @ 成员
-  const names = roster.map((a) => a.name);
+  // 统一的补全下拉：/ 命令优先，否则 @ 成员（排除 boss 等虚拟成员——你自己就是 boss）
+  const names = roster.filter((a) => !a.virtual).map((a) => a.name);
   const cmd = commandState(input);
   const mention = mentionState(input, names);
   let items: { label: string; hint: string }[] = [];
