@@ -9,6 +9,7 @@ import { ITerm2Driver } from './terminal/iterm.js';
 import { startBus, type Bus } from './bus/server.js';
 import { mcpConfigFor, buildAgentLaunch } from './agent/mcp-config.js';
 import { runtimeDir, runtimePath, consoleLaunchCommand } from './runtime.js';
+import { renderConsole } from './console/run.js';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -94,17 +95,26 @@ export async function up(configPath: string) {
   writeFileSync(runtimePath(), JSON.stringify({ port: bus.port }));
   console.log(`[falinks] bus on :${bus.port}`);
 
-  const consoleCmd = consoleLaunchCommand(process.argv[1], process.execPath);
-  const consoleSid = await driver.launch({ cwd: process.cwd(), command: consoleCmd });
-  await sleep(800);
-  lastRight = consoleSid;
+  // 单窗口：若在 iTerm 交互终端里运行，当前 pane 直接当控制台，员工向右 split——只有一个窗口。
+  // 否则（非 iTerm / 非 TTY）回退：另开窗口放一个独立的控制台进程。
+  const here = process.env.ITERM_SESSION_ID?.split(':').pop();
+  const inProcessConsole = Boolean(here) && Boolean(process.stdin.isTTY);
+
+  if (inProcessConsole) {
+    lastRight = here!;
+  } else {
+    const consoleCmd = consoleLaunchCommand(process.argv[1], process.execPath);
+    lastRight = await driver.launch({ cwd: process.cwd(), command: consoleCmd });
+    await sleep(800);
+  }
+
   let first = true;
   for (const a of cfg.agents) {
     console.log(`[falinks] 启动员工 ${a.name} (${a.cli})…`);
     lastRight = await launchInto(lastRight, first ? 'vertical' : 'horizontal', a);
     first = false;
   }
-  console.log(`[falinks] ✅ 办公室就绪：${cfg.agents.length} 名员工 + 控制台（左侧 pane）。在控制台输入框操作；Ctrl-C 收工。`);
+  console.log(`[falinks] ✅ 办公室就绪：${cfg.agents.length} 名员工 + 控制台。Ctrl-C 收工。`);
 
   // 健康轮询：员工 pane 被关 → 自动下线（移出花名册）。
   setInterval(() => {
@@ -114,7 +124,8 @@ export async function up(configPath: string) {
           if (!(await driver.paneExists(sid))) {
             sessions.delete(name);
             router.removeAgent(name);
-            console.log(`[falinks] ${name} 的窗口已关，自动下线`);
+            // 单窗口（进程内控制台）时不打印，避免污染 Ink 画面（花名册会自动反映下线）。
+            if (!inProcessConsole) console.log(`[falinks] ${name} 的窗口已关，自动下线`);
           }
         } catch {
           /* 探测失败忽略，下一轮再试 */
@@ -122,4 +133,7 @@ export async function up(configPath: string) {
       }
     })();
   }, 3000);
+
+  // 单窗口：在当前 pane（左）进程内渲染控制台，接管本终端。
+  if (inProcessConsole) renderConsole(bus.port);
 }
