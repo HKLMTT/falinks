@@ -5,14 +5,16 @@ import { parseConsoleInput } from './parse.js';
 import { mentionState, applyMention } from './mention.js';
 import { commandState, applyCommand } from './commands.js';
 import { CLIS, dirSuggestions } from './wizard.js';
+import { fetchLatest, isNewer } from '../update.js';
 
-const VERSION: string = (() => {
+const PKG: { name: string; version: string } = (() => {
   try {
-    return JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')).version;
+    return JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8'));
   } catch {
-    return '';
+    return { name: '@liujia307/falinks', version: '' };
   }
 })();
+const VERSION = PKG.version;
 
 const TAGLINES = [
   '一屋 AI 牛马，您只管动嘴 🐴',
@@ -56,7 +58,14 @@ export function App({ port }: { port: number }) {
   const [status, setStatus] = useState('');
   const [wizard, setWizard] = useState<WizardState | null>(null);
   const [tagline] = useState(() => TAGLINES[Math.floor(Math.random() * TAGLINES.length)]);
+  const [update, setUpdate] = useState<string | null>(null);
   const defaultCwd = process.cwd();
+
+  useEffect(() => {
+    void fetchLatest(PKG.name).then((latest) => {
+      if (latest && VERSION && isNewer(latest, VERSION)) setUpdate(latest);
+    });
+  }, []);
 
   useEffect(() => {
     const tick = async () => {
@@ -159,6 +168,9 @@ export function App({ port }: { port: number }) {
         <Text color="cyan" bold>╠╣ ╠═╣║  ║║║║╠╩╗╚═╗</Text>
         <Text color="cyan" bold>╚  ╩ ╩╩═╝╩╝╚╝╩ ╩╚═╝</Text>
         <Text dimColor>v{VERSION} · {tagline}</Text>
+        {update ? (
+          <Text color="yellow">🆕 新版本 {update} 可用 · npm i -g {PKG.name}</Text>
+        ) : null}
       </Box>
       <Box flexDirection="column" marginTop={1}>
         <Text underline>花名册</Text>
