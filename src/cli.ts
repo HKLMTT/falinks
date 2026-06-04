@@ -25,6 +25,10 @@ async function main() {
     case 'up':
       await up(rest[0] ?? 'dagent.config.json');
       break;
+    case 'console': {
+      await import('./console/main.js');
+      break;
+    }
     case 'say': {
       const [to, ...msg] = rest;
       console.log(await admin('POST', '/admin/say', { to, message: msg.join(' ') }));
@@ -40,7 +44,7 @@ async function main() {
       console.log(JSON.stringify(await admin('GET', '/admin/log'), null, 2));
       break;
     default:
-      console.log('用法: dagent <up|say <agent> <msg>|broadcast <msg>|roster|log>');
+      console.log('用法: dagent <up|console|say <agent> <msg>|broadcast <msg>|roster|log>');
       process.exit(cmd ? 1 : 0);
   }
 }
