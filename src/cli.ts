@@ -24,16 +24,15 @@ async function admin(method: string, path: string, body?: unknown) {
 
 const DEFAULT_CONFIG_PATH = 'falinks.config.json';
 
-/** 在当前目录写一份默认配置（两个 claude 员工，工作目录=当前目录）。 */
+/** 在当前目录写一份默认配置（一个 claude 员工，工作目录=当前目录；其余用 /add 自行添加）。 */
 function writeDefaultConfig(): void {
   const cwd = process.cwd();
   const config = {
     busPort: 7878,
     agents: [
-      { name: 'alice', cli: 'claude', cwd, role: 'manager', bootstrap: '你负责统筹与任务分配，风格简练。' },
-      { name: 'bob', cli: 'claude', cwd, role: 'dev', bootstrap: '你负责写代码与查证，风格简练。' },
+      { name: 'alice', cli: 'claude', cwd, bootstrap: '你是办公室里的 AI 员工，风格简练。' },
     ],
-    routes: { manager: 'alice' },
+    routes: {},
   };
   writeFileSync(DEFAULT_CONFIG_PATH, JSON.stringify(config, null, 2));
 }
@@ -45,16 +44,16 @@ function init() {
   }
   writeDefaultConfig();
   console.log(
-    `✅ 已生成 ${DEFAULT_CONFIG_PATH}（两个 claude 员工 alice/bob，工作目录=当前目录）。\n` +
+    `✅ 已生成 ${DEFAULT_CONFIG_PATH}（1 个 claude 员工 alice，工作目录=当前目录）。\n` +
       `   直接运行：falinks\n` +
-      `   想改员工/换 codex/换目录，编辑 ${DEFAULT_CONFIG_PATH} 即可。`,
+      `   起来后在控制台用 /add 加更多员工；或编辑 ${DEFAULT_CONFIG_PATH}。`,
   );
 }
 
 /** 裸 `falinks` 的一键运行：有配置就起；没配置就用默认模板生成再起。 */
 async function runHere() {
   if (!existsSync(DEFAULT_CONFIG_PATH)) {
-    console.log(`首次运行：未找到 ${DEFAULT_CONFIG_PATH}，已用默认模板生成（2 个 claude 员工，工作目录=当前目录）。`);
+    console.log(`首次运行：未找到 ${DEFAULT_CONFIG_PATH}，已用默认模板生成（1 个 claude 员工，工作目录=当前目录）。起来后可用 /add 加员工。`);
     writeDefaultConfig();
   }
   await up(DEFAULT_CONFIG_PATH);

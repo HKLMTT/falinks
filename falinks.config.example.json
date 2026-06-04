@@ -1,10 +1,7 @@
 {
   "busPort": 7878,
   "agents": [
-    { "name": "alice", "cli": "claude", "cwd": "/tmp/dagent-alice", "role": "manager",
-      "bootstrap": "你负责统筹与任务分配，风格简练。" },
-    { "name": "bob", "cli": "claude", "cwd": "/tmp/dagent-bob", "role": "dev",
-      "bootstrap": "你负责写代码与查证，风格简练。" }
+    { "name": "alice", "cli": "claude", "cwd": ".", "bootstrap": "你是办公室里的 AI 员工，风格简练。" }
   ],
-  "routes": { "manager": "alice" }
+  "routes": {}
 }
