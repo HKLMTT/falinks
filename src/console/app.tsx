@@ -25,7 +25,8 @@ function fsListDirs(base: string): string[] {
 
 type WizardState =
   | { name: string; step: 'cli'; sel: number }
-  | { name: string; step: 'cwd'; cli: string; path: string; sel: number };
+  | { name: string; step: 'role'; cli: string; roleText: string }
+  | { name: string; step: 'cwd'; cli: string; role: string; path: string; sel: number };
 
 export function App({ port }: { port: number }) {
   const [roster, setRoster] = useState<any[]>([]);
@@ -91,7 +92,13 @@ export function App({ port }: { port: number }) {
       if (wizard.step === 'cli') {
         if (key.upArrow) { setWizard({ ...wizard, sel: Math.max(0, wizard.sel - 1) }); return; }
         if (key.downArrow) { setWizard({ ...wizard, sel: Math.min(CLIS.length - 1, wizard.sel + 1) }); return; }
-        if (key.return || key.tab) { setWizard({ name: wizard.name, step: 'cwd', cli: CLIS[wizard.sel], path: defaultCwd, sel: 0 }); return; }
+        if (key.return || key.tab) { setWizard({ name: wizard.name, step: 'role', cli: CLIS[wizard.sel], roleText: '' }); return; }
+        return;
+      }
+      if (wizard.step === 'role') {
+        if (key.return) { setWizard({ name: wizard.name, step: 'cwd', cli: wizard.cli, role: wizard.roleText.trim() || '员工', path: defaultCwd, sel: 0 }); return; }
+        if (key.backspace || key.delete) { setWizard({ ...wizard, roleText: wizard.roleText.slice(0, -1) }); return; }
+        if (char && !key.ctrl && !key.meta && !key.escape && !key.tab) { setWizard({ ...wizard, roleText: wizard.roleText + char }); return; }
         return;
       }
       const sugs = dirSuggestions(wizard.path, fsListDirs);
@@ -102,8 +109,8 @@ export function App({ port }: { port: number }) {
         const w = wizard;
         setWizard(null);
         void (async () => {
-          const r = await admin(port, 'POST', '/admin/add', { name: w.name, cli: w.cli, cwd: w.path });
-          setStatus(r.ok ? `＋ ${w.name} @ ${w.path}` : '⚠ ' + (r.error ?? 'add 失败'));
+          const r = await admin(port, 'POST', '/admin/add', { name: w.name, cli: w.cli, cwd: w.path, role: w.role });
+          setStatus(r.ok ? `＋ ${w.name}(${w.role}) @ ${w.path}` : '⚠ ' + (r.error ?? 'add 失败'));
         })();
         return;
       }
@@ -149,9 +156,15 @@ export function App({ port }: { port: number }) {
                 <Text key={c} inverse={i === wizard.sel}>  {c}{c === 'codex' ? '  (实验)' : ''}</Text>
               ))}
             </>
+          ) : wizard.step === 'role' ? (
+            <>
+              <Text>添加员工 <Text bold>{wizard.name}</Text> [{wizard.cli}] — 角色/职责（Enter 下一步 · Esc 取消）</Text>
+              <Box><Text color="green">› </Text><Text>{wizard.roleText}</Text><Text inverse> </Text></Box>
+              <Text dimColor>例：负责后端开发 / 审查代码 / 调研查证。留空=通用员工。</Text>
+            </>
           ) : (
             <>
-              <Text>添加员工 <Text bold>{wizard.name}</Text> [{wizard.cli}] — 工作目录（Enter 确认 · Tab 补全 · Esc 取消）</Text>
+              <Text>添加员工 <Text bold>{wizard.name}</Text> [{wizard.cli}·{wizard.role}] — 工作目录（Enter 确认 · Tab 补全 · Esc 取消）</Text>
               <Box><Text color="green">› </Text><Text>{wizard.path}</Text><Text inverse> </Text></Box>
               {dirSuggestions(wizard.path, fsListDirs).map((d, i) => (
                 <Text key={d} inverse={i === wizard.sel}>  {d}</Text>
