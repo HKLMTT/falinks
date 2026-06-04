@@ -2,6 +2,7 @@ export type ConsoleAction =
   | { kind: 'say'; to: string; message: string }
   | { kind: 'broadcast'; message: string }
   | { kind: 'add'; spec: { name: string; cli: string; cwd: string } }
+  | { kind: 'add-start'; name: string }
   | { kind: 'remove'; name: string }
   | { kind: 'help' }
   | { kind: 'noop' }
@@ -20,8 +21,9 @@ export function parseConsoleInput(line: string): ConsoleAction {
       return { kind: 'remove', name: args[0] };
     }
     if (cmd === 'add') {
-      if (args.length < 3) return { kind: 'error', message: '用法: /add <name> <cli> <cwd>' };
-      return { kind: 'add', spec: { name: args[0], cli: args[1], cwd: args[2] } };
+      if (args.length === 1) return { kind: 'add-start', name: args[0] };
+      if (args.length >= 3) return { kind: 'add', spec: { name: args[0], cli: args[1], cwd: args[2] } };
+      return { kind: 'error', message: '用法: /add <名字>（按向导选 cli 和目录），或 /add <名字> <cli> <目录>' };
     }
     return { kind: 'error', message: `未知命令: /${cmd}` };
   }

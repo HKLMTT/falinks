@@ -23,8 +23,12 @@ test('/help -> help', () => {
   expect(parseConsoleInput('/help').kind).toBe('help');
 });
 
-test('/add with missing args -> error', () => {
-  expect(parseConsoleInput('/add carol').kind).toBe('error');
+test('/add name (one arg) -> add-start (wizard)', () => {
+  expect(parseConsoleInput('/add carol')).toEqual({ kind: 'add-start', name: 'carol' });
+});
+
+test('/add with two args -> error', () => {
+  expect(parseConsoleInput('/add carol claude').kind).toBe('error');
 });
 
 test('empty input -> noop', () => {
