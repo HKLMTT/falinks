@@ -6,7 +6,7 @@ import { Router } from './core/router.js';
 import { Guards } from './core/guards.js';
 import { makeDeliverer, detectScreenState } from './orchestrator.js';
 import { ITerm2Driver } from './terminal/iterm.js';
-import { startBus } from './bus/server.js';
+import { startBus, type Bus } from './bus/server.js';
 import { mcpConfigFor, launchCommandFor } from './agent/mcp-config.js';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -19,31 +19,64 @@ export async function up(configPath: string) {
   const router = new Router(makeDeliverer(driver), {
     now: () => Date.now(), genId: () => `m${++n}`, routes: cfg.routes, guards,
   });
-  for (const a of cfg.agents) router.addAgent(a.name, a.role);
+  router.addVirtual('boss');
 
   const sessions = new Map<string, string>();
-  router.addVirtual('boss');
-  const bus = await startBus({ router, getSessionId: (name) => sessions.get(name) }, cfg.busPort);
-  writeFileSync('.dagent-runtime.json', JSON.stringify({ port: bus.port }));
-  console.log(`[dagent] bus on :${bus.port} (runtime written to .dagent-runtime.json)`);
-
   const tmp = mkdtempSync(join(tmpdir(), 'dagent-'));
-  for (const a of cfg.agents) {
+  let bus: Bus;
+  let lastRight = '';
+
+  async function launchInto(
+    anchor: string,
+    dir: 'vertical' | 'horizontal',
+    a: { name: string; cli: string; cwd: string; role?: string; bootstrap?: string },
+  ): Promise<string> {
     const cfgPath = join(tmp, `${a.name}-mcp.json`);
     writeFileSync(cfgPath, JSON.stringify(mcpConfigFor(a.name, bus.port)));
     const command = launchCommandFor(a.cli, cfgPath);
-    const sid = await driver.launch({ cwd: a.cwd, command });
+    const sid = await driver.splitFrom(anchor, dir, { cwd: a.cwd, command });
     sessions.set(a.name, sid);
-    console.log(`[dagent] launched ${a.name} (${sid})`);
-
-    for (let i = 0; i < 40; i++) {
-      await sleep(500);
-      const screen = await driver.readScreen(sid);
-      const state = detectScreenState(screen);
+    router.addAgent(a.name, a.role);
+    for (let i = 0; i < 30; i++) {
+      await sleep(700);
+      const state = detectScreenState(await driver.readScreen(sid));
       if (state === 'trust-dialog') { await driver.inject(sid, '', true); continue; }
-      if (state === 'ready') { await driver.inject(sid, a.bootstrap, true); break; }
+      if (state === 'ready') {
+        await driver.inject(sid, a.bootstrap ?? `你是 ${a.name}。开机调 register；收到「来自 X」用 sendmsg 回复 X；收尾调 idle。`, true);
+        break;
+      }
     }
+    return sid;
   }
-  console.log('[dagent] all agents launched; awaiting register + activity. Ctrl-C to stop.');
-}
 
+  bus = await startBus({
+    router,
+    getSessionId: (name) => sessions.get(name),
+    onAddAgent: async (spec) => {
+      if (!lastRight) return { ok: false, error: 'layout not ready' };
+      if (router.get(spec.name)) return { ok: false, error: 'name exists' };
+      lastRight = await launchInto(lastRight, 'horizontal', spec);
+      return { ok: true };
+    },
+    onRemoveAgent: async (name) => {
+      const sid = sessions.get(name);
+      if (!sid) return { ok: false, error: 'unknown agent' };
+      await driver.closePane(sid);
+      sessions.delete(name);
+      router.removeAgent(name);
+      return { ok: true };
+    },
+  }, cfg.busPort);
+  writeFileSync('.dagent-runtime.json', JSON.stringify({ port: bus.port }));
+  console.log(`[dagent] bus on :${bus.port}`);
+
+  const consoleSid = await driver.launch({ cwd: process.cwd(), command: 'npx tsx src/console/main.tsx' });
+  await sleep(800);
+  lastRight = consoleSid;
+  let first = true;
+  for (const a of cfg.agents) {
+    lastRight = await launchInto(lastRight, first ? 'vertical' : 'horizontal', a);
+    first = false;
+  }
+  console.log('[dagent] 布局就绪。控制台在左 pane。Ctrl-C 收工。');
+}

@@ -12,12 +12,17 @@ export interface TerminalDriver {
   readScreen(sessionId: string): Promise<string>;
   /** 关闭该 session 所在窗口。 */
   close(sessionId: string): Promise<void>;
+  /** 从 anchor pane 切出新 pane（vertical=左右, horizontal=上下），在其中起 command，返回新 session id。 */
+  splitFrom(anchorSessionId: string, direction: 'vertical' | 'horizontal', opts: LaunchOpts): Promise<string>;
+  /** 关闭单个 pane（不关整窗）。 */
+  closePane(sessionId: string): Promise<void>;
 }
 
 /** 测试替身：记录所有 inject、可设定 readScreen 返回值。 */
 export class FakeDriver implements TerminalDriver {
   windows = new Map<string, LaunchOpts>();
   injections: { sessionId: string; text: string; submit: boolean }[] = [];
+  splits: { anchor: string; direction: 'vertical' | 'horizontal'; sessionId: string }[] = [];
   private screens = new Map<string, string>();
   private counter = 0;
 
@@ -38,6 +43,18 @@ export class FakeDriver implements TerminalDriver {
   }
 
   async close(sessionId: string): Promise<void> {
+    this.windows.delete(sessionId);
+  }
+
+  async splitFrom(anchorSessionId: string, direction: 'vertical' | 'horizontal', opts: LaunchOpts): Promise<string> {
+    if (!this.windows.has(anchorSessionId)) throw new Error(`unknown session: ${anchorSessionId}`);
+    const sid = `fake-session-${++this.counter}`;
+    this.windows.set(sid, opts);
+    this.splits.push({ anchor: anchorSessionId, direction, sessionId: sid });
+    return sid;
+  }
+
+  async closePane(sessionId: string): Promise<void> {
     this.windows.delete(sessionId);
   }
 
