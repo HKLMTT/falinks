@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { Box, Text } from 'ink';
-import TextInput from 'ink-text-input';
+import { Box, Text, useInput } from 'ink';
 import { parseConsoleInput } from './parse.js';
+import { mentionState, applyMention } from './mention.js';
 
 async function admin(port: number, method: string, path: string, body?: unknown) {
   const res = await fetch(`http://127.0.0.1:${port}${path}`, {
@@ -16,6 +16,7 @@ export function App({ port }: { port: number }) {
   const [roster, setRoster] = useState<any[]>([]);
   const [log, setLog] = useState<any[]>([]);
   const [input, setInput] = useState('');
+  const [sel, setSel] = useState(0);
   const [status, setStatus] = useState('');
 
   useEffect(() => {
@@ -34,8 +35,7 @@ export function App({ port }: { port: number }) {
     return () => clearInterval(h);
   }, [port]);
 
-  const onSubmit = async (line: string) => {
-    setInput('');
+  const dispatch = async (line: string) => {
     const a = parseConsoleInput(line);
     try {
       if (a.kind === 'noop') return;
@@ -49,6 +49,32 @@ export function App({ port }: { port: number }) {
       setStatus('⚠ ' + (e?.message ?? 'error'));
     }
   };
+
+  const names = roster.map((a) => a.name);
+  const mention = mentionState(input, names);
+  const selClamped = Math.min(sel, Math.max(0, mention.matches.length - 1));
+
+  useInput((char, key) => {
+    // 补全下拉打开时：↑↓ 选择，Tab/Enter 补全（不发送）
+    if (mention.active) {
+      if (key.upArrow) { setSel((s) => Math.max(0, s - 1)); return; }
+      if (key.downArrow) { setSel((s) => Math.min(mention.matches.length - 1, s + 1)); return; }
+      if (key.tab || key.return) {
+        setInput(applyMention(input, mention.matches[selClamped]));
+        setSel(0);
+        return;
+      }
+    }
+    if (key.return) {
+      const line = input;
+      setInput('');
+      setSel(0);
+      void dispatch(line);
+      return;
+    }
+    if (key.backspace || key.delete) { setInput((v) => v.slice(0, -1)); setSel(0); return; }
+    if (char && !key.ctrl && !key.meta && !key.escape && !key.tab) { setInput((v) => v + char); setSel(0); return; }
+  });
 
   const color = (s: string) => (s === 'idle' ? 'green' : s === 'busy' ? 'yellow' : s === 'dead' ? 'red' : 'gray');
 
@@ -67,7 +93,14 @@ export function App({ port }: { port: number }) {
           <Text key={i}><Text color="cyan">{m.from}</Text>→<Text color="magenta">{m.to}</Text>: {String(m.body).split('\n')[0].slice(0, 60)}</Text>
         ))}
       </Box>
-      <Box marginTop={1}><Text color="green">› </Text><TextInput value={input} onChange={setInput} onSubmit={onSubmit} /></Box>
+      <Box marginTop={1}><Text color="green">› </Text><Text>{input}</Text><Text inverse> </Text></Box>
+      {mention.active ? (
+        <Box flexDirection="column">
+          {mention.matches.map((n, i) => (
+            <Text key={n} inverse={i === selClamped}>  @{n}</Text>
+          ))}
+        </Box>
+      ) : null}
       {status ? <Text dimColor>{status}</Text> : null}
     </Box>
   );
