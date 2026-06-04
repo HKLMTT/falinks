@@ -41,3 +41,13 @@ test('parseConfig rejects a route pointing to an unknown agent', () => {
     parseConfig({ busPort: 1, agents: [{ name: 'a', cli: 'claude', cwd: '/a', bootstrap: 'b' }], routes: { m: 'ghost' } }),
   ).toThrow(/route .* unknown agent/);
 });
+
+test('parseConfig fills guard defaults when absent', () => {
+  const cfg = parseConfig({ busPort: 1, agents: [{ name: 'a', cli: 'claude', cwd: '/x', bootstrap: 'b' }] });
+  expect(cfg.guards).toEqual({ maxTurnsPerThread: 20, maxInjectionsPerMinute: 30, loopWindow: 3 });
+});
+
+test('parseConfig merges partial guard overrides', () => {
+  const cfg = parseConfig({ busPort: 1, agents: [{ name: 'a', cli: 'claude', cwd: '/x', bootstrap: 'b' }], guards: { maxTurnsPerThread: 5 } });
+  expect(cfg.guards).toEqual({ maxTurnsPerThread: 5, maxInjectionsPerMinute: 30, loopWindow: 3 });
+});

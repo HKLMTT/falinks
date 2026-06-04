@@ -13,6 +13,7 @@ export interface Message {
   to: AgentName;
   body: string;
   ts: number;
+  thread?: string; // 服务端派生的会话线程 id（仅在配置了 Guards 时设置）
 }
 
 export interface AgentRuntime {
@@ -21,4 +22,5 @@ export interface AgentRuntime {
   status: AgentStatus;
   sessionId?: string; // iTerm session id（register 时填入）
   inbox: Message[];
+  handling?: string; // 当前正在处理的消息的 thread
 }

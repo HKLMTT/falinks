@@ -8,10 +8,17 @@ export interface AgentConfig {
   bootstrap: string;
 }
 
+export interface GuardConfig {
+  maxTurnsPerThread: number;
+  maxInjectionsPerMinute: number;
+  loopWindow: number;
+}
+
 export interface DagentConfig {
   busPort: number;
   agents: AgentConfig[];
   routes: Record<string, AgentName>;
+  guards: GuardConfig;
 }
 
 /** 校验并归一化原始配置对象。抛错即配置非法。 */
@@ -38,5 +45,12 @@ export function parseConfig(raw: any): DagentConfig {
       throw new Error(`route "${alias}" -> unknown agent "${target}"`);
   }
 
-  return { busPort: raw.busPort, agents, routes };
+  const gd = raw.guards ?? {};
+  const guards: GuardConfig = {
+    maxTurnsPerThread: typeof gd.maxTurnsPerThread === 'number' ? gd.maxTurnsPerThread : 20,
+    maxInjectionsPerMinute: typeof gd.maxInjectionsPerMinute === 'number' ? gd.maxInjectionsPerMinute : 30,
+    loopWindow: typeof gd.loopWindow === 'number' ? gd.loopWindow : 3,
+  };
+
+  return { busPort: raw.busPort, agents, routes, guards };
 }

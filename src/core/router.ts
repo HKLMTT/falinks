@@ -1,4 +1,5 @@
 import type { AgentName, AgentRuntime, Message } from './types.js';
+import type { Guards } from './guards.js';
 
 export interface Deliverer {
   /** Router 决定"现在该把 msg 投给 agent 了"时调用；实现负责真正注入（副作用）。 */
@@ -9,6 +10,7 @@ export interface RouterDeps {
   now: () => number;
   genId: () => string;
   routes?: Record<string, AgentName>; // role/别名 -> 真实 agent 名
+  guards?: Guards;
 }
 
 export class Router {
@@ -38,7 +40,24 @@ export class Router {
     if (!target) return undefined;
     const a = this.must(target);
     if (a.status === 'dead') return undefined;
-    const msg: Message = { id: this.deps.genId(), from, to: target, body, ts: this.deps.now() };
+
+    const g = this.deps.guards;
+    let thread: string | undefined;
+    if (g) {
+      const sender = this.agents.get(from);
+      thread = sender?.handling ?? g.newThread();
+      const dec = g.checkMessage(thread, body);
+      if (!dec.ok) {
+        console.warn(`[guard] thread ${thread} broken: ${dec.reason} (${from} -> ${target})`);
+        return undefined;
+      }
+      if (!g.allowInjection()) {
+        console.warn(`[guard] rate limit hit, dropping ${from} -> ${target}`);
+        return undefined;
+      }
+    }
+
+    const msg: Message = { id: this.deps.genId(), from, to: target, body, ts: this.deps.now(), thread };
     a.inbox.push(msg);
     this.pump(a);
     return msg;
@@ -47,6 +66,7 @@ export class Router {
   onIdle(name: AgentName): void {
     const a = this.must(name);
     if (a.status === 'busy' || a.status === 'stuck') a.status = 'idle';
+    a.handling = undefined;
     this.pump(a);
   }
 
@@ -73,6 +93,7 @@ export class Router {
     const msg = a.inbox.shift();
     if (!msg) return;
     a.status = 'busy';
+    a.handling = msg.thread;
     this.deliverer.deliver(a, msg);
   }
 

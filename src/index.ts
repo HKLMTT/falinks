@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseConfig } from './core/config.js';
 import { Router } from './core/router.js';
+import { Guards } from './core/guards.js';
 import { makeDeliverer, detectScreenState } from './orchestrator.js';
 import { ITerm2Driver } from './terminal/iterm.js';
 import { startBus } from './bus/server.js';
@@ -14,8 +15,9 @@ async function up(configPath: string) {
   const cfg = parseConfig(JSON.parse(readFileSync(configPath, 'utf8')));
   const driver = new ITerm2Driver();
   let n = 0;
+  const guards = new Guards(cfg.guards, () => Date.now());
   const router = new Router(makeDeliverer(driver), {
-    now: () => Date.now(), genId: () => `m${++n}`, routes: cfg.routes,
+    now: () => Date.now(), genId: () => `m${++n}`, routes: cfg.routes, guards,
   });
   for (const a of cfg.agents) router.addAgent(a.name, a.role);
 
