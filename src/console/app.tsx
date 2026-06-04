@@ -14,6 +14,18 @@ const VERSION: string = (() => {
   }
 })();
 
+const TAGLINES = [
+  '一屋 AI 牛马，您只管动嘴 🐴',
+  '活归它们，功归你 🐴',
+  '不喊累不要钱的 AI 牛马天团',
+  '您发句话，牛马跑断腿',
+  'AI 牛马已就位，老板请下令',
+  '招了一窝电子牛马',
+  '您动嘴，它们秃头',
+  '7×24 AI 牛马，永不摸鱼（大概）',
+  '老板一句话，牛马忙到趴',
+];
+
 async function admin(port: number, method: string, path: string, body?: unknown) {
   const res = await fetch(`http://127.0.0.1:${port}${path}`, {
     method,
@@ -43,6 +55,7 @@ export function App({ port }: { port: number }) {
   const [sel, setSel] = useState(0);
   const [status, setStatus] = useState('');
   const [wizard, setWizard] = useState<WizardState | null>(null);
+  const [tagline] = useState(() => TAGLINES[Math.floor(Math.random() * TAGLINES.length)]);
   const defaultCwd = process.cwd();
 
   useEffect(() => {
@@ -145,7 +158,7 @@ export function App({ port }: { port: number }) {
         <Text color="cyan" bold>╔═╗╔═╗╦  ╦╔╗╔╦╔═╔═╗</Text>
         <Text color="cyan" bold>╠╣ ╠═╣║  ║║║║╠╩╗╚═╗</Text>
         <Text color="cyan" bold>╚  ╩ ╩╩═╝╩╝╚╝╩ ╩╚═╝</Text>
-        <Text dimColor>v{VERSION} · 一屋 AI 牛马，您只管动嘴 🐴</Text>
+        <Text dimColor>v{VERSION} · {tagline}</Text>
       </Box>
       <Box flexDirection="column" marginTop={1}>
         <Text underline>花名册</Text>
