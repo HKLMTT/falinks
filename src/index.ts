@@ -1,4 +1,4 @@
-import { readFileSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { readFileSync, mkdtempSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseConfig } from './core/config.js';
@@ -8,6 +8,7 @@ import { makeDeliverer, detectScreenState } from './orchestrator.js';
 import { ITerm2Driver } from './terminal/iterm.js';
 import { startBus, type Bus } from './bus/server.js';
 import { mcpConfigFor, buildAgentLaunch } from './agent/mcp-config.js';
+import { runtimeDir, runtimePath, consoleLaunchCommand } from './runtime.js';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -89,10 +90,12 @@ export async function up(configPath: string) {
       return { ok: true };
     },
   }, cfg.busPort);
-  writeFileSync('.dagent-runtime.json', JSON.stringify({ port: bus.port }));
-  console.log(`[dagent] bus on :${bus.port}`);
+  mkdirSync(runtimeDir(), { recursive: true });
+  writeFileSync(runtimePath(), JSON.stringify({ port: bus.port }));
+  console.log(`[falinks] bus on :${bus.port}`);
 
-  const consoleSid = await driver.launch({ cwd: process.cwd(), command: 'npx tsx src/console/main.tsx' });
+  const consoleCmd = consoleLaunchCommand(process.argv[1], process.execPath);
+  const consoleSid = await driver.launch({ cwd: process.cwd(), command: consoleCmd });
   await sleep(800);
   lastRight = consoleSid;
   let first = true;
@@ -100,7 +103,7 @@ export async function up(configPath: string) {
     lastRight = await launchInto(lastRight, first ? 'vertical' : 'horizontal', a);
     first = false;
   }
-  console.log('[dagent] 布局就绪。控制台在左 pane。Ctrl-C 收工。');
+  console.log('[falinks] 布局就绪。控制台在左 pane。Ctrl-C 收工。');
 
   // 健康轮询：员工 pane 被关 → 自动下线（移出花名册）。
   setInterval(() => {
@@ -110,7 +113,7 @@ export async function up(configPath: string) {
           if (!(await driver.paneExists(sid))) {
             sessions.delete(name);
             router.removeAgent(name);
-            console.log(`[dagent] ${name} 的窗口已关，自动下线`);
+            console.log(`[falinks] ${name} 的窗口已关，自动下线`);
           }
         } catch {
           /* 探测失败忽略，下一轮再试 */
