@@ -110,6 +110,11 @@ export class Router {
     this.deliverer.deliver(a, msg);
   }
 
+  /** 从花名册移除一个 agent（运行时删员工）。未知名为 no-op。 */
+  removeAgent(name: AgentName): void {
+    this.agents.delete(name);
+  }
+
   private must(name: AgentName): AgentRuntime {
     const a = this.agents.get(name);
     if (!a) throw new Error(`unknown agent: ${name}`);
