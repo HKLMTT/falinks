@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { execSync } from 'node:child_process';
 import { up } from './index.js';
 import { runtimePath } from './runtime.js';
@@ -22,24 +22,27 @@ async function admin(method: string, path: string, body?: unknown) {
   return res.json();
 }
 
-const EXAMPLE_CONFIG = {
-  busPort: 7878,
-  agents: [
-    { name: 'alice', cli: 'claude', cwd: `${process.env.HOME}/falinks-alice`, role: 'manager', bootstrap: '你负责统筹与任务分配，风格简练。' },
-    { name: 'bob', cli: 'claude', cwd: `${process.env.HOME}/falinks-bob`, role: 'dev', bootstrap: '你负责写代码与查证，风格简练。' },
-  ],
-  routes: { manager: 'alice' },
-};
-
 function init() {
   const path = 'falinks.config.json';
   if (existsSync(path)) {
-    console.log(`${path} 已存在，未覆盖。`);
+    console.log(`${path} 已存在，未覆盖。直接 \`falinks up\` 即可。`);
     return;
   }
-  writeFileSync(path, JSON.stringify(EXAMPLE_CONFIG, null, 2));
-  for (const a of EXAMPLE_CONFIG.agents) mkdirSync(a.cwd, { recursive: true });
-  console.log(`已生成 ${path} 并创建员工目录。编辑后运行：falinks up`);
+  const cwd = process.cwd();
+  const config = {
+    busPort: 7878,
+    agents: [
+      { name: 'alice', cli: 'claude', cwd, role: 'manager', bootstrap: '你负责统筹与任务分配，风格简练。' },
+      { name: 'bob', cli: 'claude', cwd, role: 'dev', bootstrap: '你负责写代码与查证，风格简练。' },
+    ],
+    routes: { manager: 'alice' },
+  };
+  writeFileSync(path, JSON.stringify(config, null, 2));
+  console.log(
+    `✅ 已生成 ${path}（两个 claude 员工 alice/bob，工作目录=当前目录）。\n` +
+      `   下一步：falinks up\n` +
+      `   想改员工/换 codex/换目录，编辑 ${path} 即可。`,
+  );
 }
 
 function has(cmd: string): boolean {

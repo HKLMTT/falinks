@@ -100,10 +100,11 @@ export async function up(configPath: string) {
   lastRight = consoleSid;
   let first = true;
   for (const a of cfg.agents) {
+    console.log(`[falinks] 启动员工 ${a.name} (${a.cli})…`);
     lastRight = await launchInto(lastRight, first ? 'vertical' : 'horizontal', a);
     first = false;
   }
-  console.log('[falinks] 布局就绪。控制台在左 pane。Ctrl-C 收工。');
+  console.log(`[falinks] ✅ 办公室就绪：${cfg.agents.length} 名员工 + 控制台（左侧 pane）。在控制台输入框操作；Ctrl-C 收工。`);
 
   // 健康轮询：员工 pane 被关 → 自动下线（移出花名册）。
   setInterval(() => {
