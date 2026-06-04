@@ -40,7 +40,7 @@ export function buildAgentLaunch(cli: string, spec: LaunchSpec): AgentLaunch {
       // bootstrap 作为位置参数传入，codex 自启即处理，无需注入。
       const url = busUrl(spec.name, spec.busPort);
       const command =
-        `codex --no-alt-screen --dangerously-bypass-approvals-and-sandbox -a never` +
+        `codex --no-alt-screen --dangerously-bypass-approvals-and-sandbox` +
         ` -c 'mcp_servers.dagent.transport="streamable_http"'` +
         ` -c 'mcp_servers.dagent.url="${url}"'` +
         ` ${shQuote(spec.bootstrap)}`;
