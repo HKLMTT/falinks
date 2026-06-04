@@ -18,7 +18,9 @@ export interface LaunchSpec {
   name: string;
   busPort: number;
   mcpConfigPath: string; // claude 用
-  bootstrap: string;
+  bootstrap: string;     // 首启=完整 bootstrap；恢复=重连提示语
+  sessionId?: string;    // claude 首启：--session-id（确定性 id）
+  resumeId?: string;     // 恢复：claude --resume / codex resume <id>
 }
 
 export interface AgentLaunch {
@@ -30,20 +32,28 @@ export interface AgentLaunch {
 /** 按 CLI 构造启动命令 + 是否需要在就绪后注入 bootstrap。 */
 export function buildAgentLaunch(cli: string, spec: LaunchSpec): AgentLaunch {
   switch (cli) {
-    case 'claude':
+    case 'claude': {
+      const tail = spec.resumeId
+        ? ` --resume ${spec.resumeId}`
+        : spec.sessionId
+          ? ` --session-id ${spec.sessionId}`
+          : '';
       return {
-        command: `claude --mcp-config ${spec.mcpConfigPath} --dangerously-skip-permissions`,
+        command: `claude --mcp-config ${spec.mcpConfigPath} --dangerously-skip-permissions${tail}`,
         needsBootstrapInject: true,
       };
+    }
     case 'codex': {
       // 经 spike 验证：--no-alt-screen 利于读屏/注入；bypass 免审批；-c 内联配 streamable_http MCP；
       // bootstrap 作为位置参数传入，codex 自启即处理，无需注入。
       const url = busUrl(spec.name, spec.busPort);
-      const command =
+      const base =
         `codex --no-alt-screen --dangerously-bypass-approvals-and-sandbox` +
         ` -c 'mcp_servers.falinks.transport="streamable_http"'` +
-        ` -c 'mcp_servers.falinks.url="${url}"'` +
-        ` ${shQuote(spec.bootstrap)}`;
+        ` -c 'mcp_servers.falinks.url="${url}"'`;
+      const command = spec.resumeId
+        ? `${base} resume ${spec.resumeId} ${shQuote(spec.bootstrap)}`
+        : `${base} ${shQuote(spec.bootstrap)}`;
       return { command, needsBootstrapInject: false };
     }
     default:
