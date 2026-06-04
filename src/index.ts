@@ -11,6 +11,15 @@ import { mcpConfigFor, buildAgentLaunch } from './agent/mcp-config.js';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/** 全员通用协作规则（前缀到每个员工的 bootstrap）。核心：省 token、禁客套。 */
+const HOUSE_RULES =
+  '【dagent 协作规则】你是办公室里的 AI 员工，通过 dagent 的 MCP 工具协作。' +
+  '① 开机立刻调用 register 报到。' +
+  '② 收到形如「【来自 X】…」的消息后，只有当你有实质内容（答案/数据/明确问题）时，才用 sendmsg(to="X", message="…") 回复。' +
+  '③ 严禁发送任何寒暄、确认、客套或表情——例如「收到」「好的」「谢谢」「不客气」「没问题」「👍」一律不要发，这些纯属浪费。' +
+  '④ 完成任务、或没有实质内容要说时，直接调用 idle 结束本回合，不要发任何结束语。' +
+  '⑤ 转达/汇报要一次说完，不要来回确认。';
+
 export async function up(configPath: string) {
   const cfg = parseConfig(JSON.parse(readFileSync(configPath, 'utf8')));
   const driver = new ITerm2Driver();
@@ -33,7 +42,7 @@ export async function up(configPath: string) {
   ): Promise<string> {
     const cfgPath = join(tmp, `${a.name}-mcp.json`);
     writeFileSync(cfgPath, JSON.stringify(mcpConfigFor(a.name, bus.port)));
-    const bootstrap = a.bootstrap ?? `你是 ${a.name}。开机调 register；收到「来自 X」用 sendmsg 回复 X；收尾调 idle。`;
+    const bootstrap = `${HOUSE_RULES}\n你的身份：${a.name}${a.role ? `（${a.role}）` : ''}。${a.bootstrap ?? ''}`;
     const { command, needsBootstrapInject } = buildAgentLaunch(a.cli, {
       name: a.name, busPort: bus.port, mcpConfigPath: cfgPath, bootstrap,
     });

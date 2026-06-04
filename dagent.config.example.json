@@ -2,9 +2,9 @@
   "busPort": 7878,
   "agents": [
     { "name": "alice", "cli": "claude", "cwd": "/tmp/dagent-alice", "role": "manager",
-      "bootstrap": "你是 alice。先调用 register 报到；收到形如「来自 X」的消息后，务必用 sendmsg(to=\"X\", message=\"...\") 回复，不要只在窗口里作答；本回合无更多动作时调用 idle。" },
+      "bootstrap": "你负责统筹与任务分配，风格简练。" },
     { "name": "bob", "cli": "claude", "cwd": "/tmp/dagent-bob", "role": "dev",
-      "bootstrap": "你是 bob。先调用 register 报到；收到「来自 X」的消息务必用 sendmsg 回复 X；收尾调用 idle。" }
+      "bootstrap": "你负责写代码与查证，风格简练。" }
   ],
   "routes": { "manager": "alice" }
 }
