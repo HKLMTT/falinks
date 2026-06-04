@@ -1,4 +1,5 @@
-import { readFileSync, mkdtempSync, writeFileSync, mkdirSync } from 'node:fs';
+import { readFileSync, mkdtempSync, writeFileSync, mkdirSync, realpathSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseConfig } from './core/config.js';
@@ -10,6 +11,9 @@ import { startBus, type Bus } from './bus/server.js';
 import { mcpConfigFor, buildAgentLaunch } from './agent/mcp-config.js';
 import { runtimeDir, runtimePath, consoleLaunchCommand } from './runtime.js';
 import { renderConsole } from './console/run.js';
+import { loadStore, saveStore, pruneToAgents, type SessionStore } from './session/store.js';
+import { decideClaudeSession, decideCodexSession } from './session/decide.js';
+import { parseStatusSessionId } from './session/capture.js';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -22,6 +26,10 @@ const HOUSE_RULES =
   '④ 完成任务、或没有实质内容要说时，直接调用 idle 结束本回合，不要发任何结束语。' +
   '⑤ 转达/汇报要一次说完，不要来回确认。';
 
+/** 恢复时不重发 bootstrap，只让员工重新挂到新总线。 */
+const RECONNECT_NUDGE =
+  '【falinks 已恢复会话】总线已重连。请立刻重新调用 register 报到，然后待命；无需重述之前内容。';
+
 export async function up(configPath: string) {
   const cfg = parseConfig(JSON.parse(readFileSync(configPath, 'utf8')));
   const driver = new ITerm2Driver();
@@ -33,6 +41,9 @@ export async function up(configPath: string) {
   router.addVirtual('boss');
 
   const sessions = new Map<string, string>();
+  const launchCwd = (() => { try { return realpathSync(process.cwd()); } catch { return process.cwd(); } })();
+  const store: SessionStore = loadStore(launchCwd);
+  pruneToAgents(store, cfg.agents.map((a) => a.name));
   const tmp = mkdtempSync(join(tmpdir(), 'falinks-'));
   let bus: Bus;
   let lastRight = '';
@@ -44,33 +55,71 @@ export async function up(configPath: string) {
   ): Promise<string> {
     const cfgPath = join(tmp, `${a.name}-mcp.json`);
     writeFileSync(cfgPath, JSON.stringify(mcpConfigFor(a.name, bus.port)));
-    const bootstrap = `${HOUSE_RULES}\n你的身份：${a.name}${a.role ? `（${a.role}）` : ''}。${a.bootstrap ?? ''}`;
+
+    const fullBootstrap =
+      `${HOUSE_RULES}\n你的身份：${a.name}${a.role ? `（${a.role}）` : ''}。${a.bootstrap ?? ''}`;
+
+    // 决定 fresh / resume，并据此选注入文本与命令参数。
+    let resuming = false;
+    let sessionId: string | undefined;
+    let resumeId: string | undefined;
+    let claudeSessionId: string | undefined; // claude 首启用 --session-id 的确定性 id
+
+    if (a.cli === 'claude') {
+      const d = decideClaudeSession(store, a.name, a.cwd, randomUUID);
+      resuming = d.mode === 'resume';
+      if (resuming) resumeId = d.sessionId;
+      else claudeSessionId = d.sessionId;
+      sessionId = d.sessionId; // 两种情况都把这个 id 落盘
+    } else if (a.cli === 'codex') {
+      const d = decideCodexSession(store, a.name);
+      if (d.mode === 'resume') { resuming = true; resumeId = d.sessionId; sessionId = d.sessionId; }
+    }
+
+    const injectText = resuming ? RECONNECT_NUDGE : fullBootstrap;
     const { command, needsBootstrapInject } = buildAgentLaunch(a.cli, {
-      name: a.name, busPort: bus.port, mcpConfigPath: cfgPath, bootstrap,
+      name: a.name, busPort: bus.port, mcpConfigPath: cfgPath,
+      bootstrap: injectText, sessionId: claudeSessionId, resumeId,
     });
+
     const sid = await driver.splitFrom(anchor, dir, { cwd: a.cwd, command });
     sessions.set(a.name, sid);
     router.addAgent(a.name, a.role);
     await driver.setName(sid, a.name).catch(() => {}); // pane 标题=员工名
+
     if (needsBootstrapInject) {
-      // claude：处理信任对话；就绪后注入 bootstrap。
+      // claude：信任对话→就绪后注入（resuming 时注入的是重连提示语）。
       for (let i = 0; i < 30; i++) {
         await sleep(700);
         const state = detectScreenState(await driver.readScreen(sid));
         if (state === 'trust-dialog') { await driver.inject(sid, '', true); continue; }
-        if (state === 'ready') { await driver.inject(sid, bootstrap, true); break; }
+        if (state === 'ready') { await driver.inject(sid, injectText, true); break; }
       }
     } else {
-      // codex：bootstrap 已作为初始 prompt 传入。它首次进新目录必弹"信任目录"对话
-      //（Press enter to continue，默认 1. Yes），但 codex inline 模式读屏不可靠（text of s 返回空），
-      // 无法检测——因此盲发两次 Enter 接受默认。若目录已受信，多余 Enter 等于空输入提交，无害。
+      // codex：bootstrap/重连语已作为命令位置参数传入；盲发 Enter 接受信任目录对话。
       await sleep(2500);
       await driver.inject(sid, '', true);
       await sleep(1500);
       await driver.inject(sid, '', true);
       await sleep(3000);
       await driver.inject(sid, '', true); // 第三次兜底（codex 启动慢时前两次可能太早）
+
+      // codex 首启：注入 /status 读屏抓 session id（读不到则不记，下次仍 fresh）。
+      if (!resuming) {
+        await sleep(2000);
+        await driver.inject(sid, '/status', true);
+        await sleep(2500);
+        const screen = await driver.readScreen(sid).catch(() => '');
+        const captured = parseStatusSessionId(screen, 'codex');
+        if (captured) sessionId = captured;
+      }
     }
+
+    // 落盘：拿到 id 才记；codex 没抓到则删掉旧条目，确保下次 fresh 而非误 resume。
+    if (sessionId) store.agents[a.name] = { cli: a.cli, sessionId };
+    else delete store.agents[a.name];
+    saveStore(launchCwd, store);
+
     return sid;
   }
 
