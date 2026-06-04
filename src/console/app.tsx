@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { parseConsoleInput } from './parse.js';
 import { mentionState, applyMention } from './mention.js';
+import { commandState, applyCommand } from './commands.js';
 
 async function admin(port: number, method: string, path: string, body?: unknown) {
   const res = await fetch(`http://127.0.0.1:${port}${path}`, {
@@ -50,28 +51,29 @@ export function App({ port }: { port: number }) {
     }
   };
 
+  // 统一的补全下拉：/ 命令优先，否则 @ 成员
   const names = roster.map((a) => a.name);
+  const cmd = commandState(input);
   const mention = mentionState(input, names);
-  const selClamped = Math.min(sel, Math.max(0, mention.matches.length - 1));
+  let items: { label: string; hint: string }[] = [];
+  let complete: ((i: number) => string) | null = null;
+  if (cmd.active) {
+    items = cmd.matches.map((c) => ({ label: c.usage, hint: c.hint }));
+    complete = (i) => applyCommand(cmd.matches[i].name);
+  } else if (mention.active) {
+    items = mention.matches.map((n) => ({ label: '@' + n, hint: '' }));
+    complete = (i) => applyMention(input, mention.matches[i]);
+  }
+  const active = complete !== null && items.length > 0;
+  const selClamped = Math.min(sel, Math.max(0, items.length - 1));
 
   useInput((char, key) => {
-    // 补全下拉打开时：↑↓ 选择，Tab/Enter 补全（不发送）
-    if (mention.active) {
+    if (active) {
       if (key.upArrow) { setSel((s) => Math.max(0, s - 1)); return; }
-      if (key.downArrow) { setSel((s) => Math.min(mention.matches.length - 1, s + 1)); return; }
-      if (key.tab || key.return) {
-        setInput(applyMention(input, mention.matches[selClamped]));
-        setSel(0);
-        return;
-      }
+      if (key.downArrow) { setSel((s) => Math.min(items.length - 1, s + 1)); return; }
+      if (key.tab || key.return) { setInput(complete!(selClamped)); setSel(0); return; }
     }
-    if (key.return) {
-      const line = input;
-      setInput('');
-      setSel(0);
-      void dispatch(line);
-      return;
-    }
+    if (key.return) { const line = input; setInput(''); setSel(0); void dispatch(line); return; }
     if (key.backspace || key.delete) { setInput((v) => v.slice(0, -1)); setSel(0); return; }
     if (char && !key.ctrl && !key.meta && !key.escape && !key.tab) { setInput((v) => v + char); setSel(0); return; }
   });
@@ -94,13 +96,15 @@ export function App({ port }: { port: number }) {
         ))}
       </Box>
       <Box marginTop={1}><Text color="green">› </Text><Text>{input}</Text><Text inverse> </Text></Box>
-      {mention.active ? (
+      {active ? (
         <Box flexDirection="column">
-          {mention.matches.map((n, i) => (
-            <Text key={n} inverse={i === selClamped}>  @{n}</Text>
+          {items.map((it, i) => (
+            <Text key={it.label} inverse={i === selClamped}>  {it.label}{it.hint ? '   ' + it.hint : ''}</Text>
           ))}
         </Box>
-      ) : null}
+      ) : (
+        <Text dimColor>输入 @ 提及成员 · / 查看命令 · 直接打字=群发 · Tab/Enter 补全</Text>
+      )}
       {status ? <Text dimColor>{status}</Text> : null}
     </Box>
   );
