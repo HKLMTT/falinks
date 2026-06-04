@@ -22,7 +22,7 @@
 ## 安装
 
 ```bash
-npm install -g falinks
+npm install -g @liujia307/falinks
 falinks doctor   # 自检环境
 ```
 
