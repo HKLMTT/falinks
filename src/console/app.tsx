@@ -6,6 +6,7 @@ import { mentionState, applyMention } from './mention.js';
 import { commandState, applyCommand } from './commands.js';
 import { CLIS, dirSuggestions } from './wizard.js';
 import { fetchLatest, isNewer } from '../update.js';
+import { saveClipboardImage } from './clipboard.js';
 
 const PKG: { name: string; version: string } = (() => {
   try {
@@ -54,6 +55,9 @@ export function App({ port }: { port: number }) {
   const [roster, setRoster] = useState<any[]>([]);
   const [log, setLog] = useState<any[]>([]);
   const [input, setInput] = useState('');
+  const [cursor, setCursor] = useState(0);
+  const [history, setHistory] = useState<string[]>([]);
+  const [histIdx, setHistIdx] = useState<number | null>(null);
   const [sel, setSel] = useState(0);
   const [status, setStatus] = useState('');
   const [wizard, setWizard] = useState<WizardState | null>(null);
@@ -73,7 +77,7 @@ export function App({ port }: { port: number }) {
         const r = await admin(port, 'GET', '/admin/roster');
         setRoster(r.roster ?? []);
         const l = await admin(port, 'GET', '/admin/log');
-        setLog((l.log ?? []).slice(-15));
+        setLog((l.log ?? []).slice(-10));
       } catch {
         /* up 还没起或断开，忽略 */
       }
@@ -149,14 +153,64 @@ export function App({ port }: { port: number }) {
       return;
     }
 
+    // Ctrl+V：读系统剪贴板里的截图，存临时文件，把路径插入输入（之后 @员工 发送，员工自己读图）
+    if (key.ctrl && (char === 'v' || char === 'V')) {
+      void saveClipboardImage().then((p) => {
+        if (p) {
+          setInput((v) => v.slice(0, cursor) + p + ' ' + v.slice(cursor));
+          setCursor((c) => c + p.length + 1);
+          setStatus('📎 已粘贴截图路径，加 @员工 后回车，员工会去读这张图');
+        } else {
+          setStatus('剪贴板里没有图片');
+        }
+      });
+      return;
+    }
+
     if (active) {
       if (key.upArrow) { setSel((s) => Math.max(0, s - 1)); return; }
       if (key.downArrow) { setSel((s) => Math.min(items.length - 1, s + 1)); return; }
-      if (key.tab || key.return) { setInput(complete!(selClamped)); setSel(0); return; }
+      if (key.tab || key.return) { const c = complete!(selClamped); setInput(c); setCursor(c.length); setSel(0); return; }
     }
-    if (key.return) { const line = input; setInput(''); setSel(0); void dispatch(line); return; }
-    if (key.backspace || key.delete) { setInput((v) => v.slice(0, -1)); setSel(0); return; }
-    if (char && !key.ctrl && !key.meta && !key.escape && !key.tab) { setInput((v) => v + char); setSel(0); return; }
+
+    if (key.leftArrow) { setCursor((c) => Math.max(0, c - 1)); return; }
+    if (key.rightArrow) { setCursor((c) => Math.min(input.length, c + 1)); return; }
+
+    if (key.upArrow) {
+      // 历史：上一条
+      if (history.length) {
+        const ni = histIdx === null ? history.length - 1 : Math.max(0, histIdx - 1);
+        setHistIdx(ni); setInput(history[ni]); setCursor(history[ni].length);
+      }
+      return;
+    }
+    if (key.downArrow) {
+      // 历史：下一条（到底则清空）
+      if (histIdx !== null) {
+        const ni = histIdx + 1;
+        if (ni >= history.length) { setHistIdx(null); setInput(''); setCursor(0); }
+        else { setHistIdx(ni); setInput(history[ni]); setCursor(history[ni].length); }
+      }
+      return;
+    }
+
+    if (key.return) {
+      const line = input;
+      setInput(''); setCursor(0); setSel(0); setHistIdx(null);
+      if (line.trim()) setHistory((h) => [...h, line]);
+      void dispatch(line);
+      return;
+    }
+    if (key.backspace || key.delete) {
+      if (cursor > 0) { setInput((v) => v.slice(0, cursor - 1) + v.slice(cursor)); setCursor((c) => c - 1); setSel(0); }
+      return;
+    }
+    if (char && !key.ctrl && !key.meta && !key.escape && !key.tab) {
+      setInput((v) => v.slice(0, cursor) + char + v.slice(cursor));
+      setCursor((c) => c + char.length);
+      setSel(0);
+      return;
+    }
   });
 
   const color = (s: string) => (s === 'idle' ? 'green' : s === 'busy' ? 'yellow' : s === 'dead' ? 'red' : 'gray');
@@ -181,7 +235,7 @@ export function App({ port }: { port: number }) {
       <Box flexDirection="column" marginTop={1} flexGrow={1}>
         <Text underline>消息</Text>
         {log.map((m, i) => (
-          <Text key={i}><Text color="cyan">{m.from}</Text>→<Text color="magenta">{m.to}</Text>: {String(m.body).split('\n')[0].slice(0, 60)}</Text>
+          <Text key={i}><Text color="cyan">{m.from}</Text>→<Text color="magenta">{m.to}</Text>: {String(m.body).replace(/\s+/g, ' ').trim().slice(0, 300)}</Text>
         ))}
       </Box>
 
@@ -213,7 +267,12 @@ export function App({ port }: { port: number }) {
         </Box>
       ) : (
         <>
-          <Box marginTop={1}><Text color="green">› </Text><Text>{input}</Text><Text inverse> </Text></Box>
+          <Box marginTop={1}>
+            <Text color="green">› </Text>
+            <Text>{input.slice(0, cursor)}</Text>
+            <Text inverse>{input[cursor] ?? ' '}</Text>
+            <Text>{input.slice(cursor + 1)}</Text>
+          </Box>
           {active ? (
             <Box flexDirection="column">
               {items.map((it, i) => (
