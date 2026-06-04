@@ -6,7 +6,7 @@ import { Router } from '../src/core/router.js';
 import { makeDeliverer, detectScreenState } from '../src/orchestrator.js';
 import { ITerm2Driver } from '../src/terminal/iterm.js';
 import { startBus } from '../src/bus/server.js';
-import { mcpConfigFor, launchCommandFor } from '../src/agent/mcp-config.js';
+import { mcpConfigFor, buildAgentLaunch } from '../src/agent/mcp-config.js';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const tail = (s: string, n: number) =>
@@ -39,7 +39,7 @@ async function main() {
   for (const a of cfg.agents) {
     const cfgPath = join(tmp, `${a.name}-mcp.json`);
     writeFileSync(cfgPath, JSON.stringify(mcpConfigFor(a.name, bus.port)));
-    const command = launchCommandFor(a.cli, cfgPath);
+    const { command } = buildAgentLaunch(a.cli, { name: a.name, busPort: bus.port, mcpConfigPath: cfgPath, bootstrap: a.bootstrap });
     const sid = await driver.launch({ cwd: a.cwd, command });
     sessions.set(a.name, sid);
     console.log(`[dagent] launched ${a.name} (${sid}) :: ${command}`);

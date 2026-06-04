@@ -18,3 +18,12 @@ test('closePane removes only that session', async () => {
   expect(d.windows.has(b)).toBe(false);
   expect(d.windows.has(a)).toBe(true);
 });
+
+test('paneExists reflects whether the session is still open', async () => {
+  const d = new FakeDriver();
+  const a = await d.launch({ cwd: '/c', command: 'console' });
+  expect(await d.paneExists(a)).toBe(true);
+  await d.closePane(a);
+  expect(await d.paneExists(a)).toBe(false);
+  expect(await d.paneExists('never-existed')).toBe(false);
+});

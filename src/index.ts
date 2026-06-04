@@ -7,7 +7,7 @@ import { Guards } from './core/guards.js';
 import { makeDeliverer, detectScreenState } from './orchestrator.js';
 import { ITerm2Driver } from './terminal/iterm.js';
 import { startBus, type Bus } from './bus/server.js';
-import { mcpConfigFor, launchCommandFor } from './agent/mcp-config.js';
+import { mcpConfigFor, buildAgentLaunch } from './agent/mcp-config.js';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -33,17 +33,20 @@ export async function up(configPath: string) {
   ): Promise<string> {
     const cfgPath = join(tmp, `${a.name}-mcp.json`);
     writeFileSync(cfgPath, JSON.stringify(mcpConfigFor(a.name, bus.port)));
-    const command = launchCommandFor(a.cli, cfgPath);
+    const bootstrap = a.bootstrap ?? `你是 ${a.name}。开机调 register；收到「来自 X」用 sendmsg 回复 X；收尾调 idle。`;
+    const { command, needsBootstrapInject } = buildAgentLaunch(a.cli, {
+      name: a.name, busPort: bus.port, mcpConfigPath: cfgPath, bootstrap,
+    });
     const sid = await driver.splitFrom(anchor, dir, { cwd: a.cwd, command });
     sessions.set(a.name, sid);
     router.addAgent(a.name, a.role);
-    for (let i = 0; i < 30; i++) {
-      await sleep(700);
-      const state = detectScreenState(await driver.readScreen(sid));
-      if (state === 'trust-dialog') { await driver.inject(sid, '', true); continue; }
-      if (state === 'ready') {
-        await driver.inject(sid, a.bootstrap ?? `你是 ${a.name}。开机调 register；收到「来自 X」用 sendmsg 回复 X；收尾调 idle。`, true);
-        break;
+    // claude：启动后读屏处理信任对话并注入 bootstrap。codex：bootstrap 已作为初始 prompt 传入命令，自启即处理。
+    if (needsBootstrapInject) {
+      for (let i = 0; i < 30; i++) {
+        await sleep(700);
+        const state = detectScreenState(await driver.readScreen(sid));
+        if (state === 'trust-dialog') { await driver.inject(sid, '', true); continue; }
+        if (state === 'ready') { await driver.inject(sid, bootstrap, true); break; }
       }
     }
     return sid;
@@ -79,4 +82,21 @@ export async function up(configPath: string) {
     first = false;
   }
   console.log('[dagent] 布局就绪。控制台在左 pane。Ctrl-C 收工。');
+
+  // 健康轮询：员工 pane 被关 → 自动下线（移出花名册）。
+  setInterval(() => {
+    void (async () => {
+      for (const [name, sid] of [...sessions]) {
+        try {
+          if (!(await driver.paneExists(sid))) {
+            sessions.delete(name);
+            router.removeAgent(name);
+            console.log(`[dagent] ${name} 的窗口已关，自动下线`);
+          }
+        } catch {
+          /* 探测失败忽略，下一轮再试 */
+        }
+      }
+    })();
+  }, 3000);
 }

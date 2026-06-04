@@ -16,6 +16,8 @@ export interface TerminalDriver {
   splitFrom(anchorSessionId: string, direction: 'vertical' | 'horizontal', opts: LaunchOpts): Promise<string>;
   /** 关闭单个 pane（不关整窗）。 */
   closePane(sessionId: string): Promise<void>;
+  /** 该 session/pane 当前是否还存在（用于检测员工窗口被关）。 */
+  paneExists(sessionId: string): Promise<boolean>;
 }
 
 /** 测试替身：记录所有 inject、可设定 readScreen 返回值。 */
@@ -56,6 +58,10 @@ export class FakeDriver implements TerminalDriver {
 
   async closePane(sessionId: string): Promise<void> {
     this.windows.delete(sessionId);
+  }
+
+  async paneExists(sessionId: string): Promise<boolean> {
+    return this.windows.has(sessionId);
   }
 
   setScreen(sessionId: string, content: string): void {

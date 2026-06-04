@@ -146,7 +146,7 @@ export function App({ port }: { port: number }) {
             <>
               <Text>添加员工 <Text bold>{wizard.name}</Text> — 选择 CLI（↑↓ 选 · Enter 下一步 · Esc 取消）</Text>
               {CLIS.map((c, i) => (
-                <Text key={c} inverse={i === wizard.sel}>  {c}{c === 'codex' ? '  (实验·暂未接通)' : ''}</Text>
+                <Text key={c} inverse={i === wizard.sel}>  {c}{c === 'codex' ? '  (实验)' : ''}</Text>
               ))}
             </>
           ) : (
