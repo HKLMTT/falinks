@@ -23,4 +23,5 @@ export interface AgentRuntime {
   sessionId?: string; // iTerm session id（register 时填入）
   inbox: Message[];
   handling?: string; // 当前正在处理的消息的 thread
+  virtual?: boolean; // 虚拟成员（如 boss）：无窗口，消息只入日志不注入
 }

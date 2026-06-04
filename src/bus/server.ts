@@ -53,6 +53,42 @@ function serverForAgent(agentName: string, deps: BusDeps): McpServer {
 export function startBus(deps: BusDeps, port: number): Promise<Bus> {
   const httpServer = http.createServer(async (req, res) => {
     const url = new URL(req.url ?? '', `http://${req.headers.host}`);
+
+    // ---- admin 路由（人/老板入口）----
+    if (url.pathname.startsWith('/admin/')) {
+      const { router } = deps;
+      const sendJson = (obj: unknown) => {
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(JSON.stringify(obj));
+      };
+      let abody: any = {};
+      if (req.method === 'POST') {
+        const chunks: Buffer[] = [];
+        for await (const c of req) chunks.push(c as Buffer);
+        try { abody = JSON.parse(Buffer.concat(chunks).toString()); } catch { abody = {}; }
+      }
+      if (req.method === 'GET' && url.pathname === '/admin/roster') {
+        return sendJson({ roster: router.roster().map((a) => ({ name: a.name, role: a.role, status: a.status, virtual: !!a.virtual })) });
+      }
+      if (req.method === 'GET' && url.pathname === '/admin/log') {
+        return sendJson({ log: router.messages() });
+      }
+      if (req.method === 'POST' && url.pathname === '/admin/say') {
+        const msg = router.send('boss', String(abody.to), String(abody.message));
+        return sendJson(msg ? { ok: true, id: msg.id } : { ok: false, error: 'unknown or dropped' });
+      }
+      if (req.method === 'POST' && url.pathname === '/admin/broadcast') {
+        const sent: string[] = [];
+        for (const a of router.roster()) {
+          if (a.virtual || a.status === 'dead' || a.name === 'boss') continue;
+          if (router.send('boss', a.name, String(abody.message))) sent.push(a.name);
+        }
+        return sendJson({ sent });
+      }
+      res.writeHead(404); res.end('unknown admin route');
+      return;
+    }
+
     const match = PATH_RE.exec(url.pathname);
     if (!match) { res.writeHead(404); res.end('not found'); return; }
     const agentName = match[1];

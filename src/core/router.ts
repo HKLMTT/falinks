@@ -15,6 +15,17 @@ export interface RouterDeps {
 
 export class Router {
   private agents = new Map<AgentName, AgentRuntime>();
+  private messageLog: Message[] = [];
+
+  /** 全局消息流水（供 admin /log 查看）。 */
+  messages(): Message[] {
+    return [...this.messageLog];
+  }
+
+  /** 注册一个虚拟成员（如 boss）：无窗口、立即 idle、消息只入日志不注入。 */
+  addVirtual(name: AgentName, role?: string): void {
+    this.agents.set(name, { name, role, status: 'idle', inbox: [], virtual: true });
+  }
 
   constructor(private deliverer: Deliverer, private deps: RouterDeps) {}
 
@@ -58,6 +69,8 @@ export class Router {
     }
 
     const msg: Message = { id: this.deps.genId(), from, to: target, body, ts: this.deps.now(), thread };
+    this.messageLog.push(msg);
+    if (a.virtual) return msg;       // 虚拟成员：只记日志，不注入、不置 busy
     a.inbox.push(msg);
     this.pump(a);
     return msg;
