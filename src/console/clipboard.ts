@@ -21,3 +21,8 @@ export function saveClipboardImage(): Promise<string | null> {
     execFile('osascript', ['-e', script], (err) => resolve(err ? null : out));
   });
 }
+
+/** 把输入里的 `[图片N]` 占位符展开成对应的真实文件路径（发送前用）。 */
+export function expandImageTokens(line: string, paths: string[]): string {
+  return line.replace(/\[图片(\d+)\]/g, (m, n) => paths[Number(n) - 1] ?? m);
+}

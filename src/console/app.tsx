@@ -6,7 +6,7 @@ import { mentionState, applyMention } from './mention.js';
 import { commandState, applyCommand } from './commands.js';
 import { CLIS, dirSuggestions } from './wizard.js';
 import { fetchLatest, isNewer } from '../update.js';
-import { saveClipboardImage } from './clipboard.js';
+import { saveClipboardImage, expandImageTokens } from './clipboard.js';
 
 const PKG: { name: string; version: string } = (() => {
   try {
@@ -58,6 +58,7 @@ export function App({ port }: { port: number }) {
   const [cursor, setCursor] = useState(0);
   const [history, setHistory] = useState<string[]>([]);
   const [histIdx, setHistIdx] = useState<number | null>(null);
+  const [attachments, setAttachments] = useState<string[]>([]);
   const [sel, setSel] = useState(0);
   const [status, setStatus] = useState('');
   const [wizard, setWizard] = useState<WizardState | null>(null);
@@ -153,16 +154,15 @@ export function App({ port }: { port: number }) {
       return;
     }
 
-    // Ctrl+V：读系统剪贴板里的截图，存临时文件，把路径插入输入（之后 @员工 发送，员工自己读图）
+    // Ctrl+V：读系统剪贴板里的截图，存临时文件，输入框只插入短占位 [图片N]（发送时展开成真实路径）
     if (key.ctrl && (char === 'v' || char === 'V')) {
       void saveClipboardImage().then((p) => {
-        if (p) {
-          setInput((v) => v.slice(0, cursor) + p + ' ' + v.slice(cursor));
-          setCursor((c) => c + p.length + 1);
-          setStatus('📎 已粘贴截图路径，加 @员工 后回车，员工会去读这张图');
-        } else {
-          setStatus('剪贴板里没有图片');
-        }
+        if (!p) { setStatus('剪贴板里没有图片'); return; }
+        const token = `[图片${attachments.length + 1}]`;
+        setAttachments((a) => [...a, p]);
+        setInput((v) => v.slice(0, cursor) + token + ' ' + v.slice(cursor));
+        setCursor((c) => c + token.length + 1);
+        setStatus(`📎 已附加 ${token}，加 @员工 后回车，员工会去读这张图`);
       });
       return;
     }
@@ -195,9 +195,10 @@ export function App({ port }: { port: number }) {
     }
 
     if (key.return) {
-      const line = input;
-      setInput(''); setCursor(0); setSel(0); setHistIdx(null);
-      if (line.trim()) setHistory((h) => [...h, line]);
+      const line = expandImageTokens(input, attachments); // [图片N] → 真实路径
+      const shown = input;
+      setInput(''); setCursor(0); setSel(0); setHistIdx(null); setAttachments([]);
+      if (shown.trim()) setHistory((h) => [...h, shown]);
       void dispatch(line);
       return;
     }
