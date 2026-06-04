@@ -2,7 +2,9 @@ import React, { useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { allTemplates, configFromMembers, saveTemplate, type TeamMember } from '../templates.js';
 
-type Mode = 'pick' | 'cname' | 'crole' | 'teamname';
+type Mode = 'pick' | 'cname' | 'ccli' | 'crole' | 'teamname';
+
+const CLIS = ['claude', 'codex'] as const;
 
 type Option =
   | { kind: 'reuse' }
@@ -26,6 +28,8 @@ export function SetupApp({ cwd, current, onDone }: { cwd: string; current: strin
   const [members, setMembers] = useState<TeamMember[]>([]);
   const [text, setText] = useState('');
   const [pendingName, setPendingName] = useState('');
+  const [pendingCli, setPendingCli] = useState<string>('claude');
+  const [cliSel, setCliSel] = useState(0);
 
   useInput((char, key) => {
     if (mode === 'pick') {
@@ -39,15 +43,21 @@ export function SetupApp({ cwd, current, onDone }: { cwd: string; current: strin
       }
       return;
     }
+    if (mode === 'ccli') {
+      if (key.upArrow) { setCliSel((s) => Math.max(0, s - 1)); return; }
+      if (key.downArrow) { setCliSel((s) => Math.min(CLIS.length - 1, s + 1)); return; }
+      if (key.return) { setPendingCli(CLIS[cliSel]); setMode('crole'); }
+      return;
+    }
     if (key.return) {
       const val = text.trim();
       setText('');
       if (mode === 'cname') {
         if (!val) { if (members.length) setMode('teamname'); return; } // 空名回车=完成
-        setPendingName(val); setMode('crole'); return;
+        setPendingName(val); setCliSel(0); setMode('ccli'); return;
       }
       if (mode === 'crole') {
-        setMembers((ms) => [...ms, { name: pendingName, cli: 'claude', role: val || '员工' }]);
+        setMembers((ms) => [...ms, { name: pendingName, cli: pendingCli, role: val || '员工' }]);
         setMode('cname'); return;
       }
       if (mode === 'teamname') {
@@ -82,13 +92,21 @@ export function SetupApp({ cwd, current, onDone }: { cwd: string; current: strin
     <Box flexDirection="column">
       <Text bold>自定义团队（输入名字+角色逐个加，留空名字回车=完成）</Text>
       {members.map((m, i) => (
-        <Text key={i} dimColor>  {i + 1}. {m.name} — {m.role}</Text>
+        <Text key={i} dimColor>  {i + 1}. {m.name}（{m.cli}） — {m.role}</Text>
       ))}
       {mode === 'cname' && (
         <Text>新成员名字: <Text color="green">{text}</Text><Text inverse> </Text></Text>
       )}
+      {mode === 'ccli' && (
+        <Box flexDirection="column">
+          <Text>{pendingName} 用哪个 CLI?（↑↓ 选 · Enter 确认）</Text>
+          {CLIS.map((c, i) => (
+            <Text key={c} inverse={i === cliSel}>  {c}</Text>
+          ))}
+        </Box>
+      )}
       {mode === 'crole' && (
-        <Text>{pendingName} 的角色/职责: <Text color="green">{text}</Text><Text inverse> </Text></Text>
+        <Text>{pendingName}（{pendingCli}） 的角色/职责: <Text color="green">{text}</Text><Text inverse> </Text></Text>
       )}
       {mode === 'teamname' && (
         <Text>保存为团队模板，起个名: <Text color="green">{text}</Text><Text inverse> </Text></Text>

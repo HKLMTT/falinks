@@ -14,6 +14,7 @@ import { renderConsole } from './console/run.js';
 import { loadStore, saveStore, pruneToAgents, type SessionStore } from './session/store.js';
 import { decideClaudeSession, decideCodexSession } from './session/decide.js';
 import { parseStatusSessionId } from './session/capture.js';
+import { addAgentToConfigFile, removeAgentFromConfigFile } from './team-persist.js';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -104,14 +105,15 @@ export async function up(configPath: string) {
       await sleep(3000);
       await driver.inject(sid, '', true); // 第三次兜底（codex 启动慢时前两次可能太早）
 
-      // codex 首启：注入 /status 读屏抓 session id（读不到则不记，下次仍 fresh）。
+      // codex 首启：注入 /status 读屏抓 session id。轮询重试——员工此刻可能正在跑 bootstrap 那一轮，
+      // /status 框要等它空闲才渲染；反复注入 /status 是幂等的（只重渲染状态框），抓到即停。读不到则不记，下次仍 fresh。
       if (!resuming) {
-        await sleep(2000);
-        await driver.inject(sid, '/status', true);
-        await sleep(2500);
-        const screen = await driver.readScreen(sid).catch(() => '');
-        const captured = parseStatusSessionId(screen, 'codex');
-        if (captured) sessionId = captured;
+        for (let i = 0; i < 8; i++) {
+          await driver.inject(sid, '/status', true);
+          await sleep(1800);
+          const captured = parseStatusSessionId(await driver.readScreen(sid).catch(() => ''), 'codex');
+          if (captured) { sessionId = captured; break; }
+        }
       }
     }
 
@@ -130,6 +132,7 @@ export async function up(configPath: string) {
       if (!lastRight) return { ok: false, error: 'layout not ready' };
       if (router.get(spec.name)) return { ok: false, error: 'name exists' };
       lastRight = await launchInto(lastRight, 'horizontal', spec);
+      try { addAgentToConfigFile(configPath, spec); } catch { /* 配置写回失败不致命 */ }
       return { ok: true };
     },
     onRemoveAgent: async (name) => {
@@ -138,6 +141,7 @@ export async function up(configPath: string) {
       await driver.closePane(sid);
       sessions.delete(name);
       router.removeAgent(name);
+      try { removeAgentFromConfigFile(configPath, name); } catch { /* 配置写回失败不致命 */ }
       return { ok: true };
     },
   }, cfg.busPort);
