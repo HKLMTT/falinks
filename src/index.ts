@@ -11,7 +11,7 @@ import { mcpConfigFor, launchCommandFor } from './agent/mcp-config.js';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-async function up(configPath: string) {
+export async function up(configPath: string) {
   const cfg = parseConfig(JSON.parse(readFileSync(configPath, 'utf8')));
   const driver = new ITerm2Driver();
   let n = 0;
@@ -22,8 +22,10 @@ async function up(configPath: string) {
   for (const a of cfg.agents) router.addAgent(a.name, a.role);
 
   const sessions = new Map<string, string>();
+  router.addVirtual('boss');
   const bus = await startBus({ router, getSessionId: (name) => sessions.get(name) }, cfg.busPort);
-  console.log(`[dagent] bus on :${bus.port}`);
+  writeFileSync('.dagent-runtime.json', JSON.stringify({ port: bus.port }));
+  console.log(`[dagent] bus on :${bus.port} (runtime written to .dagent-runtime.json)`);
 
   const tmp = mkdtempSync(join(tmpdir(), 'dagent-'));
   for (const a of cfg.agents) {
@@ -45,5 +47,3 @@ async function up(configPath: string) {
   console.log('[dagent] all agents launched; awaiting register + activity. Ctrl-C to stop.');
 }
 
-const configPath = process.argv[2] ?? 'dagent.config.json';
-up(configPath).catch((e) => { console.error(e); process.exit(1); });
