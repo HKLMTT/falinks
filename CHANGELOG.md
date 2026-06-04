@@ -2,7 +2,9 @@
 
 ## 0.2.3
 
-- **会话恢复**：同目录再次启动并选「继续当前团队」时，每个员工带着上次对话记忆恢复——claude 启动即用 `--session-id` 钉死会话 id、恢复用 `--resume`；codex 就绪后注入 `/status` 读屏抓 id、恢复用 `codex resume <id>`。会话档按项目目录存于 `~/.falinks/sessions/`；换团队=全新会话；恢复只注入一句重连提示、不重发 bootstrap（省 token）。codex 若读屏拿不到 id 则安全降级为全新（绝不扫盘误接他人会话）。
+- **会话恢复**：同目录再次启动并选「继续当前团队」时，每个员工带着上次对话记忆恢复——claude 启动即用 `--session-id` 钉死会话 id、恢复用 `--resume`；codex 就绪后注入 `/status` 读屏抓 id（轮询重试，员工忙时也能抓到）、恢复用 `codex resume <id>`。会话档按项目目录存于 `~/.falinks/sessions/`；换团队=全新会话；恢复只注入一句重连提示、不重发 bootstrap（省 token）。
+- **团队名单可恢复**：控制台 `/add`、`/remove` 现在写回 `falinks.config.json`——动态加的员工（含 codex）关窗后选「继续当前团队」能完整拉回，不再消失。
+- **自定义团队可选 codex**：启动时的自定义团队构建器加了一步选 CLI（claude / codex），不再写死 claude。
 
 ## 0.2.2
 
