@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from 'react';
+import { readdirSync } from 'node:fs';
 import { Box, Text, useInput } from 'ink';
 import { parseConsoleInput } from './parse.js';
 import { mentionState, applyMention } from './mention.js';
 import { commandState, applyCommand } from './commands.js';
+import { CLIS, dirSuggestions } from './wizard.js';
 
 async function admin(port: number, method: string, path: string, body?: unknown) {
   const res = await fetch(`http://127.0.0.1:${port}${path}`, {
@@ -13,12 +15,26 @@ async function admin(port: number, method: string, path: string, body?: unknown)
   return res.json();
 }
 
+function fsListDirs(base: string): string[] {
+  try {
+    return readdirSync(base, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name);
+  } catch {
+    return [];
+  }
+}
+
+type WizardState =
+  | { name: string; step: 'cli'; sel: number }
+  | { name: string; step: 'cwd'; cli: string; path: string; sel: number };
+
 export function App({ port }: { port: number }) {
   const [roster, setRoster] = useState<any[]>([]);
   const [log, setLog] = useState<any[]>([]);
   const [input, setInput] = useState('');
   const [sel, setSel] = useState(0);
   const [status, setStatus] = useState('');
+  const [wizard, setWizard] = useState<WizardState | null>(null);
+  const defaultCwd = process.cwd();
 
   useEffect(() => {
     const tick = async () => {
@@ -40,8 +56,9 @@ export function App({ port }: { port: number }) {
     const a = parseConsoleInput(line);
     try {
       if (a.kind === 'noop') return;
-      if (a.kind === 'help') { setStatus('@name 私聊 · 纯文本群发 · /add <name> <cli> <cwd> · /remove <name>'); return; }
+      if (a.kind === 'help') { setStatus('@名字 私聊 · 纯文本群发 · /add 加员工(向导) · /remove 删员工'); return; }
       if (a.kind === 'error') { setStatus('⚠ ' + a.message); return; }
+      if (a.kind === 'add-start') { setWizard({ name: a.name, step: 'cli', sel: 0 }); return; }
       if (a.kind === 'say') { await admin(port, 'POST', '/admin/say', { to: a.to, message: a.message }); setStatus(`→ ${a.to}`); return; }
       if (a.kind === 'broadcast') { await admin(port, 'POST', '/admin/broadcast', { message: a.message }); setStatus('→ 全员'); return; }
       if (a.kind === 'add') { const r = await admin(port, 'POST', '/admin/add', a.spec); setStatus(r.ok ? `＋ ${a.spec.name}` : '⚠ ' + (r.error ?? 'add 失败')); return; }
@@ -68,6 +85,33 @@ export function App({ port }: { port: number }) {
   const selClamped = Math.min(sel, Math.max(0, items.length - 1));
 
   useInput((char, key) => {
+    // 向导模式：优先处理
+    if (wizard) {
+      if (key.escape) { setWizard(null); setStatus('已取消添加'); return; }
+      if (wizard.step === 'cli') {
+        if (key.upArrow) { setWizard({ ...wizard, sel: Math.max(0, wizard.sel - 1) }); return; }
+        if (key.downArrow) { setWizard({ ...wizard, sel: Math.min(CLIS.length - 1, wizard.sel + 1) }); return; }
+        if (key.return || key.tab) { setWizard({ name: wizard.name, step: 'cwd', cli: CLIS[wizard.sel], path: defaultCwd, sel: 0 }); return; }
+        return;
+      }
+      const sugs = dirSuggestions(wizard.path, fsListDirs);
+      if (key.upArrow) { setWizard({ ...wizard, sel: Math.max(0, wizard.sel - 1) }); return; }
+      if (key.downArrow) { setWizard({ ...wizard, sel: Math.min(Math.max(0, sugs.length - 1), wizard.sel + 1) }); return; }
+      if (key.tab) { if (sugs.length) setWizard({ ...wizard, path: sugs[Math.min(wizard.sel, sugs.length - 1)] + '/', sel: 0 }); return; }
+      if (key.return) {
+        const w = wizard;
+        setWizard(null);
+        void (async () => {
+          const r = await admin(port, 'POST', '/admin/add', { name: w.name, cli: w.cli, cwd: w.path });
+          setStatus(r.ok ? `＋ ${w.name} @ ${w.path}` : '⚠ ' + (r.error ?? 'add 失败'));
+        })();
+        return;
+      }
+      if (key.backspace || key.delete) { setWizard({ ...wizard, path: wizard.path.slice(0, -1), sel: 0 }); return; }
+      if (char && !key.ctrl && !key.meta) { setWizard({ ...wizard, path: wizard.path + char, sel: 0 }); return; }
+      return;
+    }
+
     if (active) {
       if (key.upArrow) { setSel((s) => Math.max(0, s - 1)); return; }
       if (key.downArrow) { setSel((s) => Math.min(items.length - 1, s + 1)); return; }
@@ -95,15 +139,40 @@ export function App({ port }: { port: number }) {
           <Text key={i}><Text color="cyan">{m.from}</Text>→<Text color="magenta">{m.to}</Text>: {String(m.body).split('\n')[0].slice(0, 60)}</Text>
         ))}
       </Box>
-      <Box marginTop={1}><Text color="green">› </Text><Text>{input}</Text><Text inverse> </Text></Box>
-      {active ? (
-        <Box flexDirection="column">
-          {items.map((it, i) => (
-            <Text key={it.label} inverse={i === selClamped}>  {it.label}{it.hint ? '   ' + it.hint : ''}</Text>
-          ))}
+
+      {wizard ? (
+        <Box flexDirection="column" marginTop={1}>
+          {wizard.step === 'cli' ? (
+            <>
+              <Text>添加员工 <Text bold>{wizard.name}</Text> — 选择 CLI（↑↓ 选 · Enter 下一步 · Esc 取消）</Text>
+              {CLIS.map((c, i) => (
+                <Text key={c} inverse={i === wizard.sel}>  {c}{c === 'codex' ? '  (实验·暂未接通)' : ''}</Text>
+              ))}
+            </>
+          ) : (
+            <>
+              <Text>添加员工 <Text bold>{wizard.name}</Text> [{wizard.cli}] — 工作目录（Enter 确认 · Tab 补全 · Esc 取消）</Text>
+              <Box><Text color="green">› </Text><Text>{wizard.path}</Text><Text inverse> </Text></Box>
+              {dirSuggestions(wizard.path, fsListDirs).map((d, i) => (
+                <Text key={d} inverse={i === wizard.sel}>  {d}</Text>
+              ))}
+              <Text dimColor>默认=当前目录，直接 Enter 即用它（多数情况员工同目录）</Text>
+            </>
+          )}
         </Box>
       ) : (
-        <Text dimColor>输入 @ 提及成员 · / 查看命令 · 直接打字=群发 · Tab/Enter 补全</Text>
+        <>
+          <Box marginTop={1}><Text color="green">› </Text><Text>{input}</Text><Text inverse> </Text></Box>
+          {active ? (
+            <Box flexDirection="column">
+              {items.map((it, i) => (
+                <Text key={it.label} inverse={i === selClamped}>  {it.label}{it.hint ? '   ' + it.hint : ''}</Text>
+              ))}
+            </Box>
+          ) : (
+            <Text dimColor>输入 @ 提及成员 · / 查看命令 · 直接打字=群发 · Tab/Enter 补全</Text>
+          )}
+        </>
       )}
       {status ? <Text dimColor>{status}</Text> : null}
     </Box>
