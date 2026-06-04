@@ -1,0 +1,16 @@
+# Changelog
+
+## 0.2.0
+
+- **单窗口办公室**：在当前 iTerm 窗口里直接渲染控制台 + 向右 split 员工，不再多弹一个窗口（非 iTerm/后台回退为新开窗口）。
+- **团队模板**：启动时 Ink 选单选团队（单人 / 结对 / 全栈 / 调研），或现场自定义并存成自己的模板（`~/.falinks/templates/`）。
+- **`/add` 向导加「角色」步骤**：名字 → cli → 角色/职责 → 工作目录。
+- **启动检测新版本**：控制台静默查 npm，有新版在 logo 下提示。
+- **控制台门面**：ASCII logo + 版本号 + 随机牛马文案；渲染前清屏，盖掉选单/启动日志。
+- **pane 标题 = 员工名**（持续覆盖 CLI 自改的标题）。
+- **中文/非 ASCII 员工名修复**：总线对 URL 路径解码，中文名也能注册并回消息。
+- 端口被占时友好提示（不再崩栈）；`init` 默认员工目录=当前目录、默认单员工。
+
+## 0.1.x
+
+- 首个发布：iTerm2 多 agent 编排，MCP 总线（register/sendmsg/idle/who），claude/codex 员工，控制台（@/ 补全、say/broadcast/roster/log），防失控护栏，关窗自动下线，`falinks init/doctor/up`、一键 `falinks`。

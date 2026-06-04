@@ -21,7 +21,8 @@
   "files": [
     "dist",
     "falinks.config.example.json",
-    "README.md"
+    "README.md",
+    "CHANGELOG.md"
   ],
   "engines": {
     "node": ">=20"
