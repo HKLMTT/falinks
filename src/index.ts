@@ -53,6 +53,7 @@ export async function up(configPath: string) {
     router,
     getSessionId: (name) => sessions.get(name),
     onAddAgent: async (spec) => {
+      if (!lastRight) return { ok: false, error: 'layout not ready' };
       if (router.get(spec.name)) return { ok: false, error: 'name exists' };
       lastRight = await launchInto(lastRight, 'horizontal', spec);
       return { ok: true };

@@ -89,13 +89,21 @@ export function startBus(deps: BusDeps, port: number): Promise<Bus> {
       }
       if (req.method === 'POST' && url.pathname === '/admin/add') {
         if (!deps.onAddAgent) return sendJson({ ok: false, error: 'add not supported' });
-        const r = await deps.onAddAgent({ name: String(abody.name), cli: String(abody.cli), cwd: String(abody.cwd), role: abody.role, bootstrap: abody.bootstrap });
-        return sendJson(r);
+        try {
+          const r = await deps.onAddAgent({ name: String(abody.name), cli: String(abody.cli), cwd: String(abody.cwd), role: abody.role, bootstrap: abody.bootstrap });
+          return sendJson(r);
+        } catch (e: any) {
+          return sendJson({ ok: false, error: String(e?.message ?? e) });
+        }
       }
       if (req.method === 'POST' && url.pathname === '/admin/remove') {
         if (!deps.onRemoveAgent) return sendJson({ ok: false, error: 'remove not supported' });
-        const r = await deps.onRemoveAgent(String(abody.name));
-        return sendJson(r);
+        try {
+          const r = await deps.onRemoveAgent(String(abody.name));
+          return sendJson(r);
+        } catch (e: any) {
+          return sendJson({ ok: false, error: String(e?.message ?? e) });
+        }
       }
       res.writeHead(404); res.end('unknown admin route');
       return;
