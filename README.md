@@ -35,11 +35,11 @@
 ## 安装
 
 ```bash
-npm install -g @liujia307/falinks
+npm install -g @liujia307/falinks   # macOS 全局安装通常需 sudo：sudo npm i -g @liujia307/falinks
 falinks doctor      # 自检环境（Node / iTerm2 / claude / codex）
 ```
 
-> 命令名是 **`falinks`**（包名带作用域，但命令就是 `falinks`）。
+> 命令名是 **`falinks`**（包名带作用域，但命令就是 `falinks`）。有新版时控制台会**提示**你执行更新命令（不会自动更新）。
 
 ## 快速开始
 
@@ -50,10 +50,11 @@ cd ~/your-project
 falinks
 ```
 
-首次运行会先让你**选团队模板**（↑↓ 选，Enter 确认）：
+**每次启动都会让你选团队**（↑↓ 选，Enter 确认）——这样每个项目都能用不同团队：
 
 ```
-falinks — 选择团队模板（↑↓ 选 · Enter 确认）
+falinks — 选择团队（↑↓ 选 · Enter 确认）
+  ▶ 继续当前团队（alice/bob）   ← 已有配置时默认在这，回车即沿用
   单人助手（1 人）
   结对编程（开发者+审查者）（2 人）
   全栈小组（组长+前端+后端+测试）（4 人）
@@ -61,9 +62,7 @@ falinks — 选择团队模板（↑↓ 选 · Enter 确认）
   ＋ 自定义团队…
 ```
 
-选完，**这一个窗口**里就起好办公室：左控制台 + 右员工。下次在同目录再 `falinks` 直接复用配置启动。
-
-收工：在该窗口 **Ctrl-C**。
+选完，**这一个窗口**里就起好办公室：左控制台 + 右员工。选了新团队会更新该目录的 `falinks.config.json`；选「继续当前」则沿用。收工：在该窗口 **Ctrl-C**。
 
 ## 控制台
 

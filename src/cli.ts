@@ -24,13 +24,28 @@ async function admin(method: string, path: string, body?: unknown) {
 
 const DEFAULT_CONFIG_PATH = 'falinks.config.json';
 
-/** 交互选择团队（TTY）则走 Ink 向导，否则回退默认单员工配置；把结果写入配置文件。 */
-async function chooseAndWriteConfig(): Promise<void> {
+/** 当前目录已有配置的员工名简述（如 "alice/bob"），无则 null。 */
+function currentTeamLabel(): string | null {
+  try {
+    const c = JSON.parse(readFileSync(DEFAULT_CONFIG_PATH, 'utf8'));
+    const names = (c.agents ?? []).map((a: { name: string }) => a.name);
+    return names.length ? names.join('/') : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 选团队并落到配置文件。
+ * TTY：每次都弹选单（已有配置则默认"继续当前"，回车秒过；选别的会覆盖配置）。
+ * 非 TTY：无配置则写默认单员工，有配置则沿用。
+ */
+async function chooseTeam(): Promise<void> {
   if (process.stdin.isTTY) {
     const { runSetup } = await import('./setup/run.js');
-    const cfg = await runSetup(process.cwd());
-    writeFileSync(DEFAULT_CONFIG_PATH, JSON.stringify(cfg, null, 2));
-  } else {
+    const cfg = await runSetup(process.cwd(), currentTeamLabel());
+    if (cfg !== null) writeFileSync(DEFAULT_CONFIG_PATH, JSON.stringify(cfg, null, 2)); // null=继续当前，不覆盖
+  } else if (!existsSync(DEFAULT_CONFIG_PATH)) {
     writeDefaultConfig();
   }
 }
@@ -49,19 +64,13 @@ function writeDefaultConfig(): void {
 }
 
 async function init() {
-  if (existsSync(DEFAULT_CONFIG_PATH)) {
-    console.log(`${DEFAULT_CONFIG_PATH} 已存在，未覆盖。直接 \`falinks\` 即可运行。`);
-    return;
-  }
-  await chooseAndWriteConfig();
-  console.log(`✅ 已生成 ${DEFAULT_CONFIG_PATH}。运行：falinks（起来后控制台可 /add 加员工、编辑配置改团队）。`);
+  await chooseTeam();
+  console.log(`✅ 配置已就绪（${DEFAULT_CONFIG_PATH}）。运行：falinks`);
 }
 
-/** 裸 `falinks` 的一键运行：有配置就起；没配置就先选团队（向导）再起。 */
+/** 裸 `falinks` 的一键运行：每次都先选团队（默认沿用当前），再起。 */
 async function runHere() {
-  if (!existsSync(DEFAULT_CONFIG_PATH)) {
-    await chooseAndWriteConfig();
-  }
+  await chooseTeam();
   await up(DEFAULT_CONFIG_PATH);
 }
 
