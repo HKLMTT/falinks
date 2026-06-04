@@ -122,4 +122,9 @@ end tell`;
           return "OK"`;
     await osascript(onSession(sessionId, action));
   }
+
+  async paneExists(sessionId: string): Promise<boolean> {
+    const r = await osascript(onSession(sessionId, 'return "OK"'));
+    return r === 'OK';
+  }
 }
