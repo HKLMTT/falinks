@@ -49,14 +49,15 @@ export async function up(configPath: string) {
         if (state === 'ready') { await driver.inject(sid, bootstrap, true); break; }
       }
     } else {
-      // codex：bootstrap 已作为初始 prompt 传入；只需清掉它自己的"信任目录"对话（按默认"1. Yes"=回车）。
-      for (let i = 0; i < 12; i++) {
-        await sleep(700);
-        if (detectScreenState(await driver.readScreen(sid)) === 'trust-dialog') {
-          await driver.inject(sid, '', true);
-          break;
-        }
-      }
+      // codex：bootstrap 已作为初始 prompt 传入。它首次进新目录必弹"信任目录"对话
+      //（Press enter to continue，默认 1. Yes），但 codex inline 模式读屏不可靠（text of s 返回空），
+      // 无法检测——因此盲发两次 Enter 接受默认。若目录已受信，多余 Enter 等于空输入提交，无害。
+      await sleep(2500);
+      await driver.inject(sid, '', true);
+      await sleep(1500);
+      await driver.inject(sid, '', true);
+      await sleep(3000);
+      await driver.inject(sid, '', true); // 第三次兜底（codex 启动慢时前两次可能太早）
     }
     return sid;
   }
