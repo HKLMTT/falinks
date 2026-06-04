@@ -33,3 +33,21 @@ test('codex launch: no-alt-screen + bypass + inline MCP url + bootstrap as promp
 test('unknown cli throws', () => {
   expect(() => buildAgentLaunch('whatever', spec)).toThrow(/unsupported cli/);
 });
+
+test('claude fresh: includes --session-id when sessionId given', () => {
+  const r = buildAgentLaunch('claude', { ...spec, sessionId: 'uuid-fresh' });
+  expect(r.command).toBe('claude --mcp-config /tmp/alice-mcp.json --dangerously-skip-permissions --session-id uuid-fresh');
+});
+
+test('claude resume: includes --resume and NOT --session-id', () => {
+  const r = buildAgentLaunch('claude', { ...spec, resumeId: 'uuid-resume' });
+  expect(r.command).toBe('claude --mcp-config /tmp/alice-mcp.json --dangerously-skip-permissions --resume uuid-resume');
+});
+
+test('codex resume: uses resume <id> with bootstrap (nudge) as prompt', () => {
+  const r = buildAgentLaunch('codex', { ...spec, resumeId: 'cid-1', bootstrap: '【falinks 已恢复会话】请重新 register。' });
+  expect(r.command).toContain('resume cid-1');
+  expect(r.command).toContain("'【falinks 已恢复会话】请重新 register。'");
+  expect(r.command).toContain('--no-alt-screen');
+  expect(r.needsBootstrapInject).toBe(false);
+});
