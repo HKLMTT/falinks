@@ -22,12 +22,10 @@ async function admin(method: string, path: string, body?: unknown) {
   return res.json();
 }
 
-function init() {
-  const path = 'falinks.config.json';
-  if (existsSync(path)) {
-    console.log(`${path} 已存在，未覆盖。直接 \`falinks up\` 即可。`);
-    return;
-  }
+const DEFAULT_CONFIG_PATH = 'falinks.config.json';
+
+/** 在当前目录写一份默认配置（两个 claude 员工，工作目录=当前目录）。 */
+function writeDefaultConfig(): void {
   const cwd = process.cwd();
   const config = {
     busPort: 7878,
@@ -37,12 +35,29 @@ function init() {
     ],
     routes: { manager: 'alice' },
   };
-  writeFileSync(path, JSON.stringify(config, null, 2));
+  writeFileSync(DEFAULT_CONFIG_PATH, JSON.stringify(config, null, 2));
+}
+
+function init() {
+  if (existsSync(DEFAULT_CONFIG_PATH)) {
+    console.log(`${DEFAULT_CONFIG_PATH} 已存在，未覆盖。直接 \`falinks\` 即可运行。`);
+    return;
+  }
+  writeDefaultConfig();
   console.log(
-    `✅ 已生成 ${path}（两个 claude 员工 alice/bob，工作目录=当前目录）。\n` +
-      `   下一步：falinks up\n` +
-      `   想改员工/换 codex/换目录，编辑 ${path} 即可。`,
+    `✅ 已生成 ${DEFAULT_CONFIG_PATH}（两个 claude 员工 alice/bob，工作目录=当前目录）。\n` +
+      `   直接运行：falinks\n` +
+      `   想改员工/换 codex/换目录，编辑 ${DEFAULT_CONFIG_PATH} 即可。`,
   );
+}
+
+/** 裸 `falinks` 的一键运行：有配置就起；没配置就用默认模板生成再起。 */
+async function runHere() {
+  if (!existsSync(DEFAULT_CONFIG_PATH)) {
+    console.log(`首次运行：未找到 ${DEFAULT_CONFIG_PATH}，已用默认模板生成（2 个 claude 员工，工作目录=当前目录）。`);
+    writeDefaultConfig();
+  }
+  await up(DEFAULT_CONFIG_PATH);
 }
 
 function has(cmd: string): boolean {
@@ -66,6 +81,11 @@ function doctor() {
 
 async function main() {
   const [cmd, ...rest] = process.argv.slice(2);
+  if (!cmd) {
+    // 裸 falinks = 在当前目录一键运行
+    await runHere();
+    return;
+  }
   switch (cmd) {
     case 'up': {
       const cfgPath = rest[0] ?? 'falinks.config.json';
@@ -100,8 +120,12 @@ async function main() {
       console.log(JSON.stringify(await admin('GET', '/admin/log'), null, 2));
       break;
     default:
-      console.log('用法: falinks <up [config]|console|init|doctor|say <agent> <msg>|broadcast <msg>|roster|log>');
-      process.exit(cmd ? 1 : 0);
+      console.log(
+        'falinks — 在当前目录把多个 AI CLI 编排成一间办公室。\n' +
+          '直接运行：  falinks            （首次自动生成配置并启动）\n' +
+          '子命令：    falinks init | doctor | up [config] | say <agent> <msg> | broadcast <msg> | roster | log',
+      );
+      process.exit(1);
   }
 }
 

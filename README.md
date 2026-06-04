@@ -28,10 +28,14 @@ falinks doctor   # 自检环境
 
 ## 用法
 
+最简单——`cd` 到你的项目目录，敲一个词：
+
 ```bash
-falinks init     # 在当前目录生成 falinks.config.json 并建好员工目录
-falinks up       # 起总线 + 开分屏窗口 + 启动员工（控制台在左 pane）
+cd ~/your-project
+falinks            # 首次会自动生成 falinks.config.json（员工=当前目录）并启动
 ```
+
+就这样：弹出一个 iTerm2 窗口，左侧是控制台，右侧是员工。想自定义就先 `falinks init` 改 `falinks.config.json` 再 `falinks`。
 
 在左侧控制台输入框里：
 
@@ -43,7 +47,7 @@ falinks up       # 起总线 + 开分屏窗口 + 启动员工（控制台在左 
 | `/remove bob` | 删员工（关其 pane） |
 | `/help` | 用法 |
 
-`@` 和 `/` 都有自动补全。也有脚本式子命令：`falinks say <agent> <msg>` / `broadcast <msg>` / `roster` / `log`。
+`@` 和 `/` 都有自动补全。也有脚本式子命令：`falinks say <agent> <msg>` / `broadcast <msg>` / `roster` / `log` / `doctor`。
 
 ## 配置 `falinks.config.json`
 
