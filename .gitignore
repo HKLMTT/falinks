@@ -4,3 +4,4 @@ node_modules/
 spike/mcp/server.log
 scripts/smoke2.log
 .dagent-runtime.json
+spike/layout.ids
