@@ -24,6 +24,17 @@ async function admin(method: string, path: string, body?: unknown) {
 
 const DEFAULT_CONFIG_PATH = 'falinks.config.json';
 
+/** 交互选择团队（TTY）则走 Ink 向导，否则回退默认单员工配置；把结果写入配置文件。 */
+async function chooseAndWriteConfig(): Promise<void> {
+  if (process.stdin.isTTY) {
+    const { runSetup } = await import('./setup/run.js');
+    const cfg = await runSetup(process.cwd());
+    writeFileSync(DEFAULT_CONFIG_PATH, JSON.stringify(cfg, null, 2));
+  } else {
+    writeDefaultConfig();
+  }
+}
+
 /** 在当前目录写一份默认配置（一个 claude 员工，工作目录=当前目录；其余用 /add 自行添加）。 */
 function writeDefaultConfig(): void {
   const cwd = process.cwd();
@@ -37,24 +48,19 @@ function writeDefaultConfig(): void {
   writeFileSync(DEFAULT_CONFIG_PATH, JSON.stringify(config, null, 2));
 }
 
-function init() {
+async function init() {
   if (existsSync(DEFAULT_CONFIG_PATH)) {
     console.log(`${DEFAULT_CONFIG_PATH} 已存在，未覆盖。直接 \`falinks\` 即可运行。`);
     return;
   }
-  writeDefaultConfig();
-  console.log(
-    `✅ 已生成 ${DEFAULT_CONFIG_PATH}（1 个 claude 员工 alice，工作目录=当前目录）。\n` +
-      `   直接运行：falinks\n` +
-      `   起来后在控制台用 /add 加更多员工；或编辑 ${DEFAULT_CONFIG_PATH}。`,
-  );
+  await chooseAndWriteConfig();
+  console.log(`✅ 已生成 ${DEFAULT_CONFIG_PATH}。运行：falinks（起来后控制台可 /add 加员工、编辑配置改团队）。`);
 }
 
-/** 裸 `falinks` 的一键运行：有配置就起；没配置就用默认模板生成再起。 */
+/** 裸 `falinks` 的一键运行：有配置就起；没配置就先选团队（向导）再起。 */
 async function runHere() {
   if (!existsSync(DEFAULT_CONFIG_PATH)) {
-    console.log(`首次运行：未找到 ${DEFAULT_CONFIG_PATH}，已用默认模板生成（1 个 claude 员工，工作目录=当前目录）。起来后可用 /add 加员工。`);
-    writeDefaultConfig();
+    await chooseAndWriteConfig();
   }
   await up(DEFAULT_CONFIG_PATH);
 }
@@ -99,7 +105,7 @@ async function main() {
       await import('./console/main.js');
       break;
     case 'init':
-      init();
+      await init();
       break;
     case 'doctor':
       doctor();
