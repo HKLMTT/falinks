@@ -18,6 +18,8 @@ export interface TerminalDriver {
   closePane(sessionId: string): Promise<void>;
   /** 该 session/pane 当前是否还存在（用于检测员工窗口被关）。 */
   paneExists(sessionId: string): Promise<boolean>;
+  /** 设置 pane 的名字（标题）。 */
+  setName(sessionId: string, name: string): Promise<void>;
 }
 
 /** 测试替身：记录所有 inject、可设定 readScreen 返回值。 */
@@ -25,6 +27,7 @@ export class FakeDriver implements TerminalDriver {
   windows = new Map<string, LaunchOpts>();
   injections: { sessionId: string; text: string; submit: boolean }[] = [];
   splits: { anchor: string; direction: 'vertical' | 'horizontal'; sessionId: string }[] = [];
+  names = new Map<string, string>();
   private screens = new Map<string, string>();
   private counter = 0;
 
@@ -62,6 +65,10 @@ export class FakeDriver implements TerminalDriver {
 
   async paneExists(sessionId: string): Promise<boolean> {
     return this.windows.has(sessionId);
+  }
+
+  async setName(sessionId: string, name: string): Promise<void> {
+    this.names.set(sessionId, name);
   }
 
   setScreen(sessionId: string, content: string): void {

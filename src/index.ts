@@ -51,6 +51,7 @@ export async function up(configPath: string) {
     const sid = await driver.splitFrom(anchor, dir, { cwd: a.cwd, command });
     sessions.set(a.name, sid);
     router.addAgent(a.name, a.role);
+    await driver.setName(sid, a.name).catch(() => {}); // pane 标题=员工名
     if (needsBootstrapInject) {
       // claude：处理信任对话；就绪后注入 bootstrap。
       for (let i = 0; i < 30; i++) {
@@ -126,6 +127,8 @@ export async function up(configPath: string) {
             router.removeAgent(name);
             // 单窗口（进程内控制台）时不打印，避免污染 Ink 画面（花名册会自动反映下线）。
             if (!inProcessConsole) console.log(`[falinks] ${name} 的窗口已关，自动下线`);
+          } else {
+            await driver.setName(sid, name); // 持续把 pane 标题钉成员工名（覆盖 CLI 自改的标题）
           }
         } catch {
           /* 探测失败忽略，下一轮再试 */

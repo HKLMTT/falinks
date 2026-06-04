@@ -1,10 +1,18 @@
 import React, { useEffect, useState } from 'react';
-import { readdirSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { Box, Text, useInput } from 'ink';
 import { parseConsoleInput } from './parse.js';
 import { mentionState, applyMention } from './mention.js';
 import { commandState, applyCommand } from './commands.js';
 import { CLIS, dirSuggestions } from './wizard.js';
+
+const VERSION: string = (() => {
+  try {
+    return JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')).version;
+  } catch {
+    return '';
+  }
+})();
 
 async function admin(port: number, method: string, path: string, body?: unknown) {
   const res = await fetch(`http://127.0.0.1:${port}${path}`, {
@@ -133,7 +141,12 @@ export function App({ port }: { port: number }) {
 
   return (
     <Box flexDirection="column" height="100%">
-      <Text bold>falinks 控制台</Text>
+      <Box flexDirection="column">
+        <Text color="cyan" bold>╔═╗╔═╗╦  ╦╔╗╔╦╔═╔═╗</Text>
+        <Text color="cyan" bold>╠╣ ╠═╣║  ║║║║╠╩╗╚═╗</Text>
+        <Text color="cyan" bold>╚  ╩ ╩╩═╝╩╝╚╝╩ ╩╚═╝</Text>
+        <Text dimColor>v{VERSION} · 一屋 AI 员工的终端办公室</Text>
+      </Box>
       <Box flexDirection="column" marginTop={1}>
         <Text underline>花名册</Text>
         {roster.map((a) => (

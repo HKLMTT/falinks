@@ -127,4 +127,10 @@ end tell`;
     const r = await osascript(onSession(sessionId, 'return "OK"'));
     return r === 'OK';
   }
+
+  async setName(sessionId: string, name: string): Promise<void> {
+    const action = `tell s to set name to "${escapeAppleScript(name)}"
+          return "OK"`;
+    await osascript(onSession(sessionId, action));
+  }
 }

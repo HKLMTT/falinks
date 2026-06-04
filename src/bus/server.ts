@@ -111,7 +111,9 @@ export function startBus(deps: BusDeps, port: number): Promise<Bus> {
 
     const match = PATH_RE.exec(url.pathname);
     if (!match) { res.writeHead(404); res.end('not found'); return; }
-    const agentName = match[1];
+    // 路径里的中文/非 ASCII 名会被 HTTP 客户端百分号编码，需解码回真实名（否则与注册名对不上）。
+    let agentName: string;
+    try { agentName = decodeURIComponent(match[1]); } catch { agentName = match[1]; }
 
     let body: unknown;
     if (req.method === 'POST') {
