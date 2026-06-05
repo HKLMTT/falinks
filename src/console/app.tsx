@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { readdirSync, readFileSync } from 'node:fs';
-import { Box, Text, useStdin } from 'ink';
+import { Box, Text, useStdin, useStdout } from 'ink';
 import { parseConsoleInput, lastReplyTarget } from './parse.js';
 import { mentionState, applyMention } from './mention.js';
 import { commandState, applyCommand } from './commands.js';
@@ -71,15 +71,33 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
   const { stdin, setRawMode } = useStdin();
   useEffect(() => { setRawMode?.(true); }, [setRawMode]);
 
+  // 终端行数(只读跟踪,用于视口裁剪):根盒高度钉在 rows-1——必须严格小于终端行数,
+  // 等于或超过都会让 Ink 每帧整屏清除(clearTerminal),配合轮询重渲染就是持续闪烁。
+  const { stdout } = useStdout();
+  const [rows, setRows] = useState(stdout?.rows ?? 24);
+  useEffect(() => {
+    if (!stdout) return;
+    const onResize = () => setRows(stdout.rows ?? 24);
+    stdout.on('resize', onResize);
+    return () => { stdout.off('resize', onResize); };
+  }, [stdout]);
+
+  // 轮询去重:数据没变就不 setState——否则每秒一个新数组引用就重渲染一次,
+  // 内容一高(超过终端行数)Ink 还会整屏清除,空闲时界面也持续闪。
+  const lastSeen = useRef({ roster: '', log: '', questions: '' });
   useEffect(() => {
     const tick = async () => {
       try {
         const r = await admin(port, 'GET', '/admin/roster');
-        setRoster(r.roster ?? []);
+        const rs = JSON.stringify(r.roster ?? []);
+        if (rs !== lastSeen.current.roster) { lastSeen.current.roster = rs; setRoster(r.roster ?? []); }
         const l = await admin(port, 'GET', '/admin/log');
-        setLog((l.log ?? []).slice(-10));
+        const recent = (l.log ?? []).slice(-10);
+        const ls = JSON.stringify(recent);
+        if (ls !== lastSeen.current.log) { lastSeen.current.log = ls; setLog(recent); }
         const q = await admin(port, 'GET', '/admin/questions');
-        setQuestions(q.questions ?? []);
+        const qs = JSON.stringify(q.questions ?? []);
+        if (qs !== lastSeen.current.questions) { lastSeen.current.questions = qs; setQuestions(q.questions ?? []); }
       } catch {
         /* up 还没起或断开，忽略 */
       }
@@ -328,14 +346,17 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
   const color = (s: string) => (s === 'idle' ? 'green' : s === 'busy' ? 'yellow' : s === 'dead' ? 'red' : 'gray');
 
   return (
-    <Box flexDirection="column">
-      <Box flexDirection="column">
+    // 根盒钉在 rows-1(严格 < 终端行数)并裁剪溢出:输出永不触发 Ink 的整屏清除分支,
+    // 一直走增量重绘 → 不闪。固定区(logo/花名册/输入)flexShrink=0 保证可见,
+    // 消息区弹性吸收剩余空间、贴底裁顶(最新消息永远可见,旧的被裁掉)。
+    <Box flexDirection="column" height={Math.max(4, rows - 1)} overflow="hidden">
+      <Box flexDirection="column" flexShrink={0}>
         <Text color="cyan" bold>╔═╗╔═╗╦  ╦╔╗╔╦╔═╔═╗</Text>
         <Text color="cyan" bold>╠╣ ╠═╣║  ║║║║╠╩╗╚═╗</Text>
         <Text color="cyan" bold>╚  ╩ ╩╩═╝╩╝╚╝╩ ╩╚═╝</Text>
         <Text dimColor>v{VERSION} · {tagline}</Text>
       </Box>
-      <Box flexDirection="column" marginTop={1}>
+      <Box flexDirection="column" marginTop={1} flexShrink={0}>
         <Text underline>{t().roster}</Text>
         {roster.map((a) => (
           <Text key={a.name}>
@@ -345,26 +366,29 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
           </Text>
         ))}
       </Box>
-      <Box flexDirection="column" marginTop={1} flexGrow={1}>
-        <Text underline>{t().messages}</Text>
-        {log.slice(-6).map((m, i, arr) => {
-          const isLatest = i === arr.length - 1;
-          const { lines, truncated } = formatBody(String(m.body), isLatest ? 40 : 3);
-          return (
-            <Box key={i} flexDirection="column" marginTop={i === 0 ? 0 : 1}>
-              <Text>
-                {m.ts ? <Text dimColor>{formatTime(m.ts)} </Text> : null}
-                <Text color={colorFor(m.from)}>{m.from}</Text>
-                <Text> → </Text>
-                <Text color={colorFor(m.to)}>{m.to}</Text>
-              </Text>
-              {lines.map((ln, j) => (<Text key={j} wrap="wrap">  {ln}</Text>))}
-              {truncated > 0 ? <Text dimColor>  {t().moreLines(truncated, m.from)}</Text> : null}
-            </Box>
-          );
-        })}
+      <Box flexDirection="column" marginTop={1} flexGrow={1} overflow="hidden">
+        <Box flexShrink={0}><Text underline>{t().messages}</Text></Box>
+        <Box flexDirection="column" flexGrow={1} overflow="hidden" justifyContent="flex-end">
+          {log.slice(-6).map((m, i, arr) => {
+            const isLatest = i === arr.length - 1;
+            const { lines, truncated } = formatBody(String(m.body), isLatest ? 40 : 3);
+            return (
+              <Box key={i} flexDirection="column" flexShrink={0} marginTop={i === 0 ? 0 : 1}>
+                <Text>
+                  {m.ts ? <Text dimColor>{formatTime(m.ts)} </Text> : null}
+                  <Text color={colorFor(m.from)}>{m.from}</Text>
+                  <Text> → </Text>
+                  <Text color={colorFor(m.to)}>{m.to}</Text>
+                </Text>
+                {lines.map((ln, j) => (<Text key={j} wrap="wrap">  {ln}</Text>))}
+                {truncated > 0 ? <Text dimColor>  {t().moreLines(truncated, m.from)}</Text> : null}
+              </Box>
+            );
+          })}
+        </Box>
       </Box>
 
+      <Box flexDirection="column" flexShrink={0}>
       {confirmExit ? (
         <Box marginTop={1}>
           <Text color="yellow">{t().exitConfirmTitle}</Text>
@@ -436,6 +460,7 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
         </>
       )}
       {status ? <Text dimColor>{status}</Text> : null}
+      </Box>
     </Box>
   );
 }
