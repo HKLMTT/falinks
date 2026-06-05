@@ -69,7 +69,7 @@ export function App({ port }: { port: number }) {
   const [tagline] = useState(() => TAGLINES[Math.floor(Math.random() * TAGLINES.length)]);
   const defaultCwd = process.cwd();
 
-  // 物理 Home/End：Ink 不把它们传给 useInput，只能直接听 stdin 的转义序列。用 ref 取事件发生时的输入长度。
+  // 物理 Home/End + Shift+Enter：Ink 不把它们传给 useInput，只能直接听 stdin 的转义序列。用 ref 取事件发生时的输入/光标。
   const io = useRef({ input: '', cursor: 0 });
   io.current = { input, cursor };
   const { stdin } = useStdin();
@@ -263,6 +263,17 @@ export function App({ port }: { port: number }) {
     }
 
     if (key.return) {
+      // 换行（多行输入）：① Shift/Option/Meta+Enter（终端以 meta/shift+return 上报，如 iTerm 把 Shift+Return 绑成发 ESC+CR）；
+      //                  ② 行尾 `\` + 回车（零配置）。其余回车=发送。
+      if (key.meta || key.shift) {
+        setInput((v) => v.slice(0, cursor) + '\n' + v.slice(cursor));
+        setCursor((c) => c + 1);
+        return;
+      }
+      if (input[cursor - 1] === '\\') {
+        setInput((v) => v.slice(0, cursor - 1) + '\n' + v.slice(cursor)); // 删 \ 插 \n，光标不变
+        return;
+      }
       const line = expandImageTokens(input, attachments); // [图片N] → 真实路径
       const shown = input;
       setInput(''); setCursor(0); setSel(0); setHistIdx(null); setAttachments([]);
@@ -363,10 +374,12 @@ export function App({ port }: { port: number }) {
             </Box>
           ) : null}
           <Box marginTop={1}>
-            <Text color="green">› </Text>
-            <Text>{input.slice(0, cursor)}</Text>
-            <Text inverse>{input[cursor] ?? ' '}</Text>
-            <Text>{input.slice(cursor + 1)}</Text>
+            <Text>
+              <Text color="green">› </Text>
+              {input.slice(0, cursor)}
+              <Text inverse>{input[cursor] && input[cursor] !== '\n' ? input[cursor] : ' '}</Text>
+              {input.slice(cursor + 1)}
+            </Text>
           </Box>
           {active ? (
             <Box flexDirection="column">
