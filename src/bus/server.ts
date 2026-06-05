@@ -48,6 +48,13 @@ export interface Bus {
   close(): Promise<void>;
 }
 
+export interface BusOptions {
+  /** 实例身份,/admin/info 返回它(寻址方核对 cwd 用)。 */
+  identity?: { cwd: string; startedAt: number };
+  /** 显式端口被占用、回退系统分配后回调(告警呈现交给调用方)。 */
+  onPortFallback?(wanted: number, got: number): void;
+}
+
 function ok(obj: unknown) {
   return { content: [{ type: 'text' as const, text: JSON.stringify(obj) }] };
 }
@@ -99,7 +106,12 @@ function serverForAgent(agentName: string, deps: BusDeps, questions: QuestionSto
   return server;
 }
 
-export function startBus(deps: BusDeps, port: number): Promise<Bus> {
+export async function startBus(deps: BusDeps, port: number, opts?: BusOptions): Promise<Bus> {
+  const identity = {
+    cwd: opts?.identity?.cwd ?? process.cwd(),
+    pid: process.pid,
+    startedAt: opts?.identity?.startedAt ?? Date.now(),
+  };
   const questions = new QuestionStore();
   const httpServer = http.createServer(async (req, res) => {
     const url = new URL(req.url ?? '', `http://${req.headers.host}`);
@@ -116,6 +128,9 @@ export function startBus(deps: BusDeps, port: number): Promise<Bus> {
         const chunks: Buffer[] = [];
         for await (const c of req) chunks.push(c as Buffer);
         try { abody = JSON.parse(Buffer.concat(chunks).toString()); } catch { abody = {}; }
+      }
+      if (req.method === 'GET' && url.pathname === '/admin/info') {
+        return sendJson(identity);
       }
       if (req.method === 'GET' && url.pathname === '/admin/roster') {
         return sendJson({ roster: router.roster().map((a) => ({ name: a.name, role: a.role, status: a.status, virtual: !!a.virtual })) });
@@ -209,20 +224,22 @@ export function startBus(deps: BusDeps, port: number): Promise<Bus> {
   });
 
   return new Promise((resolve, reject) => {
-    httpServer.once('error', (e: NodeJS.ErrnoException) => {
-      if (e.code === 'EADDRINUSE') {
-        console.error(`端口 ${port} 已被占用 —— 可能已有一个 falinks 在运行。先 Ctrl-C 关掉它，或在配置里改 busPort。`);
-        process.exit(1);
-      }
-      reject(e);
-    });
-    httpServer.listen(port, '127.0.0.1', () => {
-      const addr = httpServer.address();
-      const actualPort = typeof addr === 'object' && addr ? addr.port : port;
-      resolve({
-        port: actualPort,
-        close: () => new Promise<void>((r) => httpServer.close(() => r())),
+    const tryListen = (p: number, isRetry: boolean) => {
+      httpServer.once('error', (e: NodeJS.ErrnoException) => {
+        // 显式端口被占用:回退系统分配重试一次(多实例并发的常态,不是错误)。
+        if (e.code === 'EADDRINUSE' && !isRetry) { tryListen(0, true); return; }
+        reject(e);
       });
-    });
+      httpServer.listen(p, '127.0.0.1', () => {
+        const addr = httpServer.address();
+        const actualPort = typeof addr === 'object' && addr ? addr.port : p;
+        if (isRetry) opts?.onPortFallback?.(port, actualPort);
+        resolve({
+          port: actualPort,
+          close: () => new Promise<void>((r) => httpServer.close(() => r())),
+        });
+      });
+    };
+    tryListen(port, false);
   });
 }
