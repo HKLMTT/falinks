@@ -235,14 +235,22 @@ export async function up(configPath: string) {
   mkdirSync(runtimeDir(), { recursive: true });
   rmSync(runtimePath(), { force: true }); // 旧版全局 runtime.json:一次性迁移清理
   const inst = { port: bus.port, pid: process.pid, cwd: launchCwd, startedAt: Date.now() };
+  // 安全前提：writeInstance 必须在 pane 创建循环之前执行。
+  // 若败者在 exit(1) 时尚未建任何 pane，可安全退出而不留残局。
+  // 请勿将 pane 创建逻辑移到此块之前。
   if (!writeInstance(inst)) {
-    // wx 失败=毫秒级竞态里别人先写了:再探一次,活着就让位,死的覆盖。
+    // wx 失败=毫秒级竞态里别人先写了:再探一次,确认死亡才覆盖,unknown 保守拒绝。
     const race = readInstance(launchCwd);
     const p = race ? await probeBus(race.port) : null;
     if (p?.state === 'alive' && p.info.cwd === launchCwd) {
       console.error(`该目录已有 falinks 在运行（端口 ${race!.port}）。`);
       process.exit(1);
     }
+    if (p?.state === 'unknown') {
+      console.error(`疑似有 falinks 在运行（端口 ${race!.port}）但探活超时。确认没在运行后删除：${instancePath(launchCwd)}`);
+      process.exit(1);
+    }
+    // p === null（档案读不到）、p.state === 'dead'、或 alive 但 cwd 不符（张冠李戴）:确认死亡,安全覆盖。
     writeInstance(inst, undefined, { force: true });
   }
   process.on('exit', () => removeInstanceIfOwner(launchCwd, process.pid));
