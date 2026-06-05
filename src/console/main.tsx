@@ -1,14 +1,13 @@
-import { readFileSync } from 'node:fs';
 import { renderConsole } from './run.js';
-import { runtimePath } from '../runtime.js';
+import { resolveBus } from '../discovery.js';
 
-function runtimePort(): number {
-  try {
-    return JSON.parse(readFileSync(runtimePath(), 'utf8')).port;
-  } catch {
-    console.error('找不到 falinks 运行时状态 —— `falinks` 在运行吗？');
-    process.exit(1);
-  }
+// 优先 --port(up 直传,免发现);手动调用回退按 cwd 寻址。
+const i = process.argv.indexOf('--port');
+const argPort = i >= 0 ? Number(process.argv[i + 1]) : NaN;
+if (Number.isFinite(argPort) && argPort > 0) {
+  renderConsole(argPort);
+} else {
+  const r = await resolveBus(process.cwd());
+  if (!r.ok) { console.error(r.error); process.exit(1); }
+  renderConsole(r.port);
 }
-
-renderConsole(runtimePort());

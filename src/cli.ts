@@ -2,8 +2,8 @@
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { execSync } from 'node:child_process';
 import { up } from './index.js';
-import { runtimePath } from './runtime.js';
 import { fetchLatest, isNewer, upgradeCommand } from './update.js';
+import { resolveBus } from './discovery.js';
 
 const PKG: { name: string; version: string } = (() => {
   try {
@@ -13,17 +13,16 @@ const PKG: { name: string; version: string } = (() => {
   }
 })();
 
-function runtimePort(): number {
-  try {
-    return JSON.parse(readFileSync(runtimePath(), 'utf8')).port;
-  } catch {
-    console.error('找不到 falinks 运行时状态 —— `falinks up` 在运行吗？');
-    process.exit(1);
-  }
+let cachedPort: number | null = null;
+async function busPort(): Promise<number> {
+  if (cachedPort) return cachedPort;
+  const r = await resolveBus(process.cwd());
+  if (!r.ok) { console.error(r.error); process.exit(1); }
+  return (cachedPort = r.port);
 }
 
 async function admin(method: string, path: string, body?: unknown) {
-  const res = await fetch(`http://127.0.0.1:${runtimePort()}${path}`, {
+  const res = await fetch(`http://127.0.0.1:${await busPort()}${path}`, {
     method,
     headers: { 'content-type': 'application/json' },
     body: body ? JSON.stringify(body) : undefined,
