@@ -15,7 +15,7 @@ export interface GuardConfig {
 }
 
 export interface FalinksConfig {
-  busPort: number;
+  busPort?: number; // 缺省 = 启动时自动分配(listen 0)
   agents: AgentConfig[];
   routes: Record<string, AgentName>;
   guards: GuardConfig;
@@ -24,7 +24,8 @@ export interface FalinksConfig {
 /** 校验并归一化原始配置对象。抛错即配置非法。 */
 export function parseConfig(raw: any): FalinksConfig {
   if (!raw || typeof raw !== 'object') throw new Error('config must be an object');
-  if (typeof raw.busPort !== 'number') throw new Error('config.busPort must be a number');
+  if (raw.busPort !== undefined && typeof raw.busPort !== 'number')
+    throw new Error('config.busPort must be a number');
   if (!Array.isArray(raw.agents) || raw.agents.length === 0)
     throw new Error('config.agents must have at least one agent');
 

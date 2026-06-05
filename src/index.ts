@@ -201,7 +201,7 @@ export async function up(configPath: string) {
       setTimeout(() => process.exit(0), 200); // 关完再退（分离进程模式下也要退 up）
       return { ok: true };
     },
-  }, cfg.busPort);
+  }, cfg.busPort ?? 0);
   mkdirSync(runtimeDir(), { recursive: true });
   writeFileSync(runtimePath(), JSON.stringify({ port: bus.port }));
 

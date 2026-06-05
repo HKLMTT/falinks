@@ -51,3 +51,12 @@ test('parseConfig merges partial guard overrides', () => {
   const cfg = parseConfig({ busPort: 1, agents: [{ name: 'a', cli: 'claude', cwd: '/x', bootstrap: 'b' }], guards: { maxTurnsPerThread: 5 } });
   expect(cfg.guards).toEqual({ maxTurnsPerThread: 5, maxInjectionsPerMinute: 30, loopWindow: 3 });
 });
+
+test('busPort 可省略(多实例:缺省自动分配)', () => {
+  const cfg = parseConfig({ agents: [{ name: 'a', cli: 'claude', cwd: '/x', bootstrap: 'b' }] });
+  expect(cfg.busPort).toBeUndefined();
+});
+
+test('busPort 给了但不是数字仍报错', () => {
+  expect(() => parseConfig({ busPort: 'x', agents: [{ name: 'a', cli: 'claude', cwd: '/x', bootstrap: 'b' }] })).toThrow(/busPort/);
+});
