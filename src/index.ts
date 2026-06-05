@@ -28,7 +28,7 @@ const HOUSE_RULES =
   '③ 严禁发送任何寒暄、确认、客套或表情——例如「收到」「好的」「谢谢」「不客气」「没问题」「👍」一律不要发，这些纯属浪费。' +
   '④ 完成任务、或没有实质内容要说时，直接调用 idle 结束本回合，不要发任何结束语。' +
   '⑤ 转达/汇报要一次说完，不要来回确认。' +
-  '⑥ 需要别人在有限选项里做决定时，用 ask(to, question, options) 出选择题而非纯文字；尤其向老板请示用 ask(to="boss", …)，老板会直接点选。';
+  '⑥ 只要对方让你「给选项 / 做个选择题 / 二选一 / 列出可选项 / 给我N个…让我挑」，就必须调用 ask(to, question, options=[...]) ——把候选项放进 options 数组，绝不要把选项写进 sendmsg 的文本里。面向老板用 ask(to="boss", …)，老板端会渲染成可点选项。需要别人在有限选项里做决定时同理用 ask。';
 
 export async function up(configPath: string) {
   const cfg = parseConfig(JSON.parse(readFileSync(configPath, 'utf8')));
