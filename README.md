@@ -26,6 +26,7 @@
 - **消息历史持久化**：消息流水存在 `~/.falinks/messages/`（滚动上限），重启后历史还在；控制台消息面板分块多行、按人配色、带时间戳。
 - **防误群发**：纯文本只回复「上一次对话的对方」，`@all` 才群发。
 - **运行时增删员工**（控制台 `/add` 向导）、**`/clear` 清空员工上下文**（清后自动恢复身份）、**关窗自动下线**、**防失控护栏**（回合上限 / 循环检测 / 节流）、**省 token 协作规则**（禁寒暄客套）。
+- **多项目同时跑**：端口自动分配，每个项目独立一份运行时档案（`~/.falinks/runtime/<hash>.json`）；`falinks say/roster/log` 按当前目录自动找到对应实例；同目录防双开。
 
 ---
 
@@ -102,7 +103,6 @@ falinks doctor                  # 环境自检
 
 ```jsonc
 {
-  "busPort": 7878,
   "agents": [
     { "name": "alice", "cli": "claude", "cwd": ".", "role": "组长", "bootstrap": "你负责统筹分配。" },
     { "name": "bob",   "cli": "codex",  "cwd": ".", "role": "后端", "bootstrap": "你负责写后端。" }
@@ -126,7 +126,6 @@ falinks 进程内跑一个 **MCP HTTP 总线**，每个员工的 CLI 连到 `…
 ## 已知限制
 
 - 仅 macOS + iTerm2，单窗口单 tab。
-- 同一时间一套办公室（运行时状态写在 `~/.falinks/runtime.json`，固定端口）。
 - 员工以 `--dangerously-skip-permissions` / `--dangerously-bypass-approvals-and-sandbox` 运行：这是**本机、单用户、互信**的协作场景，**不是安全沙箱**——A 发给 B 的消息会被 B 当指令执行，请勿在不可信内容上使用。
 
 ## License
