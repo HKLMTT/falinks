@@ -8,6 +8,7 @@ export interface CommandDef {
 export const COMMANDS: CommandDef[] = [
   { name: 'add', usage: '/add <name> <cli> <cwd>', hint: '加一个员工' },
   { name: 'remove', usage: '/remove <name>', hint: '删一个员工' },
+  { name: 'clear', usage: '/clear [name]', hint: '清空某员工上下文,不带名=全员' },
   { name: 'help', usage: '/help', hint: '显示用法' },
 ];
 

@@ -5,6 +5,7 @@ export type ConsoleAction =
   | { kind: 'add'; spec: { name: string; cli: string; cwd: string } }
   | { kind: 'add-start'; name: string }
   | { kind: 'remove'; name: string }
+  | { kind: 'clear'; name?: string }
   | { kind: 'help' }
   | { kind: 'noop' }
   | { kind: 'error'; message: string };
@@ -20,6 +21,9 @@ export function parseConsoleInput(line: string): ConsoleAction {
     if (cmd === 'remove') {
       if (!args[0]) return { kind: 'error', message: '用法: /remove <name>' };
       return { kind: 'remove', name: args[0] };
+    }
+    if (cmd === 'clear') {
+      return { kind: 'clear', name: args[0] ? args[0].replace(/^@/, '') : undefined };
     }
     if (cmd === 'add') {
       if (args.length === 1) return { kind: 'add-start', name: args[0] };

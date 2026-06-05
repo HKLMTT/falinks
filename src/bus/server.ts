@@ -39,6 +39,7 @@ export interface BusDeps {
   getSessionId(name: string): string | undefined;
   onAddAgent?(spec: { name: string; cli: string; cwd: string; role?: string; bootstrap?: string }): Promise<{ ok: boolean; error?: string }>;
   onRemoveAgent?(name: string): Promise<{ ok: boolean; error?: string }>;
+  onClear?(name?: string): Promise<{ ok: boolean; cleared?: string[]; error?: string }>;
 }
 
 export interface Bus {
@@ -159,6 +160,15 @@ export function startBus(deps: BusDeps, port: number): Promise<Bus> {
         if (!deps.onRemoveAgent) return sendJson({ ok: false, error: 'remove not supported' });
         try {
           const r = await deps.onRemoveAgent(String(abody.name));
+          return sendJson(r);
+        } catch (e: any) {
+          return sendJson({ ok: false, error: String(e?.message ?? e) });
+        }
+      }
+      if (req.method === 'POST' && url.pathname === '/admin/clear') {
+        if (!deps.onClear) return sendJson({ ok: false, error: 'clear not supported' });
+        try {
+          const r = await deps.onClear(abody.name ? String(abody.name) : undefined);
           return sendJson(r);
         } catch (e: any) {
           return sendJson({ ok: false, error: String(e?.message ?? e) });

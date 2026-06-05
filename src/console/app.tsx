@@ -105,7 +105,7 @@ export function App({ port }: { port: number }) {
     const a = parseConsoleInput(line);
     try {
       if (a.kind === 'noop') return;
-      if (a.kind === 'help') { setStatus('@名字 私聊 · @all 群发 · 纯文本=回复上次对话目标 · /add 加员工 · /remove 删员工'); return; }
+      if (a.kind === 'help') { setStatus('@名字 私聊 · @all 群发 · 纯文本=回复上次对话目标 · /add 加员工 · /remove 删员工 · /clear [名字] 清空上下文'); return; }
       if (a.kind === 'error') { setStatus('⚠ ' + a.message); return; }
       if (a.kind === 'add-start') { setWizard({ name: a.name, step: 'cli', sel: 0 }); return; }
       if (a.kind === 'say') { await admin(port, 'POST', '/admin/say', { to: a.to, message: a.message }); setStatus(`→ ${a.to}`); return; }
@@ -119,6 +119,11 @@ export function App({ port }: { port: number }) {
       }
       if (a.kind === 'add') { const r = await admin(port, 'POST', '/admin/add', a.spec); setStatus(r.ok ? `＋ ${a.spec.name}` : '⚠ ' + (r.error ?? 'add 失败')); return; }
       if (a.kind === 'remove') { const r = await admin(port, 'POST', '/admin/remove', { name: a.name }); setStatus(r.ok ? `－ ${a.name}` : '⚠ ' + (r.error ?? 'remove 失败')); return; }
+      if (a.kind === 'clear') {
+        const r = await admin(port, 'POST', '/admin/clear', { name: a.name });
+        setStatus(r.ok ? `🧹 已清空 ${a.name ?? '全员'}（${(r.cleared ?? []).join('、') || '无'}）` : '⚠ ' + (r.error ?? 'clear 失败'));
+        return;
+      }
     } catch (e: any) {
       setStatus('⚠ ' + (e?.message ?? 'error'));
     }

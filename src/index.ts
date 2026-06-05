@@ -45,6 +45,7 @@ export async function up(configPath: string) {
     },
   };
   const sessions = new Map<string, string>();
+  const bootstraps = new Map<string, string>(); // name -> 完整 bootstrap（/clear 后重注入,恢复员工身份）
   const launchCwd = (() => { try { return realpathSync(process.cwd()); } catch { return process.cwd(); } })();
   const router = new Router(deliverer, {
     now: () => Date.now(), genId: () => `m${++n}`, routes: cfg.routes, guards,
@@ -70,6 +71,7 @@ export async function up(configPath: string) {
 
     const fullBootstrap =
       `${HOUSE_RULES}\n你的身份：${a.name}${a.role ? `（${a.role}）` : ''}。${a.bootstrap ?? ''}`;
+    bootstraps.set(a.name, fullBootstrap); // 供 /clear 后重注入
 
     // 决定 fresh / resume，并据此选注入文本与命令参数。
     let resuming = false;
@@ -157,6 +159,21 @@ export async function up(configPath: string) {
       router.removeAgent(name);
       try { removeAgentFromConfigFile(configPath, name); } catch { /* 配置写回失败不致命 */ }
       return { ok: true };
+    },
+    onClear: async (name) => {
+      if (name && !sessions.has(name)) return { ok: false, error: `unknown agent: ${name}` };
+      const targets = name ? [name] : router.roster().filter((a) => !a.virtual).map((a) => a.name);
+      const cleared: string[] = [];
+      for (const nm of targets) {
+        const sid = sessions.get(nm);
+        if (!sid) continue;
+        await driver.inject(sid, '/clear', true);    // claude/codex 同名：清空上下文、开新会话
+        await sleep(1500);
+        const bs = bootstraps.get(nm);
+        if (bs) await driver.inject(sid, bs, true);   // 重注入 bootstrap：恢复身份+重新 register，否则员工失忆
+        cleared.push(nm);
+      }
+      return { ok: true, cleared };
     },
   }, cfg.busPort);
   mkdirSync(runtimeDir(), { recursive: true });

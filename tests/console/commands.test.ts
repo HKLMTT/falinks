@@ -4,7 +4,7 @@ import { commandState, applyCommand, COMMANDS } from '../../src/console/commands
 test('bare / activates with all commands', () => {
   const s = commandState('/');
   expect(s.active).toBe(true);
-  expect(s.matches.map((c) => c.name)).toEqual(['add', 'remove', 'help']);
+  expect(s.matches.map((c) => c.name)).toEqual(['add', 'remove', 'clear', 'help']);
 });
 
 test('/a matches add', () => {

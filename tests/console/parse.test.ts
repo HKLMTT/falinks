@@ -35,6 +35,15 @@ test('lastReplyTarget: 不沾 boss 的消息忽略;无相关返回 null', () => 
   expect(lastReplyTarget([])).toBeNull();
 });
 
+test('/clear 不带名 -> 全员清', () => {
+  expect(parseConsoleInput('/clear')).toEqual({ kind: 'clear', name: undefined });
+});
+
+test('/clear name -> 指定员工(允许 @ 前缀)', () => {
+  expect(parseConsoleInput('/clear lead')).toEqual({ kind: 'clear', name: 'lead' });
+  expect(parseConsoleInput('/clear @lead')).toEqual({ kind: 'clear', name: 'lead' });
+});
+
 test('/add name cli cwd -> add', () => {
   expect(parseConsoleInput('/add carol claude /tmp/c')).toEqual({
     kind: 'add', spec: { name: 'carol', cli: 'claude', cwd: '/tmp/c' },
