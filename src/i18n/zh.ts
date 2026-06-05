@@ -73,4 +73,36 @@ export const zh = {
   unknownCommand: (cmd: string) => `未知命令: /${cmd}`,
   usageMention: '用法: @<name> <message> 或 @all <message>',
   unknownError: '未知错误',
+
+  // —— cli.ts ——
+  exitUpdateHint: (cmd: string) => `已退出。更新命令：${cmd}`,
+  defaultBootstrap: '你是办公室里的 AI 员工,风格简练。',
+  configReady: (path: string) => `✅ 配置已就绪（${path}）。运行：falinks`,
+  doctorClaudeNote: '可选（claude 员工需要）',
+  doctorCodexNote: '可选（codex 员工需要）',
+  doctorPermHint: '提示：首次运行会弹"自动化"权限请求,需允许 iTerm 被控制。',
+  upConfigNotFound: (path: string) =>
+    `没找到配置 ${path}。\n先在当前目录运行 \`falinks init\` 生成默认配置，或指定路径：falinks up <config.json>`,
+  defaultHelp:
+    'falinks — 在当前目录把多个 AI CLI 编排成一间办公室。\n' +
+    '直接运行：  falinks            （首次自动生成配置并启动）\n' +
+    '子命令：    falinks init | doctor | up [config] | say <agent> <msg> | broadcast <msg> | roster | log',
+
+  // —— setup/app.tsx ——
+  setupUpdateFound: (latest: string, current: string) => `🆕 发现新版 ${latest}（当前 v${current}）`,
+  setupChooseKeys: '↑↓ 选 · Enter 确认',
+  setupKeepCurrentVersion: '  ▶ 继续使用当前版本',
+  setupQuitForUpdate: (cmd: string) => `  ⤓ 退出去更新（${cmd}）`,
+  setupChooseTeam: 'falinks — 选择团队（↑↓ 选 · Enter 确认）',
+  setupReuseTeam: (current: string) => `  ▶ 继续当前团队（${current}）`,
+  setupTplMine: ' ·我的',
+  setupTplLabel: (name: string, mine: string, n: number) => `  ${name}${mine}（${n} 人）`,
+  setupCustomTeam: '  ＋ 自定义团队…',
+  setupCustomTitle: '自定义团队（输入名字+角色逐个加，留空名字回车=完成）',
+  setupMemberLine: (i: number, name: string, cli: string, role: string) => `  ${i}. ${name}（${cli}） — ${role}`,
+  setupNewMemberName: '新成员名字: ',
+  setupWhichCli: (name: string) => `${name} 用哪个 CLI?（↑↓ 选 · Enter 确认）`,
+  setupRolePrompt: (name: string, cli: string) => `${name}（${cli}） 的角色/职责: `,
+  setupSaveTeamName: '保存为团队模板，起个名: ',
+  setupDefaultRole: '员工',
 };

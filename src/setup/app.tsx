@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { allTemplates, configFromMembers, saveTemplate, type TeamMember } from '../templates.js';
 import { upgradeCommand } from '../update.js';
+import { t } from '../i18n/index.js';
 
 type Mode = 'update' | 'pick' | 'cname' | 'ccli' | 'crole' | 'teamname';
 
@@ -89,7 +90,7 @@ export function SetupApp({
         setPendingName(val); setCliSel(0); setMode('ccli'); return;
       }
       if (mode === 'crole') {
-        setMembers((ms) => [...ms, { name: pendingName, cli: pendingCli, role: val || '员工' }]);
+        setMembers((ms) => [...ms, { name: pendingName, cli: pendingCli, role: val || t().setupDefaultRole }]);
         setMode('cname'); return;
       }
       if (mode === 'teamname') {
@@ -106,10 +107,10 @@ export function SetupApp({
   if (mode === 'update' && update) {
     return (
       <Box flexDirection="column">
-        <Text bold color="yellow">🆕 发现新版 {update.latest}（当前 v{update.current}）</Text>
-        <Text dimColor>↑↓ 选 · Enter 确认</Text>
-        <Text inverse={updSel === 0}>  ▶ 继续使用当前版本</Text>
-        <Text inverse={updSel === 1}>  ⤓ 退出去更新（{upgradeCommand(update.pkg)}）</Text>
+        <Text bold color="yellow">{t().setupUpdateFound(update.latest, update.current)}</Text>
+        <Text dimColor>{t().setupChooseKeys}</Text>
+        <Text inverse={updSel === 0}>{t().setupKeepCurrentVersion}</Text>
+        <Text inverse={updSel === 1}>{t().setupQuitForUpdate(upgradeCommand(update.pkg))}</Text>
       </Box>
     );
   }
@@ -117,14 +118,14 @@ export function SetupApp({
   if (mode === 'pick') {
     return (
       <Box flexDirection="column">
-        <Text bold>falinks — 选择团队（↑↓ 选 · Enter 确认）</Text>
+        <Text bold>{t().setupChooseTeam}</Text>
         {options.map((o, i) => (
           <Text key={i} inverse={i === sel}>
             {o.kind === 'reuse'
-              ? `  ▶ 继续当前团队（${current}）`
+              ? t().setupReuseTeam(current as string)
               : o.kind === 'tpl'
-                ? `  ${o.t.name}${o.t.custom ? ' ·我的' : ''}（${o.t.members.length} 人）`
-                : '  ＋ 自定义团队…'}
+                ? t().setupTplLabel(o.t.name, o.t.custom ? t().setupTplMine : '', o.t.members.length)
+                : t().setupCustomTeam}
           </Text>
         ))}
       </Box>
@@ -133,26 +134,26 @@ export function SetupApp({
 
   return (
     <Box flexDirection="column">
-      <Text bold>自定义团队（输入名字+角色逐个加，留空名字回车=完成）</Text>
+      <Text bold>{t().setupCustomTitle}</Text>
       {members.map((m, i) => (
-        <Text key={i} dimColor>  {i + 1}. {m.name}（{m.cli}） — {m.role}</Text>
+        <Text key={i} dimColor>{t().setupMemberLine(i + 1, m.name, m.cli, m.role)}</Text>
       ))}
       {mode === 'cname' && (
-        <Text>新成员名字: <Text color="green">{text}</Text><Text inverse> </Text></Text>
+        <Text>{t().setupNewMemberName}<Text color="green">{text}</Text><Text inverse> </Text></Text>
       )}
       {mode === 'ccli' && (
         <Box flexDirection="column">
-          <Text>{pendingName} 用哪个 CLI?（↑↓ 选 · Enter 确认）</Text>
+          <Text>{t().setupWhichCli(pendingName)}</Text>
           {CLIS.map((c, i) => (
             <Text key={c} inverse={i === cliSel}>  {c}</Text>
           ))}
         </Box>
       )}
       {mode === 'crole' && (
-        <Text>{pendingName}（{pendingCli}） 的角色/职责: <Text color="green">{text}</Text><Text inverse> </Text></Text>
+        <Text>{t().setupRolePrompt(pendingName, pendingCli)}<Text color="green">{text}</Text><Text inverse> </Text></Text>
       )}
       {mode === 'teamname' && (
-        <Text>保存为团队模板，起个名: <Text color="green">{text}</Text><Text inverse> </Text></Text>
+        <Text>{t().setupSaveTeamName}<Text color="green">{text}</Text><Text inverse> </Text></Text>
       )}
     </Box>
   );

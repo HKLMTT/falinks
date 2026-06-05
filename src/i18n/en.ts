@@ -75,4 +75,36 @@ export const en: typeof zh = {
   unknownCommand: (cmd: string) => `unknown command: /${cmd}`,
   usageMention: 'usage: @<name> <message> or @all <message>',
   unknownError: 'unknown error',
+
+  // —— cli.ts ——
+  exitUpdateHint: (cmd: string) => `Exited. Update command: ${cmd}`,
+  defaultBootstrap: 'You are an AI worker in the office, concise in style.',
+  configReady: (path: string) => `✅ Config ready (${path}). Run: falinks`,
+  doctorClaudeNote: 'optional (needed for claude workers)',
+  doctorCodexNote: 'optional (needed for codex workers)',
+  doctorPermHint: 'Tip: the first run pops an "Automation" permission request — allow iTerm to be controlled.',
+  upConfigNotFound: (path: string) =>
+    `Config ${path} not found.\nRun \`falinks init\` in the current directory to generate a default config, or pass a path: falinks up <config.json>`,
+  defaultHelp:
+    'falinks — orchestrate several AI CLIs into one office in the current directory.\n' +
+    'Run directly:  falinks            (generates config and starts on first run)\n' +
+    'Subcommands:   falinks init | doctor | up [config] | say <agent> <msg> | broadcast <msg> | roster | log',
+
+  // —— setup/app.tsx ——
+  setupUpdateFound: (latest: string, current: string) => `🆕 New version ${latest} available (current v${current})`,
+  setupChooseKeys: '↑↓ select · Enter confirm',
+  setupKeepCurrentVersion: '  ▶ Keep using the current version',
+  setupQuitForUpdate: (cmd: string) => `  ⤓ Quit to update (${cmd})`,
+  setupChooseTeam: 'falinks — choose a team (↑↓ select · Enter confirm)',
+  setupReuseTeam: (current: string) => `  ▶ Keep current team (${current})`,
+  setupTplMine: ' ·mine',
+  setupTplLabel: (name: string, mine: string, n: number) => `  ${name}${mine} (${n} members)`,
+  setupCustomTeam: '  ＋ Custom team…',
+  setupCustomTitle: 'Custom team (add name + role one by one, empty name + Enter = done)',
+  setupMemberLine: (i: number, name: string, cli: string, role: string) => `  ${i}. ${name} (${cli}) — ${role}`,
+  setupNewMemberName: 'New member name: ',
+  setupWhichCli: (name: string) => `Which CLI for ${name}? (↑↓ select · Enter confirm)`,
+  setupRolePrompt: (name: string, cli: string) => `Role/duties for ${name} (${cli}): `,
+  setupSaveTeamName: 'Save as a team template, give it a name: ',
+  setupDefaultRole: 'worker',
 };

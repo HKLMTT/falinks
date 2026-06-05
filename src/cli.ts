@@ -4,6 +4,7 @@ import { execSync } from 'node:child_process';
 import { up } from './index.js';
 import { fetchLatest, isNewer, upgradeCommand } from './update.js';
 import { resolveBus } from './discovery.js';
+import { initLocale, t } from './i18n/index.js';
 
 const PKG: { name: string; version: string } = (() => {
   try {
@@ -54,7 +55,7 @@ async function chooseTeam(update: { latest: string; current: string; pkg: string
     const { runSetup, QUIT_FOR_UPDATE } = await import('./setup/run.js');
     const cfg = await runSetup(process.cwd(), currentTeamLabel(), update);
     if (cfg === QUIT_FOR_UPDATE) {
-      console.log(`已退出。更新命令：${upgradeCommand(PKG.name)}`);
+      console.log(t().exitUpdateHint(upgradeCommand(PKG.name)));
       process.exit(0);
     }
     if (cfg !== null) writeFileSync(DEFAULT_CONFIG_PATH, JSON.stringify(cfg, null, 2)); // null=继续当前，不覆盖
@@ -68,7 +69,7 @@ function writeDefaultConfig(): void {
   const cwd = process.cwd();
   const config = {
     agents: [
-      { name: 'alice', cli: 'claude', cwd, bootstrap: '你是办公室里的 AI 员工，风格简练。' },
+      { name: 'alice', cli: 'claude', cwd, bootstrap: t().defaultBootstrap },
     ],
     routes: {},
   };
@@ -77,7 +78,7 @@ function writeDefaultConfig(): void {
 
 async function init() {
   await chooseTeam();
-  console.log(`✅ 配置已就绪（${DEFAULT_CONFIG_PATH}）。运行：falinks`);
+  console.log(t().configReady(DEFAULT_CONFIG_PATH));
 }
 
 /** 裸 `falinks` 的一键运行：先查更新（有则问继续/退出去更新），再选团队（默认沿用当前），再起。 */
@@ -101,16 +102,17 @@ function doctor() {
     ['macOS', process.platform === 'darwin', process.platform],
     ['iTerm2', existsSync('/Applications/iTerm.app'), '/Applications/iTerm.app'],
     ['osascript', has('osascript'), ''],
-    ['claude CLI', has('claude'), '可选（claude 员工需要）'],
-    ['codex CLI', has('codex'), '可选（codex 员工需要）'],
+    ['claude CLI', has('claude'), t().doctorClaudeNote],
+    ['codex CLI', has('codex'), t().doctorCodexNote],
   ];
   for (const [name, ok, note] of checks) {
     console.log(`${ok ? '✅' : '❌'} ${name}${note ? `  (${note})` : ''}`);
   }
-  console.log('提示：首次运行会弹"自动化"权限请求，需允许 iTerm 被控制。');
+  console.log(t().doctorPermHint);
 }
 
 async function main() {
+  initLocale();
   const [cmd, ...rest] = process.argv.slice(2);
   if (!cmd) {
     // 裸 falinks = 在当前目录一键运行
@@ -121,7 +123,7 @@ async function main() {
     case 'up': {
       const cfgPath = rest[0] ?? 'falinks.config.json';
       if (!existsSync(cfgPath)) {
-        console.error(`没找到配置 ${cfgPath}。\n先在当前目录运行 \`falinks init\` 生成默认配置，或指定路径：falinks up <config.json>`);
+        console.error(t().upConfigNotFound(cfgPath));
         process.exit(1);
       }
       await up(cfgPath);
@@ -151,11 +153,7 @@ async function main() {
       console.log(JSON.stringify(await admin('GET', '/admin/log'), null, 2));
       break;
     default:
-      console.log(
-        'falinks — 在当前目录把多个 AI CLI 编排成一间办公室。\n' +
-          '直接运行：  falinks            （首次自动生成配置并启动）\n' +
-          '子命令：    falinks init | doctor | up [config] | say <agent> <msg> | broadcast <msg> | roster | log',
-      );
+      console.log(t().defaultHelp);
       process.exit(1);
   }
 }

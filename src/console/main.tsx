@@ -1,5 +1,8 @@
 import { renderConsole } from './run.js';
 import { resolveBus } from '../discovery.js';
+import { initLocale } from '../i18n/index.js';
+
+initLocale();
 
 // 优先 --port(up 直传,免发现);手动调用回退按 cwd 寻址。
 const i = process.argv.indexOf('--port');
