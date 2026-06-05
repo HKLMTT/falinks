@@ -24,19 +24,29 @@ test('a delivered message sets the recipient handling-thread', () => {
   expect(router.get('alice')!.handling).toBe(t);
 });
 
-test('reply from a handling agent inherits the same thread', () => {
+test('同一对 A↔B 来回用同一 thread', () => {
   const { router } = setup();
-  router.send('system', 'alice', 'seed');
-  const t = router.get('alice')!.handling!;
-  const msg = router.send('alice', 'bob', 'hi bob');
-  expect(msg!.thread).toBe(t);
+  const seed = router.send('bob', 'alice', 'seed');
+  const reply = router.send('alice', 'bob', 'hi bob');
+  expect(reply!.thread).toBe(seed!.thread);
 });
 
-test('turn-cap breaks the thread: send returns undefined after the cap', () => {
+test('扇出给不同对象各自独立 thread（cap=1 也都成功，不被静默丢弃）', () => {
+  const { router } = setup({ maxTurnsPerThread: 1, maxInjectionsPerMinute: 100, loopWindow: 99 });
+  router.addAgent('carol'); router.register('carol', 'SC');
+  router.addAgent('dave'); router.register('dave', 'SD');
+  const a = router.send('alice', 'carol', 'task1');
+  const b = router.send('alice', 'dave', 'task2');
+  expect(a).toBeTruthy();
+  expect(b).toBeTruthy();
+  expect(a!.thread).not.toBe(b!.thread);
+});
+
+test('turn-cap 在同一对上累计：超过上限后丢弃（循环保护仍在）', () => {
   const { router } = setup({ maxTurnsPerThread: 2, maxInjectionsPerMinute: 100, loopWindow: 99 });
-  router.send('system', 'alice', 'm1');
-  expect(router.send('alice', 'bob', 'm2')).toBeTruthy();
-  expect(router.send('alice', 'bob', 'm3')).toBeUndefined();
+  expect(router.send('alice', 'bob', 'm1')).toBeTruthy();    // pair(alice,bob) 第1回合
+  expect(router.send('bob', 'alice', 'm2')).toBeTruthy();    // 同一对 第2回合
+  expect(router.send('alice', 'bob', 'm3')).toBeUndefined(); // 同一对 第3回合 > 2
 });
 
 test('rate limit breaks send when exceeded', () => {
