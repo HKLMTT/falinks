@@ -66,6 +66,14 @@ test('/add with two args -> error', () => {
   expect(parseConsoleInput('/add carol claude').kind).toBe('error');
 });
 
+test('/lang (no args) -> lang-start', () => {
+  expect(parseConsoleInput('/lang')).toEqual({ kind: 'lang-start' });
+});
+
+test('/lang with arg -> error (no args accepted)', () => {
+  expect(parseConsoleInput('/lang xx').kind).toBe('error');
+});
+
 test('empty input -> noop', () => {
   expect(parseConsoleInput('   ').kind).toBe('noop');
 });

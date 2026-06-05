@@ -8,6 +8,7 @@ export type ConsoleAction =
   | { kind: 'add-start'; name: string }
   | { kind: 'remove'; name: string }
   | { kind: 'clear'; name?: string }
+  | { kind: 'lang-start' }
   | { kind: 'help' }
   | { kind: 'noop' }
   | { kind: 'error'; message: string };
@@ -20,6 +21,10 @@ export function parseConsoleInput(line: string): ConsoleAction {
   if (s.startsWith('/')) {
     const [cmd, ...args] = s.slice(1).split(/\s+/);
     if (cmd === 'help') return { kind: 'help' };
+    if (cmd === 'lang') {
+      if (args.length > 0) return { kind: 'error', message: t().usageLang };
+      return { kind: 'lang-start' };
+    }
     if (cmd === 'remove') {
       if (!args[0]) return { kind: 'error', message: t().usageRemove };
       return { kind: 'remove', name: args[0] };

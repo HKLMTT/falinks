@@ -19,7 +19,8 @@ import { decideClaudeSession, decideCodexSession } from './session/decide.js';
 import { parseStatusSessionId } from './session/capture.js';
 import { addAgentToConfigFile, removeAgentFromConfigFile } from './team-persist.js';
 import { loadMessageLog, appendMessageLog, MESSAGE_LOG_CAP } from './message-log.js';
-import { t } from './i18n/index.js';
+import { t, setLocale, detectLocale } from './i18n/index.js';
+import { saveSettings } from './settings.js';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -218,6 +219,12 @@ export async function up(configPath: string) {
       }
       setTimeout(() => process.exit(0), 200); // 关完再退（分离进程模式下也要退 up）
       return { ok: true };
+    },
+    onLang: async (l) => {
+      const eff = l === 'auto' ? detectLocale(process.env) : l;
+      setLocale(eff);
+      saveSettings({ locale: l }); // 存用户选择(含 auto)，下次启动 initLocale 再解析
+      return eff;
     },
   }, cfg.busPort ?? 0, {
     identity: { cwd: launchCwd, startedAt: Date.now() },

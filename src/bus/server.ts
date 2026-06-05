@@ -42,6 +42,7 @@ export interface BusDeps {
   onRemoveAgent?(name: string): Promise<{ ok: boolean; error?: string }>;
   onClear?(name?: string): Promise<{ ok: boolean; cleared?: string[]; error?: string }>;
   onShutdown?(closePanes: boolean): Promise<{ ok: boolean }>;
+  onLang?(locale: 'zh' | 'en' | 'auto'): Promise<'zh' | 'en'>;
 }
 
 export interface Bus {
@@ -58,6 +59,10 @@ export interface BusOptions {
 
 function ok(obj: unknown) {
   return { content: [{ type: 'text' as const, text: JSON.stringify(obj) }] };
+}
+
+function body_locale_invalid(l: unknown): boolean {
+  return l !== 'zh' && l !== 'en' && l !== 'auto';
 }
 
 function serverForAgent(agentName: string, deps: BusDeps, questions: QuestionStore): McpServer {
@@ -192,6 +197,16 @@ export async function startBus(deps: BusDeps, port: number, opts?: BusOptions): 
         try {
           const r = await deps.onShutdown(abody.closePanes !== false); // 缺省按关闭
           return sendJson(r);
+        } catch (e: any) {
+          return sendJson({ ok: false, error: String(e?.message ?? e) });
+        }
+      }
+      if (req.method === 'POST' && url.pathname === '/admin/lang') {
+        if (body_locale_invalid(abody.locale)) return sendJson({ ok: false, error: 'bad locale' });
+        if (!deps.onLang) return sendJson({ ok: false, error: 'lang not supported' });
+        try {
+          const eff = await deps.onLang(abody.locale);
+          return sendJson({ ok: true, locale: eff });
         } catch (e: any) {
           return sendJson({ ok: false, error: String(e?.message ?? e) });
         }

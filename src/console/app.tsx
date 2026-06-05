@@ -8,7 +8,7 @@ import { CLIS, dirSuggestions } from './wizard.js';
 import { formatBody, nameColor, formatTime, NAME_COLORS } from './log-format.js';
 import { decodeKey, type KeyEvent } from './keys.js';
 import { saveClipboardImage, expandImageTokens } from './clipboard.js';
-import { t } from '../i18n/index.js';
+import { t, setLocale } from '../i18n/index.js';
 
 const PKG: { name: string; version: string } = (() => {
   try {
@@ -52,12 +52,19 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
   const [sel, setSel] = useState(0);
   const [status, setStatus] = useState(initialStatus ?? '');
   const [wizard, setWizard] = useState<WizardState | null>(null);
+  const [langPick, setLangPick] = useState<number | null>(null); // null=未激活,否则=高亮项 index
   const [questions, setQuestions] = useState<any[]>([]);
   const [qSel, setQSel] = useState(0);
   const [skippedQ, setSkippedQ] = useState<string | null>(null);
   const [confirmExit, setConfirmExit] = useState(false);
   const [tagline] = useState(() => t().taglines[Math.floor(Math.random() * t().taglines.length)]);
   const defaultCwd = process.cwd();
+
+  const LANG_OPTS = [
+    { v: 'auto', label: t().langAuto },
+    { v: 'zh', label: t().langZh },
+    { v: 'en', label: t().langEn },
+  ] as const;
 
   // 自研键盘输入：开 kitty 协议后，自己读 stdin + decodeKey，规范化成按键事件交给 handleKey。
   // 这样 Shift+Enter（kitty CSI-u）能和回车区分，且不依赖终端配置；中文/方向键/Ctrl 组合也照常。
@@ -101,6 +108,7 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
       if (a.kind === 'help') { setStatus(t().helpStatus); return; }
       if (a.kind === 'error') { setStatus('⚠ ' + a.message); return; }
       if (a.kind === 'add-start') { setWizard({ name: a.name, step: 'cli', sel: 0 }); return; }
+      if (a.kind === 'lang-start') { setLangPick(0); return; }
       if (a.kind === 'say') { const r = await admin(port, 'POST', '/admin/say', { to: a.to, message: a.message }); setStatus(r.ok ? t().sayOk(a.to) : '⚠ ' + t().sayUndelivered(a.to, r.error ?? t().guardrailBlocked)); return; }
       if (a.kind === 'broadcast') { await admin(port, 'POST', '/admin/broadcast', { message: a.message }); setStatus(t().broadcastOk); return; }
       if (a.kind === 'reply') {
@@ -194,6 +202,24 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
       }
       if (ev.type === 'backspace') { setWizard({ ...wizard, path: wizard.path.slice(0, -1), sel: 0 }); return; }
       if (ev.type === 'text') { setWizard({ ...wizard, path: wizard.path + ev.text, sel: 0 }); return; }
+      return;
+    }
+
+    // 语言选择态:↑↓ 选 · Enter 确认 · Esc 取消(与 wizard/answering 同级)
+    if (langPick !== null) {
+      if (ev.type === 'esc') { setLangPick(null); return; }
+      if (ev.type === 'up') { setLangPick((s) => Math.max(0, (s ?? 0) - 1)); return; }
+      if (ev.type === 'down') { setLangPick((s) => Math.min(LANG_OPTS.length - 1, (s ?? 0) + 1)); return; }
+      if (ev.type === 'enter') {
+        const chosen = LANG_OPTS[langPick].v;
+        setLangPick(null);
+        void (async () => {
+          const r = await admin(port, 'POST', '/admin/lang', { locale: chosen });
+          if (r.ok) { setLocale(r.locale); setStatus(t().langSwitched(r.locale)); }
+          else setStatus('⚠ ' + (r.error ?? 'lang 失败'));
+        })();
+        return;
+      }
       return;
     }
 
@@ -300,7 +326,7 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
     return () => { stdin.off('data', onData); };
     // 每次渲染重挂，保证闭包里拿到最新 state；依赖列出 handleKey 读到的所有状态。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stdin, input, cursor, wizard, confirmExit, questions, skippedQ, qSel, history, histIdx, attachments, sel, log, roster]);
+  }, [stdin, input, cursor, wizard, langPick, confirmExit, questions, skippedQ, qSel, history, histIdx, attachments, sel, log, roster]);
 
   const color = (s: string) => (s === 'idle' ? 'green' : s === 'busy' ? 'yellow' : s === 'dead' ? 'red' : 'gray');
 
@@ -349,7 +375,14 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
         </Box>
       ) : null}
 
-      {wizard ? (
+      {langPick !== null ? (
+        <Box flexDirection="column" marginTop={1}>
+          <Text color="yellow">{t().langPickTitle}</Text>
+          {LANG_OPTS.map((o, i) => (
+            <Text key={o.v} inverse={i === langPick}>  {o.label}</Text>
+          ))}
+        </Box>
+      ) : wizard ? (
         <Box flexDirection="column" marginTop={1}>
           {wizard.step === 'cli' ? (
             <>
