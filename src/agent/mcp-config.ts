@@ -18,7 +18,7 @@ export interface LaunchSpec {
   name: string;
   busPort: number;
   mcpConfigPath: string; // claude 用
-  bootstrap: string;     // 首启=完整 bootstrap；恢复=重连提示语
+  bootstrap: string;     // 首启=完整 bootstrap；恢复时此字段被忽略（claude 不注入、codex 不传 prompt）
   sessionId?: string;    // claude 首启：--session-id（确定性 id）
   resumeId?: string;     // 恢复：claude --resume / codex resume <id>
 }
