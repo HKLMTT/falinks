@@ -100,43 +100,48 @@ export async function up(configPath: string) {
     router.addAgent(a.name, a.role);
     await driver.setName(sid, a.name).catch(() => {}); // pane 标题=员工名
 
-    if (needsBootstrapInject) {
-      // claude：信任对话→就绪。首启注入 bootstrap；恢复则什么都不注入（避免 CLI 重放旧任务再做一遍），仅服务端登记。
-      for (let i = 0; i < 30; i++) {
-        await sleep(700);
-        const state = detectScreenState(await driver.readScreen(sid));
-        if (state === 'trust-dialog') { await driver.inject(sid, '', true); continue; }
-        if (state === 'ready') { if (!resuming) await driver.inject(sid, fullBootstrap, true); break; }
-      }
-    } else {
-      // codex：首启 bootstrap 作为命令位置参数；恢复则命令不带 prompt。盲发 Enter 接受信任目录对话。
-      await sleep(2500);
-      await driver.inject(sid, '', true);
-      await sleep(1500);
-      await driver.inject(sid, '', true);
-      await sleep(3000);
-      await driver.inject(sid, '', true); // 第三次兜底（codex 启动慢时前两次可能太早）
+    // 慢活（就绪检测/注入 bootstrap/抓 codex id/落盘）放后台，不阻塞控制台渲染——
+    // 员工就绪后自己 register，花名册会从 [launching] 自动变 [idle]。pane 已建好，sid 立即可返回。
+    void (async () => {
+      try {
+        let sid2 = sessionId;
+        if (needsBootstrapInject) {
+          // claude：信任对话→就绪。首启注入 bootstrap；恢复则什么都不注入（避免 CLI 重放旧任务再做一遍），仅服务端登记。
+          for (let i = 0; i < 30; i++) {
+            await sleep(700);
+            const state = detectScreenState(await driver.readScreen(sid));
+            if (state === 'trust-dialog') { await driver.inject(sid, '', true); continue; }
+            if (state === 'ready') { if (!resuming) await driver.inject(sid, fullBootstrap, true); break; }
+          }
+        } else {
+          // codex：首启 bootstrap 作为命令位置参数；恢复则命令不带 prompt。盲发 Enter 接受信任目录对话。
+          await sleep(2500);
+          await driver.inject(sid, '', true);
+          await sleep(1500);
+          await driver.inject(sid, '', true);
+          await sleep(3000);
+          await driver.inject(sid, '', true); // 第三次兜底（codex 启动慢时前两次可能太早）
 
-      // codex 首启：注入 /status 读屏抓 session id。轮询重试——员工此刻可能正在跑 bootstrap 那一轮，
-      // /status 框要等它空闲才渲染；反复注入 /status 是幂等的（只重渲染状态框），抓到即停。读不到则不记，下次仍 fresh。
-      if (!resuming) {
-        for (let i = 0; i < 8; i++) {
-          await driver.inject(sid, '/status', true);
-          await sleep(1800);
-          const captured = parseStatusSessionId(await driver.readScreen(sid).catch(() => ''), 'codex');
-          if (captured) { sessionId = captured; break; }
+          // codex 首启：注入 /status 读屏抓 session id（轮询重试，员工忙时也能抓到）。
+          if (!resuming) {
+            for (let i = 0; i < 8; i++) {
+              await driver.inject(sid, '/status', true);
+              await sleep(1800);
+              const captured = parseStatusSessionId(await driver.readScreen(sid).catch(() => ''), 'codex');
+              if (captured) { sid2 = captured; break; }
+            }
+          }
         }
-      }
-    }
 
-    // 恢复：falinks 知道 sessionId，直接服务端登记，不提示员工 register、不注入任何东西——
-    // CLI 静默恢复(只显示历史)、不重做旧任务。首启则由员工自己 register（bootstrap 第①条）。
-    if (resuming) router.register(a.name, sid);
+        // 恢复：falinks 知道 sessionId，直接服务端登记（不提示员工 register、不注入），CLI 静默恢复、不重做旧任务。
+        if (resuming) router.register(a.name, sid);
 
-    // 落盘：拿到 id 才记；codex 没抓到则删掉旧条目，确保下次 fresh 而非误 resume。
-    if (sessionId) store.agents[a.name] = { cli: a.cli, sessionId };
-    else delete store.agents[a.name];
-    saveStore(launchCwd, store);
+        // 落盘：拿到 id 才记；codex 没抓到则删掉旧条目，确保下次 fresh 而非误 resume。
+        if (sid2) store.agents[a.name] = { cli: a.cli, sessionId: sid2 };
+        else delete store.agents[a.name];
+        saveStore(launchCwd, store);
+      } catch { /* 后台准备失败忽略，员工仍可手动用 */ }
+    })();
 
     return sid;
   }
