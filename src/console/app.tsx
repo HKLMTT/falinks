@@ -118,7 +118,7 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
         return;
       }
     } catch (e: any) {
-      setStatus('⚠ ' + (e?.message ?? 'error'));
+      setStatus('⚠ ' + (e?.message ?? t().unknownError));
     }
   };
 
@@ -188,7 +188,7 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
         setWizard(null);
         void (async () => {
           const r = await admin(port, 'POST', '/admin/add', { name: w.name, cli: w.cli, cwd: w.path, role: w.role });
-          setStatus(r.ok ? `＋ ${w.name}(${w.role}) @ ${w.path}` : '⚠ ' + (r.error ?? t().addFailed));
+          setStatus(r.ok ? t().wizardAddOk(w.name, w.role, w.path) : '⚠ ' + (r.error ?? t().addFailed));
         })();
         return;
       }

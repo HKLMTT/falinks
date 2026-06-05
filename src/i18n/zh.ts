@@ -34,6 +34,7 @@ export const zh = {
   clearNone: '无',
   clearJoiner: '、',
   cleared: (name: string, list: string) => `🧹 已清空 ${name}（${list}）`,
+  wizardAddOk: (name: string, role: string, path: string) => `＋ ${name}(${role}) @ ${path}`,
   wizardCancelled: '已取消添加',
   attached: (token: string) => `📎 已附加 ${token}，加 @员工 后回车，员工会去读这张图`,
   answeredOk: (from: string, picked: string) => `✓ 已回复 ${from}：${picked}`,
@@ -71,4 +72,5 @@ export const zh = {
   usageAdd: '用法: /add <名字>（按向导选 cli 和目录），或 /add <名字> <cli> <目录>',
   unknownCommand: (cmd: string) => `未知命令: /${cmd}`,
   usageMention: '用法: @<name> <message> 或 @all <message>',
+  unknownError: '未知错误',
 };

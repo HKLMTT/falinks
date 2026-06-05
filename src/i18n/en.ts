@@ -36,6 +36,7 @@ export const en: typeof zh = {
   clearNone: 'none',
   clearJoiner: ', ',
   cleared: (name: string, list: string) => `🧹 Cleared ${name} (${list})`,
+  wizardAddOk: (name: string, role: string, path: string) => `＋ ${name} (${role}) @ ${path}`,
   wizardCancelled: 'Add cancelled',
   attached: (token: string) => `📎 Attached ${token} — add @worker then Enter, the worker will read this image`,
   answeredOk: (from: string, picked: string) => `✓ Replied to ${from}: ${picked}`,
@@ -73,4 +74,5 @@ export const en: typeof zh = {
   usageAdd: 'usage: /add <name> (pick cli and dir via wizard), or /add <name> <cli> <dir>',
   unknownCommand: (cmd: string) => `unknown command: /${cmd}`,
   usageMention: 'usage: @<name> <message> or @all <message>',
+  unknownError: 'unknown error',
 };
