@@ -32,3 +32,11 @@ export function detectScreenState(screen: string): ScreenState {
   if (/❯/.test(screen)) return 'ready';
   return 'starting';
 }
+
+/**
+ * 从读屏文本判断员工此刻是否"正在生成"。claude 与 codex 生成时都显示「esc to interrupt」。
+ * 不忙 = 已回到空闲提示符（生成结束 / 被 Ctrl+C 打断 / 没调 idle 工具）——用于自动检测空闲、把排队消息投出去。
+ */
+export function isPaneBusy(screen: string): boolean {
+  return /esc to interrupt/i.test(screen);
+}
