@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { readdirSync, readFileSync } from 'node:fs';
-import { Box, Text, useStdin, useStdout } from 'ink';
+import { Box, Text, useStdin } from 'ink';
 import { parseConsoleInput, lastReplyTarget } from './parse.js';
 import { mentionState, applyMention } from './mention.js';
 import { commandState, applyCommand } from './commands.js';
@@ -70,18 +70,6 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
   // 这样 Shift+Enter（kitty CSI-u）能和回车区分，且不依赖终端配置；中文/方向键/Ctrl 组合也照常。
   const { stdin, setRawMode } = useStdin();
   useEffect(() => { setRawMode?.(true); }, [setRawMode]);
-
-  // 根节点高度钉到真实终端行数：输出高度恒 ≥ rows，Ink 永远走整屏重绘（clearTerminal+全量重写）。
-  // 否则走增量 eraseLines，iTerm2 在窗口变窄时回流已打印的行，物理行数和 Ink 记的对不上，
-  // 擦少擦错位 → 旧 logo 残留翻倍、换行错乱（每拖一次窗口叠加一次）。
-  const { stdout } = useStdout();
-  const [rows, setRows] = useState(stdout?.rows ?? 24);
-  useEffect(() => {
-    if (!stdout) return;
-    const onResize = () => setRows(stdout.rows ?? 24);
-    stdout.on('resize', onResize);
-    return () => { stdout.off('resize', onResize); };
-  }, [stdout]);
 
   useEffect(() => {
     const tick = async () => {
@@ -331,7 +319,7 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
   const color = (s: string) => (s === 'idle' ? 'green' : s === 'busy' ? 'yellow' : s === 'dead' ? 'red' : 'gray');
 
   return (
-    <Box flexDirection="column" height={rows}>
+    <Box flexDirection="column">
       <Box flexDirection="column">
         <Text color="cyan" bold>╔═╗╔═╗╦  ╦╔╗╔╦╔═╔═╗</Text>
         <Text color="cyan" bold>╠╣ ╠═╣║  ║║║║╠╩╗╚═╗</Text>

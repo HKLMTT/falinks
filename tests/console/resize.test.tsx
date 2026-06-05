@@ -1,64 +1,43 @@
 import { EventEmitter } from 'node:events';
-import React from 'react';
-import { render } from 'ink';
 import { expect, test } from 'vitest';
-import { App } from '../../src/console/app.js';
+import { installResizeClear } from '../../src/console/run.js';
 
-// Ink 整屏重绘路径的前缀：清屏 + 清滚动区 + 光标归位（ansi-escapes 的 clearTerminal）。
-// 增量重绘（eraseLines）在 iTerm2 窗口变窄回流后会擦错行数，残留旧 logo/错乱换行；
-// 只有整屏重绘在机制上不可能留残影，所以 resize 后的重绘必须走这条路径。
-const CLEAR_TERMINAL = '\u001B[2J\u001B[3J\u001B[H';
+// 整屏清除前缀:清屏 + 清滚动区 + 光标归位。窗口变窄时 iTerm2 回流已打印的行,
+// 必须在 resize 时整屏擦一次并重置 Ink 帧账,否则增量 eraseLines 擦错位、残留旧 logo。
+// 同时:清屏只在 resize 发生,不是每帧——否则 1s 轮询下界面狂闪(本次回归的根因)。
+const CLEAR = '\u001B[2J\u001B[3J\u001B[H';
 
-function fakeStdout(columns: number, rows: number) {
-  const out = new EventEmitter() as any;
-  out.columns = columns;
-  out.rows = rows;
-  out.isTTY = true;
-  out.frames = [] as string[];
-  out.write = (s: string) => { out.frames.push(String(s)); return true; };
-  return out;
+function fakeStdout() {
+  const ee = new EventEmitter() as any;
+  ee.writes = [] as string[];
+  ee.write = (s: string) => { ee.writes.push(String(s)); return true; };
+  ee.prependListener = EventEmitter.prototype.prependListener.bind(ee);
+  return ee;
 }
 
-function fakeStdin() {
-  const sin = new EventEmitter() as any;
-  sin.isTTY = true;
-  sin.setRawMode = () => sin;
-  sin.setEncoding = () => sin;
-  sin.ref = () => sin;
-  sin.unref = () => sin;
-  sin.resume = () => sin;
-  sin.pause = () => sin;
-  sin.read = () => null;
-  return sin;
-}
+test('resize 触发:整屏清除 + 重置 Ink 帧账', () => {
+  const stdout = fakeStdout();
+  let cleared = 0;
+  installResizeClear(stdout, () => { cleared++; });
 
-test('窗口 resize 后的重绘走整屏 clearTerminal 路径（不残留旧帧）', async () => {
-  const stdout = fakeStdout(100, 40);
-  const stdin = fakeStdin();
-  const inst = render(<App port={1} />, {
-    stdout,
-    stdin,
-    exitOnCtrlC: false,
-    patchConsole: false,
-  });
-  try {
-    // 等首帧渲染落盘
-    await new Promise((r) => setTimeout(r, 60));
-    expect(stdout.frames.length).toBeGreaterThan(0);
+  expect(stdout.writes).toEqual([]); // 安装时不写
+  expect(cleared).toBe(0);
 
-    // 模拟把 pane 拖窄：iTerm2 会回流已打印的行，增量擦除必然错位
-    stdout.frames.length = 0;
-    stdout.columns = 60;
-    stdout.emit('resize');
-    await new Promise((r) => setTimeout(r, 60));
+  stdout.emit('resize');
+  expect(stdout.writes).toEqual([CLEAR]); // resize 时整屏清一次
+  expect(cleared).toBe(1);               // 并重置帧账
 
-    const repaints = stdout.frames as string[];
-    expect(repaints.length).toBeGreaterThan(0);
-    // resize 后的每一次重绘都必须整屏清除后全量重写
-    for (const f of repaints) {
-      expect(f.startsWith(CLEAR_TERMINAL)).toBe(true);
-    }
-  } finally {
-    inst.unmount();
-  }
+  stdout.emit('resize');
+  expect(stdout.writes).toEqual([CLEAR, CLEAR]); // 每次 resize 各清一次
+  expect(cleared).toBe(2);
+});
+
+test('用 prependListener:抢在 Ink 自己的 resize 处理之前清屏', () => {
+  const stdout = fakeStdout();
+  const order: string[] = [];
+  stdout.on('resize', () => order.push('ink')); // 模拟 Ink 先注册的处理器
+  installResizeClear(stdout, () => order.push('reset')); // 我们后安装,但要先跑
+
+  stdout.emit('resize');
+  expect(order).toEqual(['reset', 'ink']); // 清屏+重置在 Ink 重绘之前
 });
