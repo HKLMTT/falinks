@@ -52,7 +52,7 @@ export function buildAgentLaunch(cli: string, spec: LaunchSpec): AgentLaunch {
         ` -c 'mcp_servers.falinks.transport="streamable_http"'` +
         ` -c 'mcp_servers.falinks.url="${url}"'`;
       const command = spec.resumeId
-        ? `${base} resume ${spec.resumeId} ${shQuote(spec.bootstrap)}`
+        ? `${base} resume ${spec.resumeId}`
         : `${base} ${shQuote(spec.bootstrap)}`;
       return { command, needsBootstrapInject: false };
     }

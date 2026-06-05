@@ -16,6 +16,7 @@ import { loadStore, saveStore, pruneToAgents, type SessionStore } from './sessio
 import { decideClaudeSession, decideCodexSession } from './session/decide.js';
 import { parseStatusSessionId } from './session/capture.js';
 import { addAgentToConfigFile, removeAgentFromConfigFile } from './team-persist.js';
+import { loadMessageLog, appendMessageLog, MESSAGE_LOG_CAP } from './message-log.js';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -28,10 +29,6 @@ const HOUSE_RULES =
   '④ 完成任务、或没有实质内容要说时，直接调用 idle 结束本回合，不要发任何结束语。' +
   '⑤ 转达/汇报要一次说完，不要来回确认。' +
   '⑥ 需要别人在有限选项里做决定时，用 ask(to, question, options) 出选择题而非纯文字；尤其向老板请示用 ask(to="boss", …)，老板会直接点选。';
-
-/** 恢复时不重发 bootstrap，只让员工重新挂到新总线。 */
-const RECONNECT_NUDGE =
-  '【falinks 已恢复会话】总线已重连。请立刻重新调用 register 报到，然后待命；无需重述之前内容。';
 
 export async function up(configPath: string) {
   const cfg = parseConfig(JSON.parse(readFileSync(configPath, 'utf8')));
@@ -47,13 +44,16 @@ export async function up(configPath: string) {
       baseDeliverer.deliver(agent, msg);
     },
   };
-  const router = new Router(deliverer, {
-    now: () => Date.now(), genId: () => `m${++n}`, routes: cfg.routes, guards,
-  });
-  router.addVirtual('boss');
-
   const sessions = new Map<string, string>();
   const launchCwd = (() => { try { return realpathSync(process.cwd()); } catch { return process.cwd(); } })();
+  const router = new Router(deliverer, {
+    now: () => Date.now(), genId: () => `m${++n}`, routes: cfg.routes, guards,
+    logCap: MESSAGE_LOG_CAP,
+    onLog: (msg) => { try { appendMessageLog(launchCwd, msg); } catch { /* 持久化失败不致命 */ } },
+  });
+  router.addVirtual('boss');
+  router.seedLog(loadMessageLog(launchCwd) as Message[]); // 恢复历史消息流水
+
   const store: SessionStore = loadStore(launchCwd);
   pruneToAgents(store, cfg.agents.map((a) => a.name));
   const tmp = mkdtempSync(join(tmpdir(), 'falinks-'));
@@ -88,10 +88,9 @@ export async function up(configPath: string) {
       if (d.mode === 'resume') { resuming = true; resumeId = d.sessionId; sessionId = d.sessionId; }
     }
 
-    const injectText = resuming ? RECONNECT_NUDGE : fullBootstrap;
     const { command, needsBootstrapInject } = buildAgentLaunch(a.cli, {
       name: a.name, busPort: bus.port, mcpConfigPath: cfgPath,
-      bootstrap: injectText, sessionId: claudeSessionId, resumeId,
+      bootstrap: fullBootstrap, sessionId: claudeSessionId, resumeId,
     });
 
     const sid = await driver.splitFrom(anchor, dir, { cwd: a.cwd, command });
@@ -100,15 +99,15 @@ export async function up(configPath: string) {
     await driver.setName(sid, a.name).catch(() => {}); // pane 标题=员工名
 
     if (needsBootstrapInject) {
-      // claude：信任对话→就绪后注入（resuming 时注入的是重连提示语）。
+      // claude：信任对话→就绪。首启注入 bootstrap；恢复则什么都不注入（避免 CLI 重放旧任务再做一遍），仅服务端登记。
       for (let i = 0; i < 30; i++) {
         await sleep(700);
         const state = detectScreenState(await driver.readScreen(sid));
         if (state === 'trust-dialog') { await driver.inject(sid, '', true); continue; }
-        if (state === 'ready') { await driver.inject(sid, injectText, true); break; }
+        if (state === 'ready') { if (!resuming) await driver.inject(sid, fullBootstrap, true); break; }
       }
     } else {
-      // codex：bootstrap/重连语已作为命令位置参数传入；盲发 Enter 接受信任目录对话。
+      // codex：首启 bootstrap 作为命令位置参数；恢复则命令不带 prompt。盲发 Enter 接受信任目录对话。
       await sleep(2500);
       await driver.inject(sid, '', true);
       await sleep(1500);
@@ -127,6 +126,10 @@ export async function up(configPath: string) {
         }
       }
     }
+
+    // 恢复：falinks 知道 sessionId，直接服务端登记，不提示员工 register、不注入任何东西——
+    // CLI 静默恢复(只显示历史)、不重做旧任务。首启则由员工自己 register（bootstrap 第①条）。
+    if (resuming) router.register(a.name, sid);
 
     // 落盘：拿到 id 才记；codex 没抓到则删掉旧条目，确保下次 fresh 而非误 resume。
     if (sessionId) store.agents[a.name] = { cli: a.cli, sessionId };
