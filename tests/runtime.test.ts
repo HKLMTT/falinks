@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { mkdtempSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -77,4 +77,13 @@ test('listInstances 列出全部(损坏的跳过)', () => {
 
 test('consoleLaunchCommand 带 port 时追加 --port', () => {
   expect(consoleLaunchCommand('/d/cli.js', '/usr/bin/node', 50123)).toBe('/usr/bin/node /d/cli.js console --port 50123');
+});
+
+test('readInstance:档案缺 cwd 字段时返回 null', () => {
+  const root = tmpRoot();
+  const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'falinks-p-')));
+  // 手写一个只有 port、没有 cwd 的残缺档案到 instancePath 位置
+  mkdirSync(join(root, 'runtime'), { recursive: true });
+  writeFileSync(instancePath(cwd, root), JSON.stringify({ port: 1 }));
+  expect(readInstance(cwd, root)).toBeNull();
 });

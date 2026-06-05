@@ -18,7 +18,7 @@ export function runtimePath(): string {
  * dev（tsx 跑 .ts）用 `npx tsx <script> console`；编译后（node 跑 .js）用 `<node> <script> console`。
  */
 export function consoleLaunchCommand(selfScript: string, execPath: string, port?: number): string {
-  const suffix = port ? ` --port ${port}` : '';
+  const suffix = port != null ? ` --port ${port}` : '';
   return selfScript.endsWith('.ts')
     ? `npx tsx ${selfScript} console${suffix}`
     : `${execPath} ${selfScript} console${suffix}`;
@@ -37,6 +37,7 @@ export function projectKey(cwd: string): string {
   return createHash('sha1').update(realCwd(cwd)).digest('hex').slice(0, 16);
 }
 
+/** 实例档案路径：<root>/runtime/<projectKey>.json。 */
 export function instancePath(cwd: string, root = runtimeDir()): string {
   return join(root, 'runtime', `${projectKey(cwd)}.json`);
 }
@@ -58,7 +59,7 @@ export function writeInstance(info: InstanceInfo, root = runtimeDir(), opts?: { 
 export function readInstance(cwd: string, root = runtimeDir()): InstanceInfo | null {
   try {
     const d = JSON.parse(readFileSync(instancePath(cwd, root), 'utf8'));
-    return typeof d?.port === 'number' ? d : null;
+    return typeof d?.port === 'number' && typeof d?.cwd === 'string' ? d : null;
   } catch { return null; }
 }
 
