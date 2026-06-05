@@ -14,3 +14,9 @@ test('leaves unknown tokens as-is', () => {
 test('no tokens -> unchanged', () => {
   expect(expandImageTokens('普通消息', [])).toBe('普通消息');
 });
+
+test('英文占位符 [Image N] 同样展开(切语言后旧占位符也不失效)', () => {
+  const paths = ['/tmp/a.png'];
+  expect(expandImageTokens('@bob see [Image 1]', paths)).toBe('@bob see /tmp/a.png');
+  expect(expandImageTokens('混用 [图片1] and [Image 1]', paths)).toBe('混用 /tmp/a.png and /tmp/a.png');
+});

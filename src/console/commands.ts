@@ -1,15 +1,17 @@
+import { t } from '../i18n/index.js';
+
 export interface CommandDef {
   name: string;
   usage: string;
   hint: string;
 }
 
-/** 控制台支持的斜杠命令（用于 / 补全与帮助）。 */
+/** 控制台支持的斜杠命令（用于 / 补全与帮助）。usage 是纯 ASCII 不入词典;hint 随 locale 动态从词典取。 */
 export const COMMANDS: CommandDef[] = [
-  { name: 'add', usage: '/add <name> <cli> <cwd>', hint: '加一个员工' },
-  { name: 'remove', usage: '/remove <name>', hint: '删一个员工' },
-  { name: 'clear', usage: '/clear [name]', hint: '清空某员工上下文,不带名=全员' },
-  { name: 'help', usage: '/help', hint: '显示用法' },
+  { name: 'add', usage: '/add <name> <cli> <cwd>', get hint() { return t().cmdHint.add; } },
+  { name: 'remove', usage: '/remove <name>', get hint() { return t().cmdHint.remove; } },
+  { name: 'clear', usage: '/clear [name]', get hint() { return t().cmdHint.clear; } },
+  { name: 'help', usage: '/help', get hint() { return t().cmdHint.help; } },
 ];
 
 export interface CommandState {

@@ -1,3 +1,5 @@
+import { t } from '../i18n/index.js';
+
 export type ConsoleAction =
   | { kind: 'say'; to: string; message: string }
   | { kind: 'broadcast'; message: string }
@@ -19,7 +21,7 @@ export function parseConsoleInput(line: string): ConsoleAction {
     const [cmd, ...args] = s.slice(1).split(/\s+/);
     if (cmd === 'help') return { kind: 'help' };
     if (cmd === 'remove') {
-      if (!args[0]) return { kind: 'error', message: '用法: /remove <name>' };
+      if (!args[0]) return { kind: 'error', message: t().usageRemove };
       return { kind: 'remove', name: args[0] };
     }
     if (cmd === 'clear') {
@@ -28,14 +30,14 @@ export function parseConsoleInput(line: string): ConsoleAction {
     if (cmd === 'add') {
       if (args.length === 1) return { kind: 'add-start', name: args[0] };
       if (args.length >= 3) return { kind: 'add', spec: { name: args[0], cli: args[1], cwd: args[2] } };
-      return { kind: 'error', message: '用法: /add <名字>（按向导选 cli 和目录），或 /add <名字> <cli> <目录>' };
+      return { kind: 'error', message: t().usageAdd };
     }
-    return { kind: 'error', message: `未知命令: /${cmd}` };
+    return { kind: 'error', message: t().unknownCommand(cmd) };
   }
 
   if (s.startsWith('@')) {
     const m = s.slice(1).match(/^(\S+)\s+([\s\S]+)$/);
-    if (!m) return { kind: 'error', message: '用法: @<name> <message> 或 @all <message>' };
+    if (!m) return { kind: 'error', message: t().usageMention };
     if (m[1] === 'all') return { kind: 'broadcast', message: m[2] };
     return { kind: 'say', to: m[1], message: m[2] };
   }

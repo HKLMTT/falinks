@@ -8,6 +8,7 @@ import { CLIS, dirSuggestions } from './wizard.js';
 import { formatBody, nameColor, formatTime, NAME_COLORS } from './log-format.js';
 import { decodeKey, type KeyEvent } from './keys.js';
 import { saveClipboardImage, expandImageTokens } from './clipboard.js';
+import { t } from '../i18n/index.js';
 
 const PKG: { name: string; version: string } = (() => {
   try {
@@ -17,18 +18,6 @@ const PKG: { name: string; version: string } = (() => {
   }
 })();
 const VERSION = PKG.version;
-
-const TAGLINES = [
-  '一屋 AI 牛马，您只管动嘴 🐴',
-  '活归它们，功归你 🐴',
-  '不喊累不要钱的 AI 牛马天团',
-  '您发句话，牛马跑断腿',
-  'AI 牛马已就位，老板请下令',
-  '招了一窝电子牛马',
-  '您动嘴，它们秃头',
-  '7×24 AI 牛马，永不摸鱼（大概）',
-  '老板一句话，牛马忙到趴',
-];
 
 async function admin(port: number, method: string, path: string, body?: unknown) {
   const res = await fetch(`http://127.0.0.1:${port}${path}`, {
@@ -67,7 +56,7 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
   const [qSel, setQSel] = useState(0);
   const [skippedQ, setSkippedQ] = useState<string | null>(null);
   const [confirmExit, setConfirmExit] = useState(false);
-  const [tagline] = useState(() => TAGLINES[Math.floor(Math.random() * TAGLINES.length)]);
+  const [tagline] = useState(() => t().taglines[Math.floor(Math.random() * t().taglines.length)]);
   const defaultCwd = process.cwd();
 
   // 自研键盘输入：开 kitty 协议后，自己读 stdin + decodeKey，规范化成按键事件交给 handleKey。
@@ -109,23 +98,23 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
     const a = parseConsoleInput(line);
     try {
       if (a.kind === 'noop') return;
-      if (a.kind === 'help') { setStatus('@名字 私聊 · @all 群发 · 纯文本=回复上次对话目标 · /add 加员工 · /remove 删员工 · /clear [名字] 清空上下文'); return; }
+      if (a.kind === 'help') { setStatus(t().helpStatus); return; }
       if (a.kind === 'error') { setStatus('⚠ ' + a.message); return; }
       if (a.kind === 'add-start') { setWizard({ name: a.name, step: 'cli', sel: 0 }); return; }
-      if (a.kind === 'say') { const r = await admin(port, 'POST', '/admin/say', { to: a.to, message: a.message }); setStatus(r.ok ? `→ ${a.to}` : '⚠ 未送达 ' + a.to + '：' + (r.error ?? '被护栏拦截')); return; }
-      if (a.kind === 'broadcast') { await admin(port, 'POST', '/admin/broadcast', { message: a.message }); setStatus('→ 全员'); return; }
+      if (a.kind === 'say') { const r = await admin(port, 'POST', '/admin/say', { to: a.to, message: a.message }); setStatus(r.ok ? t().sayOk(a.to) : '⚠ ' + t().sayUndelivered(a.to, r.error ?? t().guardrailBlocked)); return; }
+      if (a.kind === 'broadcast') { await admin(port, 'POST', '/admin/broadcast', { message: a.message }); setStatus(t().broadcastOk); return; }
       if (a.kind === 'reply') {
         const target = lastReplyTarget(log);
-        if (!target) { setStatus('没有上次对话目标，请 @某人 私聊 或 @all 群发'); return; }
+        if (!target) { setStatus(t().noReplyTarget); return; }
         const r = await admin(port, 'POST', '/admin/say', { to: target, message: a.message });
-        setStatus(r.ok ? `→ ${target}（回复）` : `⚠ 未送达 ${target}：${r.error ?? '被护栏拦截'}`);
+        setStatus(r.ok ? t().replyOk(target) : '⚠ ' + t().sayUndelivered(target, r.error ?? t().guardrailBlocked));
         return;
       }
-      if (a.kind === 'add') { const r = await admin(port, 'POST', '/admin/add', a.spec); setStatus(r.ok ? `＋ ${a.spec.name}` : '⚠ ' + (r.error ?? 'add 失败')); return; }
-      if (a.kind === 'remove') { const r = await admin(port, 'POST', '/admin/remove', { name: a.name }); setStatus(r.ok ? `－ ${a.name}` : '⚠ ' + (r.error ?? 'remove 失败')); return; }
+      if (a.kind === 'add') { const r = await admin(port, 'POST', '/admin/add', a.spec); setStatus(r.ok ? t().addOk(a.spec.name) : '⚠ ' + (r.error ?? t().addFailed)); return; }
+      if (a.kind === 'remove') { const r = await admin(port, 'POST', '/admin/remove', { name: a.name }); setStatus(r.ok ? t().removeOk(a.name) : '⚠ ' + (r.error ?? t().removeFailed)); return; }
       if (a.kind === 'clear') {
         const r = await admin(port, 'POST', '/admin/clear', { name: a.name });
-        setStatus(r.ok ? `🧹 已清空 ${a.name ?? '全员'}（${(r.cleared ?? []).join('、') || '无'}）` : '⚠ ' + (r.error ?? 'clear 失败'));
+        setStatus(r.ok ? t().cleared(a.name ?? t().clearAll, (r.cleared ?? []).join(t().clearJoiner) || t().clearNone) : '⚠ ' + (r.error ?? t().clearFailed));
         return;
       }
     } catch (e: any) {
@@ -148,7 +137,7 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
     items = cmd.matches.map((c) => ({ label: c.usage, hint: c.hint }));
     complete = (i) => applyCommand(cmd.matches[i].name);
   } else if (mention.active) {
-    items = mention.matches.map((n) => ({ label: '@' + n, hint: n === 'all' ? '群发全员' : '' }));
+    items = mention.matches.map((n) => ({ label: '@' + n, hint: n === 'all' ? t().broadcastAllHint : '' }));
     complete = (i) => applyMention(input, mention.matches[i]);
   }
   const active = complete !== null && items.length > 0;
@@ -177,7 +166,7 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
 
     // 向导模式：优先处理
     if (wizard) {
-      if (ev.type === 'esc') { setWizard(null); setStatus('已取消添加'); return; }
+      if (ev.type === 'esc') { setWizard(null); setStatus(t().wizardCancelled); return; }
       if (wizard.step === 'cli') {
         if (ev.type === 'up') { setWizard({ ...wizard, sel: Math.max(0, wizard.sel - 1) }); return; }
         if (ev.type === 'down') { setWizard({ ...wizard, sel: Math.min(CLIS.length - 1, wizard.sel + 1) }); return; }
@@ -185,7 +174,7 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
         return;
       }
       if (wizard.step === 'role') {
-        if (ev.type === 'enter') { setWizard({ name: wizard.name, step: 'cwd', cli: wizard.cli, role: wizard.roleText.trim() || '员工', path: defaultCwd, sel: 0 }); return; }
+        if (ev.type === 'enter') { setWizard({ name: wizard.name, step: 'cwd', cli: wizard.cli, role: wizard.roleText.trim() || t().wizardDefaultRole, path: defaultCwd, sel: 0 }); return; }
         if (ev.type === 'backspace') { setWizard({ ...wizard, roleText: wizard.roleText.slice(0, -1) }); return; }
         if (ev.type === 'text') { setWizard({ ...wizard, roleText: wizard.roleText + ev.text }); return; }
         return;
@@ -199,7 +188,7 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
         setWizard(null);
         void (async () => {
           const r = await admin(port, 'POST', '/admin/add', { name: w.name, cli: w.cli, cwd: w.path, role: w.role });
-          setStatus(r.ok ? `＋ ${w.name}(${w.role}) @ ${w.path}` : '⚠ ' + (r.error ?? 'add 失败'));
+          setStatus(r.ok ? `＋ ${w.name}(${w.role}) @ ${w.path}` : '⚠ ' + (r.error ?? t().addFailed));
         })();
         return;
       }
@@ -211,12 +200,12 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
     // Ctrl+V：读系统剪贴板里的截图，存临时文件，输入框只插入短占位 [图片N]（发送时展开成真实路径）
     if (ev.type === 'ctrl' && ev.key === 'v') {
       void saveClipboardImage().then((p) => {
-        if (!p) { setStatus('剪贴板里没有图片'); return; }
-        const token = `[图片${attachments.length + 1}]`;
+        if (!p) { setStatus(t().clipboardNoImage); return; }
+        const token = t().imageToken(attachments.length + 1);
         setAttachments((a) => [...a, p]);
         setInput((v) => v.slice(0, cursor) + token + ' ' + v.slice(cursor));
         setCursor((c) => c + token.length + 1);
-        setStatus(`📎 已附加 ${token}，加 @员工 后回车，员工会去读这张图`);
+        setStatus(t().attached(token));
       });
       return;
     }
@@ -230,7 +219,7 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
         setQSel(0);
         void (async () => {
           await admin(port, 'POST', '/admin/answer', { id, choice });
-          setStatus(`✓ 已回复 ${from}：${picked}`);
+          setStatus(t().answeredOk(from, picked));
         })();
         return;
       }
@@ -288,7 +277,7 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
     if (ev.type === 'backspace') {
       if (cursor > 0) {
         // 若光标紧跟在 [图片N] 之后，整体删掉这个占位（像 Claude Code 把附件当一个整体删），而不是逐字符。
-        const m = input.slice(0, cursor).match(/\[图片\d+\]$/);
+        const m = input.slice(0, cursor).match(/\[(?:图片|Image\s?)\d+\]$/);
         const del = m ? m[0].length : 1;
         setInput((v) => v.slice(0, cursor - del) + v.slice(cursor));
         setCursor((c) => c - del);
@@ -324,7 +313,7 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
         <Text dimColor>v{VERSION} · {tagline}</Text>
       </Box>
       <Box flexDirection="column" marginTop={1}>
-        <Text underline>花名册</Text>
+        <Text underline>{t().roster}</Text>
         {roster.map((a) => (
           <Text key={a.name}>
             <Text color={color(a.status)}>{a.virtual ? '·' : '●'} </Text>
@@ -334,7 +323,7 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
         ))}
       </Box>
       <Box flexDirection="column" marginTop={1} flexGrow={1}>
-        <Text underline>消息</Text>
+        <Text underline>{t().messages}</Text>
         {log.slice(-6).map((m, i, arr) => {
           const isLatest = i === arr.length - 1;
           const { lines, truncated } = formatBody(String(m.body), isLatest ? 40 : 3);
@@ -347,7 +336,7 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
                 <Text color={colorFor(m.to)}>{m.to}</Text>
               </Text>
               {lines.map((ln, j) => (<Text key={j} wrap="wrap">  {ln}</Text>))}
-              {truncated > 0 ? <Text dimColor>  … +{truncated} 行（完整见 {m.from} 窗口）</Text> : null}
+              {truncated > 0 ? <Text dimColor>  {t().moreLines(truncated, m.from)}</Text> : null}
             </Box>
           );
         })}
@@ -355,8 +344,8 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
 
       {confirmExit ? (
         <Box marginTop={1}>
-          <Text color="yellow">⚠ 退出 falinks —— 关闭所有员工窗口吗？ </Text>
-          <Text bold>y/Enter=关闭并退出 · n=保留窗口退出 · Esc=取消</Text>
+          <Text color="yellow">{t().exitConfirmTitle}</Text>
+          <Text bold>{t().exitConfirmKeys}</Text>
         </Box>
       ) : null}
 
@@ -364,25 +353,25 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
         <Box flexDirection="column" marginTop={1}>
           {wizard.step === 'cli' ? (
             <>
-              <Text>添加员工 <Text bold>{wizard.name}</Text> — 选择 CLI（↑↓ 选 · Enter 下一步 · Esc 取消）</Text>
+              <Text>{t().wizardAddPrefix}<Text bold>{wizard.name}</Text>{t().wizardCliSuffix}</Text>
               {CLIS.map((c, i) => (
-                <Text key={c} inverse={i === wizard.sel}>  {c}{c === 'codex' ? '  (实验)' : ''}</Text>
+                <Text key={c} inverse={i === wizard.sel}>  {c}{c === 'codex' ? t().wizardExperimental : ''}</Text>
               ))}
             </>
           ) : wizard.step === 'role' ? (
             <>
-              <Text>添加员工 <Text bold>{wizard.name}</Text> [{wizard.cli}] — 角色/职责（Enter 下一步 · Esc 取消）</Text>
+              <Text>{t().wizardAddPrefix}<Text bold>{wizard.name}</Text> [{wizard.cli}]{t().wizardRoleSuffix}</Text>
               <Box><Text color="green">› </Text><Text>{wizard.roleText}</Text><Text inverse> </Text></Box>
-              <Text dimColor>例：负责后端开发 / 审查代码 / 调研查证。留空=通用员工。</Text>
+              <Text dimColor>{t().wizardRoleExample}</Text>
             </>
           ) : (
             <>
-              <Text>添加员工 <Text bold>{wizard.name}</Text> [{wizard.cli}·{wizard.role}] — 工作目录（Enter 确认 · Tab 补全 · Esc 取消）</Text>
+              <Text>{t().wizardAddPrefix}<Text bold>{wizard.name}</Text> [{wizard.cli}·{wizard.role}]{t().wizardCwdSuffix}</Text>
               <Box><Text color="green">› </Text><Text>{wizard.path}</Text><Text inverse> </Text></Box>
               {dirSuggestions(wizard.path, fsListDirs).map((d, i) => (
                 <Text key={d} inverse={i === wizard.sel}>  {d}</Text>
               ))}
-              <Text dimColor>默认=当前目录，直接 Enter 即用它（多数情况员工同目录）</Text>
+              <Text dimColor>{t().wizardCwdDefault}</Text>
             </>
           )}
         </Box>
@@ -390,11 +379,11 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
         <>
           {answering && pendingQ ? (
             <Box flexDirection="column" marginTop={1}>
-              <Text color="yellow">❓ {pendingQ.from} 问你：{pendingQ.question}</Text>
+              <Text color="yellow">{t().questionAsk(pendingQ.from, pendingQ.question)}</Text>
               {pendingQ.options.map((o: string, i: number) => (
                 <Text key={i} inverse={i === qSelClamped}>  {i + 1}. {o}</Text>
               ))}
-              <Text dimColor>↑↓ 选 · Enter 回复 · Esc 跳过{questions.length > 1 ? ` · 还有 ${questions.length - 1} 个待答` : ''} · 或打字改普通输入</Text>
+              <Text dimColor>{t().answerKeys}{questions.length > 1 ? t().answerMore(questions.length - 1) : ''}{t().answerOrType}</Text>
             </Box>
           ) : null}
           <Box marginTop={1}>
@@ -412,7 +401,7 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
               ))}
             </Box>
           ) : (
-            <Text dimColor>直接打字=回复 @{replyTarget ?? '(无·先 @某人)'} · @all 群发 · @名字 私聊 · \\+回车 换行 · / 命令</Text>
+            <Text dimColor>{t().inputHint(replyTarget ?? t().noReplyTargetShort)}</Text>
           )}
         </>
       )}
