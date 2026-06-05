@@ -65,6 +65,7 @@ export function App({ port }: { port: number }) {
   const [questions, setQuestions] = useState<any[]>([]);
   const [qSel, setQSel] = useState(0);
   const [skippedQ, setSkippedQ] = useState<string | null>(null);
+  const [confirmExit, setConfirmExit] = useState(false);
   const [tagline] = useState(() => TAGLINES[Math.floor(Math.random() * TAGLINES.length)]);
   const defaultCwd = process.cwd();
 
@@ -152,6 +153,21 @@ export function App({ port }: { port: number }) {
   const qSelClamped = pendingQ ? Math.min(qSel, Math.max(0, pendingQ.options.length - 1)) : 0;
 
   useInput((char, key) => {
+    // Ctrl+C：不直接退，先问是否关闭员工窗口（优先于一切）。
+    if (confirmExit) {
+      if (key.escape) { setConfirmExit(false); return; }
+      if (key.return || char === 'y' || char === 'Y' || char === 'n' || char === 'N') {
+        const closePanes = !(char === 'n' || char === 'N'); // n=保留窗口；y/Enter=关闭
+        void (async () => {
+          try { await admin(port, 'POST', '/admin/shutdown', { closePanes }); } catch { /* ignore */ }
+          process.exit(0);
+        })();
+        return;
+      }
+      return; // 确认中，吞掉其它键
+    }
+    if (key.ctrl && (char === 'c' || char === 'C')) { setConfirmExit(true); return; }
+
     // 向导模式：优先处理
     if (wizard) {
       if (key.escape) { setWizard(null); setStatus('已取消添加'); return; }
@@ -301,6 +317,13 @@ export function App({ port }: { port: number }) {
           );
         })}
       </Box>
+
+      {confirmExit ? (
+        <Box marginTop={1}>
+          <Text color="yellow">⚠ 退出 falinks —— 关闭所有员工窗口吗？ </Text>
+          <Text bold>y/Enter=关闭并退出 · n=保留窗口退出 · Esc=取消</Text>
+        </Box>
+      ) : null}
 
       {wizard ? (
         <Box flexDirection="column" marginTop={1}>

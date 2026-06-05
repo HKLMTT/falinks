@@ -40,6 +40,7 @@ export interface BusDeps {
   onAddAgent?(spec: { name: string; cli: string; cwd: string; role?: string; bootstrap?: string }): Promise<{ ok: boolean; error?: string }>;
   onRemoveAgent?(name: string): Promise<{ ok: boolean; error?: string }>;
   onClear?(name?: string): Promise<{ ok: boolean; cleared?: string[]; error?: string }>;
+  onShutdown?(closePanes: boolean): Promise<{ ok: boolean }>;
 }
 
 export interface Bus {
@@ -169,6 +170,15 @@ export function startBus(deps: BusDeps, port: number): Promise<Bus> {
         if (!deps.onClear) return sendJson({ ok: false, error: 'clear not supported' });
         try {
           const r = await deps.onClear(abody.name ? String(abody.name) : undefined);
+          return sendJson(r);
+        } catch (e: any) {
+          return sendJson({ ok: false, error: String(e?.message ?? e) });
+        }
+      }
+      if (req.method === 'POST' && url.pathname === '/admin/shutdown') {
+        if (!deps.onShutdown) return sendJson({ ok: false, error: 'shutdown not supported' });
+        try {
+          const r = await deps.onShutdown(abody.closePanes !== false); // 缺省按关闭
           return sendJson(r);
         } catch (e: any) {
           return sendJson({ ok: false, error: String(e?.message ?? e) });

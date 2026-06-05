@@ -175,6 +175,13 @@ export async function up(configPath: string) {
       }
       return { ok: true, cleared };
     },
+    onShutdown: async (closePanes) => {
+      if (closePanes) {
+        for (const [, sid] of [...sessions]) await driver.closePane(sid).catch(() => {});
+      }
+      setTimeout(() => process.exit(0), 120); // 先把响应回给控制台,再退 up 进程（分离进程模式也能收工）
+      return { ok: true };
+    },
   }, cfg.busPort);
   mkdirSync(runtimeDir(), { recursive: true });
   writeFileSync(runtimePath(), JSON.stringify({ port: bus.port }));
