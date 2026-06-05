@@ -388,7 +388,7 @@ export function App({ port }: { port: number }) {
               ))}
             </Box>
           ) : (
-            <Text dimColor>直接打字=回复 @{replyTarget ?? '(无·先 @某人)'} · @all 群发 · @名字 私聊 · / 命令 · Tab/Enter 补全</Text>
+            <Text dimColor>直接打字=回复 @{replyTarget ?? '(无·先 @某人)'} · @all 群发 · @名字 私聊 · \\+回车 换行 · / 命令</Text>
           )}
         </>
       )}
