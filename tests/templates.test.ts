@@ -1,15 +1,15 @@
 import { expect, test } from 'vitest';
-import { PRESET_TEMPLATES, bootstrapForRole, configFromMembers } from '../src/templates.js';
+import { presetTeams, bootstrapForRole, configFromMembers } from '../src/templates.js';
 
 test('presets include solo/pair/fullstack/research with members', () => {
-  const ids = PRESET_TEMPLATES.map((t) => t.id);
+  const ids = presetTeams().map((t) => t.id);
   expect(ids).toEqual(['solo', 'pair', 'fullstack', 'research']);
-  expect(PRESET_TEMPLATES.find((t) => t.id === 'solo')!.members).toHaveLength(1);
-  expect(PRESET_TEMPLATES.find((t) => t.id === 'fullstack')!.members).toHaveLength(4);
+  expect(presetTeams().find((t) => t.id === 'solo')!.members).toHaveLength(1);
+  expect(presetTeams().find((t) => t.id === 'fullstack')!.members).toHaveLength(4);
 });
 
 test('every preset member has name/cli/role', () => {
-  for (const t of PRESET_TEMPLATES) {
+  for (const t of presetTeams()) {
     for (const m of t.members) {
       expect(m.name).toBeTruthy();
       expect(m.cli).toBeTruthy();

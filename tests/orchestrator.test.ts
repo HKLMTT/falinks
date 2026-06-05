@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest';
 import { formatMessage, makeDeliverer } from '../src/orchestrator.js';
 import { FakeDriver } from '../src/terminal/driver.js';
+import { setLocale } from '../src/i18n/index.js';
 import type { AgentRuntime, Message } from '../src/core/types.js';
 
 test('formatMessage embeds sender, body, and reply convention', () => {
@@ -34,4 +35,16 @@ test('deliver to an agent without sessionId throws synchronously', () => {
   const agent: AgentRuntime = { name: 'bob', status: 'busy', inbox: [] };
   const msg: Message = { id: 'm1', from: 'alice', to: 'bob', body: 'hi', ts: 1 };
   expect(() => deliverer.deliver(agent, msg)).toThrow(/no sessionId/);
+});
+
+test('en locale 下注入格式用英文(投递时实时取词)', () => {
+  setLocale('en');
+  try {
+    const msg: Message = { id: 'm1', from: 'alice', to: 'bob', body: 'hi', ts: 1 };
+    const text = formatMessage(msg);
+    expect(text).toContain('[From ');
+    expect(text).toContain('sendmsg(to=');
+  } finally {
+    setLocale('zh');
+  }
 });

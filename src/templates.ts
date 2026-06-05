@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { runtimeDir } from './runtime.js';
+import { t } from './i18n/index.js';
 
 export interface TeamMember {
   name: string;
@@ -17,40 +18,42 @@ export interface TeamTemplate {
 
 /** 由职责派生 agent 的 bootstrap（统一加省 token 风格）。 */
 export function bootstrapForRole(role: string): string {
-  return `你的职责：${role}。风格简练，少废话。`;
+  return t().roleBootstrap(role);
 }
 
-/** 预设团队模板。 */
-export const PRESET_TEMPLATES: TeamTemplate[] = [
-  { id: 'solo', name: '单人助手', members: [{ name: 'alice', cli: 'claude', role: '通用助手' }] },
-  {
-    id: 'pair',
-    name: '结对编程（开发者+审查者）',
-    members: [
-      { name: 'dev', cli: 'claude', role: '开发者，负责写代码实现需求' },
-      { name: 'reviewer', cli: 'claude', role: '审查者，负责审查 dev 的代码、挑问题提改进' },
-    ],
-  },
-  {
-    id: 'fullstack',
-    name: '全栈小组（组长+前端+后端+测试）',
-    members: [
-      { name: 'lead', cli: 'claude', role: '组长，统筹任务并分配给前端/后端/测试' },
-      { name: 'frontend', cli: 'claude', role: '前端开发' },
-      { name: 'backend', cli: 'claude', role: '后端开发' },
-      { name: 'qa', cli: 'claude', role: '测试与质量' },
-    ],
-  },
-  {
-    id: 'research',
-    name: '调研组（调研员+撰写+审校）',
-    members: [
-      { name: 'researcher', cli: 'claude', role: '调研员，负责查证与资料收集' },
-      { name: 'writer', cli: 'claude', role: '撰写，把调研整理成文' },
-      { name: 'editor', cli: 'claude', role: '审校，审查并润色 writer 的产出' },
-    ],
-  },
-];
+/** 预设团队模板（实时取词：name/role 调用时按当前语言取）。 */
+export function presetTeams(): TeamTemplate[] {
+  return [
+    { id: 'solo', name: t().tplSoloName, members: [{ name: 'alice', cli: 'claude', role: t().tplSoloRole }] },
+    {
+      id: 'pair',
+      name: t().tplPairName,
+      members: [
+        { name: 'dev', cli: 'claude', role: t().tplPairDev },
+        { name: 'reviewer', cli: 'claude', role: t().tplPairReviewer },
+      ],
+    },
+    {
+      id: 'fullstack',
+      name: t().tplFullstackName,
+      members: [
+        { name: 'lead', cli: 'claude', role: t().tplFullstackLead },
+        { name: 'frontend', cli: 'claude', role: t().tplFullstackFrontend },
+        { name: 'backend', cli: 'claude', role: t().tplFullstackBackend },
+        { name: 'qa', cli: 'claude', role: t().tplFullstackQa },
+      ],
+    },
+    {
+      id: 'research',
+      name: t().tplResearchName,
+      members: [
+        { name: 'researcher', cli: 'claude', role: t().tplResearchResearcher },
+        { name: 'writer', cli: 'claude', role: t().tplResearchWriter },
+        { name: 'editor', cli: 'claude', role: t().tplResearchEditor },
+      ],
+    },
+  ];
+}
 
 /** 由一组成员生成 falinks 配置(所有员工工作目录=cwd)。busPort 不写:缺省自动分配,多实例不冲突。 */
 export function configFromMembers(members: TeamMember[], cwd: string) {
@@ -77,7 +80,7 @@ export function loadUserTemplates(): TeamTemplate[] {
 
 /** 预设 + 用户自定义。 */
 export function allTemplates(): TeamTemplate[] {
-  return [...PRESET_TEMPLATES, ...loadUserTemplates()];
+  return [...presetTeams(), ...loadUserTemplates()];
 }
 
 /** 保存一个自定义模板到 ~/.falinks/templates/<id>.json。 */

@@ -1,13 +1,11 @@
 import type { Deliverer } from './core/router.js';
 import type { AgentRuntime, Message } from './core/types.js';
 import type { TerminalDriver } from './terminal/driver.js';
+import { t } from './i18n/index.js';
 
 /** 把一条消息格式化成注入目标窗口的文本，含"用 sendmsg 回复"约定。 */
 export function formatMessage(msg: Message): string {
-  return (
-    `【来自 ${msg.from}】${msg.body}\n` +
-    `(回复请调用 sendmsg(to="${msg.from}", message="..."))`
-  );
+  return t().incomingMsg(msg.from, msg.body);
 }
 
 /** 用 driver 构造一个 Deliverer：注入格式化文本并提交（提交的可靠性由 driver 负责）。 */

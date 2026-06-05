@@ -105,4 +105,56 @@ export const zh = {
   setupRolePrompt: (name: string, cli: string) => `${name}（${cli}） 的角色/职责: `,
   setupSaveTeamName: '保存为团队模板，起个名: ',
   setupDefaultRole: '员工',
+
+  // —— orchestrator.ts:注入目标窗口的消息格式 ——
+  incomingMsg: (from: string, body: string) =>
+    `【来自 ${from}】${body}\n(回复请调用 sendmsg(to="${from}", message="..."))`,
+
+  // —— index.ts:注入员工的协作规则 + 启动日志 ——
+  houseRules:
+    '【falinks 协作规则】你是办公室里的 AI 员工，通过 falinks 的 MCP 工具协作。' +
+    '① 开机立刻调用 register 报到。' +
+    '② 收到形如「【来自 X】…」的消息后，只有当你有实质内容（答案/数据/明确问题）时，才用 sendmsg(to="X", message="…") 回复。' +
+    '③ 严禁发送任何寒暄、确认、客套或表情——例如「收到」「好的」「谢谢」「不客气」「没问题」「👍」一律不要发，这些纯属浪费。' +
+    '④ 完成任务、或没有实质内容要说时，直接调用 idle 结束本回合，不要发任何结束语。' +
+    '⑤ 转达/汇报要一次说完，不要来回确认。' +
+    '⑥ 只要对方让你「给选项 / 做个选择题 / 二选一 / 列出可选项 / 给我N个…让我挑」，就必须调用 ask(to, question, options=[...]) ——把候选项放进 options 数组，绝不要把选项写进 sendmsg 的文本里。面向老板用 ask(to="boss", …)，老板端会渲染成可点选项。需要别人在有限选项里做决定时同理用 ask。',
+  identityLine: (name: string, role?: string) => `你的身份：${name}${role ? `（${role}）` : ''}。`,
+  preparingWorkers: (n: number, names: string) => `⏳ falinks 正在准备 ${n} 名员工（${names}）…`,
+  preparingHint: '首次启动每个员工要等 CLI 就绪，可能十几秒，请稍候。',
+  launchingWorker: (name: string, cli: string) => `[falinks] 启动员工 ${name} (${cli})…`,
+  workerWindowClosed: (name: string) => `[falinks] ${name} 的窗口已关，自动下线`,
+  instanceAlreadyRunning: (port: number) => `该目录已有 falinks 在运行（端口 ${port}）。先在那边 Ctrl-C 收工，再启动。`,
+  instanceMaybeRunning: (port: number, path: string) => `疑似有 falinks 在运行（端口 ${port}）但探活超时。确认没在运行后删除：${path}`,
+  instanceAlreadyRunningShort: (port: number) => `该目录已有 falinks 在运行（端口 ${port}）。`,
+  portFallback: (wanted: number, got: number) => `⚠ 端口 ${wanted} 被占用，已自动改用 ${got}`,
+  addFailedDetail: (detail: string) => `添加失败:${detail}`,
+
+  // —— bus/server.ts ——
+  bossPicked: (question: string, choice: string) => `对“${question}”，老板选择：${choice}`,
+  askToPeer: (question: string, options: string, replyTo: string) =>
+    `${question}\n${options}\n(回复请 sendmsg(to="${replyTo}", message="选 N"))`,
+  toolDescRegister: '报到：告知 falinks 你已就绪',
+  toolDescSendmsg: '给某个同事/角色发消息',
+  toolDescIdle: '本回合收尾，释放空闲状态',
+  toolDescAsk:
+    '出选择题。发给老板(to="boss")老板会看到可点选项并回选;发给同事则对方收到带编号选项的消息,用 sendmsg 回选哪个。',
+  toolDescWho: '查看在线花名册',
+
+  // —— templates.ts ——
+  roleBootstrap: (role: string) => `你的职责：${role}。风格简练，少废话。`,
+  tplSoloName: '单人助手',
+  tplSoloRole: '通用助手',
+  tplPairName: '结对编程（开发者+审查者）',
+  tplPairDev: '开发者，负责写代码实现需求',
+  tplPairReviewer: '审查者，负责审查 dev 的代码、挑问题提改进',
+  tplFullstackName: '全栈小组（组长+前端+后端+测试）',
+  tplFullstackLead: '组长，统筹任务并分配给前端/后端/测试',
+  tplFullstackFrontend: '前端开发',
+  tplFullstackBackend: '后端开发',
+  tplFullstackQa: '测试与质量',
+  tplResearchName: '调研组（调研员+撰写+审校）',
+  tplResearchResearcher: '调研员，负责查证与资料收集',
+  tplResearchWriter: '撰写，把调研整理成文',
+  tplResearchEditor: '审校，审查并润色 writer 的产出',
 };

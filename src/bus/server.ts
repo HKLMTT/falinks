@@ -3,6 +3,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import * as z from 'zod/v4';
 import type { Router } from '../core/router.js';
+import { t } from '../i18n/index.js';
 
 const PATH_RE = /^\/agent\/([^/]+)\/mcp$/;
 
@@ -63,7 +64,7 @@ function serverForAgent(agentName: string, deps: BusDeps, questions: QuestionSto
   const { router } = deps;
   const server = new McpServer({ name: `falinks-bus-${agentName}`, version: '1.0.0' }, { capabilities: {} });
 
-  server.registerTool('register', { description: '报到：告知 falinks 你已就绪', inputSchema: {} }, async () => {
+  server.registerTool('register', { description: t().toolDescRegister, inputSchema: {} }, async () => {
     const sid = deps.getSessionId(agentName);
     if (!sid) return ok({ ok: false, error: 'no session for agent' });
     router.register(agentName, sid);
@@ -71,35 +72,31 @@ function serverForAgent(agentName: string, deps: BusDeps, questions: QuestionSto
   });
 
   server.registerTool('sendmsg', {
-    description: '给某个同事/角色发消息', inputSchema: { to: z.string(), message: z.string() },
+    description: t().toolDescSendmsg, inputSchema: { to: z.string(), message: z.string() },
   }, async ({ to, message }) => {
     const msg = router.send(agentName, to, message);
     return msg ? ok({ ok: true, id: msg.id, to: msg.to }) : ok({ ok: false, error: `unknown or dead target: ${to}` });
   });
 
-  server.registerTool('idle', { description: '本回合收尾，释放空闲状态', inputSchema: {} }, async () => {
+  server.registerTool('idle', { description: t().toolDescIdle, inputSchema: {} }, async () => {
     router.onIdle(agentName);
     return ok({ ok: true });
   });
 
   server.registerTool('ask', {
-    description:
-      '出选择题。发给老板(to="boss")老板会看到可点选项并回选;发给同事则对方收到带编号选项的消息,用 sendmsg 回选哪个。',
+    description: t().toolDescAsk,
     inputSchema: { to: z.string(), question: z.string(), options: z.array(z.string()).min(1) },
   }, async ({ to, question, options }) => {
     if (to === 'boss' || to === '老板') {
       const id = questions.add({ from: agentName, question, options });
       return ok({ ok: true, id, pending: true });
     }
-    const body =
-      `${question}\n` +
-      options.map((o, i) => `${i + 1}. ${o}`).join('\n') +
-      `\n(回复请 sendmsg(to="${agentName}", message="选 N"))`;
+    const body = t().askToPeer(question, options.map((o, i) => `${i + 1}. ${o}`).join('\n'), agentName);
     const msg = router.send(agentName, to, body);
     return msg ? ok({ ok: true, id: msg.id, to: msg.to }) : ok({ ok: false, error: `unknown or dead target: ${to}` });
   });
 
-  server.registerTool('who', { description: '查看在线花名册', inputSchema: {} }, async () => {
+  server.registerTool('who', { description: t().toolDescWho, inputSchema: {} }, async () => {
     return ok({ roster: router.roster().map((a) => ({ name: a.name, role: a.role, status: a.status })) });
   });
 
@@ -148,7 +145,7 @@ export async function startBus(deps: BusDeps, port: number, opts?: BusOptions): 
         if (!Number.isInteger(choice) || choice < 0 || choice >= q.options.length) {
           return sendJson({ ok: false, error: 'bad choice' });
         }
-        router.send('boss', q.from, `对“${q.question}”，老板选择：${q.options[choice]}`);
+        router.send('boss', q.from, t().bossPicked(q.question, q.options[choice]));
         return sendJson({ ok: true });
       }
       if (req.method === 'POST' && url.pathname === '/admin/say') {

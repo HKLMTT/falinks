@@ -19,18 +19,9 @@ import { decideClaudeSession, decideCodexSession } from './session/decide.js';
 import { parseStatusSessionId } from './session/capture.js';
 import { addAgentToConfigFile, removeAgentFromConfigFile } from './team-persist.js';
 import { loadMessageLog, appendMessageLog, MESSAGE_LOG_CAP } from './message-log.js';
+import { t } from './i18n/index.js';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-/** 全员通用协作规则（前缀到每个员工的 bootstrap）。核心：省 token、禁客套。 */
-const HOUSE_RULES =
-  '【falinks 协作规则】你是办公室里的 AI 员工，通过 falinks 的 MCP 工具协作。' +
-  '① 开机立刻调用 register 报到。' +
-  '② 收到形如「【来自 X】…」的消息后，只有当你有实质内容（答案/数据/明确问题）时，才用 sendmsg(to="X", message="…") 回复。' +
-  '③ 严禁发送任何寒暄、确认、客套或表情——例如「收到」「好的」「谢谢」「不客气」「没问题」「👍」一律不要发，这些纯属浪费。' +
-  '④ 完成任务、或没有实质内容要说时，直接调用 idle 结束本回合，不要发任何结束语。' +
-  '⑤ 转达/汇报要一次说完，不要来回确认。' +
-  '⑥ 只要对方让你「给选项 / 做个选择题 / 二选一 / 列出可选项 / 给我N个…让我挑」，就必须调用 ask(to, question, options=[...]) ——把候选项放进 options 数组，绝不要把选项写进 sendmsg 的文本里。面向老板用 ask(to="boss", …)，老板端会渲染成可点选项。需要别人在有限选项里做决定时同理用 ask。';
 
 export async function up(configPath: string) {
   const cfg = parseConfig(JSON.parse(readFileSync(configPath, 'utf8')));
@@ -74,7 +65,7 @@ export async function up(configPath: string) {
     writeFileSync(cfgPath, JSON.stringify(mcpConfigFor(a.name, bus.port)));
 
     const fullBootstrap =
-      `${HOUSE_RULES}\n你的身份：${a.name}${a.role ? `（${a.role}）` : ''}。${a.bootstrap ?? ''}`;
+      `${t().houseRules}\n${t().identityLine(a.name, a.role)}${a.bootstrap ?? ''}`;
     bootstraps.set(a.name, fullBootstrap); // 供 /clear 后重注入
 
     // 决定 fresh / resume，并据此选注入文本与命令参数。
@@ -155,11 +146,11 @@ export async function up(configPath: string) {
   if (existing) {
     const p = await probeBus(existing.port);
     if (p.state === 'alive' && p.info.cwd === launchCwd) {
-      console.error(`该目录已有 falinks 在运行（端口 ${existing.port}）。先在那边 Ctrl-C 收工，再启动。`);
+      console.error(t().instanceAlreadyRunning(existing.port));
       process.exit(1);
     }
     if (p.state === 'unknown') {
-      console.error(`疑似有 falinks 在运行（端口 ${existing.port}）但探活超时。确认没在运行后删除：${instancePath(launchCwd)}`);
+      console.error(t().instanceMaybeRunning(existing.port, instancePath(launchCwd)));
       process.exit(1);
     }
     removeInstanceFile(instancePath(launchCwd)); // 确认死了/张冠李戴:清掉尸体
@@ -178,7 +169,7 @@ export async function up(configPath: string) {
       try {
         lastRight = await launchInto(anchor, 'horizontal', spec);
       } catch (e: any) {
-        return { ok: false, error: `添加失败:${e?.message ?? e}` };
+        return { ok: false, error: t().addFailedDetail(e?.message ?? e) };
       }
       try { addAgentToConfigFile(configPath, spec); } catch { /* 配置写回失败不致命 */ }
       return { ok: true };
@@ -230,7 +221,7 @@ export async function up(configPath: string) {
     },
   }, cfg.busPort ?? 0, {
     identity: { cwd: launchCwd, startedAt: Date.now() },
-    onPortFallback: (wanted, got) => { portWarning = `⚠ 端口 ${wanted} 被占用，已自动改用 ${got}`; },
+    onPortFallback: (wanted, got) => { portWarning = t().portFallback(wanted, got); },
   });
   mkdirSync(runtimeDir(), { recursive: true });
   rmSync(runtimePath(), { force: true }); // 旧版全局 runtime.json:一次性迁移清理
@@ -243,11 +234,11 @@ export async function up(configPath: string) {
     const race = readInstance(launchCwd);
     const p = race ? await probeBus(race.port) : null;
     if (p?.state === 'alive' && p.info.cwd === launchCwd) {
-      console.error(`该目录已有 falinks 在运行（端口 ${race!.port}）。`);
+      console.error(t().instanceAlreadyRunningShort(race!.port));
       process.exit(1);
     }
     if (p?.state === 'unknown') {
-      console.error(`疑似有 falinks 在运行（端口 ${race!.port}）但探活超时。确认没在运行后删除：${instancePath(launchCwd)}`);
+      console.error(t().instanceMaybeRunning(race!.port, instancePath(launchCwd)));
       process.exit(1);
     }
     // p === null（档案读不到）、p.state === 'dead'、或 alive 但 cwd 不符（张冠李戴）:确认死亡,安全覆盖。
@@ -267,8 +258,8 @@ export async function up(configPath: string) {
     // 清掉选单残留，给一个干净的"准备中"画面（裸日志会很丑），就绪后再 renderConsole。
     process.stdout.write('\x1b[2J\x1b[3J\x1b[H');
     process.stdout.write(
-      `\n  ⏳ falinks 正在准备 ${cfg.agents.length} 名员工（${cfg.agents.map((a) => a.name).join(' / ')}）…\n` +
-      `     首次启动每个员工要等 CLI 就绪，可能十几秒，请稍候。\n`,
+      `\n  ${t().preparingWorkers(cfg.agents.length, cfg.agents.map((a) => a.name).join(' / '))}\n` +
+      `     ${t().preparingHint}\n`,
     );
   } else {
     console.log(`[falinks] bus on :${bus.port}`);
@@ -281,11 +272,11 @@ export async function up(configPath: string) {
   let first = true;
   consoleSid = lastRight; // 此刻 lastRight=控制台 pane(两种模式皆然),记为永久兜底锚点
   for (const a of cfg.agents) {
-    if (!inProcessConsole) console.log(`[falinks] 启动员工 ${a.name} (${a.cli})…`);
+    if (!inProcessConsole) console.log(t().launchingWorker(a.name, a.cli));
     lastRight = await launchInto(lastRight, first ? 'vertical' : 'horizontal', a);
     first = false;
   }
-  if (!inProcessConsole) console.log(`[falinks] ✅ 办公室就绪：${cfg.agents.length} 名员工 + 控制台。Ctrl-C 收工。`);
+  if (!inProcessConsole) console.log(`[falinks] ${t().officeReady(cfg.agents.length)}`);
 
   // 健康轮询(1.5s)：员工 pane 被关 → 自动下线；以及自动检测空闲 → 投出排队消息。
   const IDLE_GRACE_MS = 3000; // 刚投递后这段时间内不判空闲（避开"已提交但还没开始生成"的空窗）
@@ -303,7 +294,7 @@ export async function up(configPath: string) {
             router.removeAgent(name);
             lastDeliverAt.delete(name);
             missStreak.delete(name);
-            if (!inProcessConsole) console.log(`[falinks] ${name} 的窗口已关，自动下线`);
+            if (!inProcessConsole) console.log(t().workerWindowClosed(name));
             continue;
           }
           missStreak.delete(name); // 探到了，清零
