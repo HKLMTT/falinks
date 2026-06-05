@@ -6,6 +6,34 @@ import type { Router } from '../core/router.js';
 
 const PATH_RE = /^\/agent\/([^/]+)\/mcp$/;
 
+/** 员工向老板出的、待老板点选的选择题。 */
+export interface PendingQuestion {
+  id: string;
+  from: string;
+  question: string;
+  options: string[];
+  ts: number;
+}
+
+/** 进程内的待答问题存储（ask 工具写入，控制台轮询 /admin/questions 读，/admin/answer 取走）。 */
+export class QuestionStore {
+  private map = new Map<string, PendingQuestion>();
+  private seq = 0;
+  add(q: { from: string; question: string; options: string[] }): string {
+    const id = `q${++this.seq}`;
+    this.map.set(id, { id, from: q.from, question: q.question, options: q.options, ts: Date.now() });
+    return id;
+  }
+  list(): PendingQuestion[] {
+    return [...this.map.values()];
+  }
+  take(id: string): PendingQuestion | undefined {
+    const q = this.map.get(id);
+    if (q) this.map.delete(id);
+    return q;
+  }
+}
+
 export interface BusDeps {
   router: Router;
   getSessionId(name: string): string | undefined;
@@ -22,7 +50,7 @@ function ok(obj: unknown) {
   return { content: [{ type: 'text' as const, text: JSON.stringify(obj) }] };
 }
 
-function serverForAgent(agentName: string, deps: BusDeps): McpServer {
+function serverForAgent(agentName: string, deps: BusDeps, questions: QuestionStore): McpServer {
   const { router } = deps;
   const server = new McpServer({ name: `falinks-bus-${agentName}`, version: '1.0.0' }, { capabilities: {} });
 
@@ -45,6 +73,23 @@ function serverForAgent(agentName: string, deps: BusDeps): McpServer {
     return ok({ ok: true });
   });
 
+  server.registerTool('ask', {
+    description:
+      '出选择题。发给老板(to="boss")老板会看到可点选项并回选;发给同事则对方收到带编号选项的消息,用 sendmsg 回选哪个。',
+    inputSchema: { to: z.string(), question: z.string(), options: z.array(z.string()).min(1) },
+  }, async ({ to, question, options }) => {
+    if (to === 'boss' || to === '老板') {
+      const id = questions.add({ from: agentName, question, options });
+      return ok({ ok: true, id, pending: true });
+    }
+    const body =
+      `${question}\n` +
+      options.map((o, i) => `${i + 1}. ${o}`).join('\n') +
+      `\n(回复请 sendmsg(to="${agentName}", message="选 N"))`;
+    const msg = router.send(agentName, to, body);
+    return msg ? ok({ ok: true, id: msg.id, to: msg.to }) : ok({ ok: false, error: `unknown or dead target: ${to}` });
+  });
+
   server.registerTool('who', { description: '查看在线花名册', inputSchema: {} }, async () => {
     return ok({ roster: router.roster().map((a) => ({ name: a.name, role: a.role, status: a.status })) });
   });
@@ -53,6 +98,7 @@ function serverForAgent(agentName: string, deps: BusDeps): McpServer {
 }
 
 export function startBus(deps: BusDeps, port: number): Promise<Bus> {
+  const questions = new QuestionStore();
   const httpServer = http.createServer(async (req, res) => {
     const url = new URL(req.url ?? '', `http://${req.headers.host}`);
 
@@ -74,6 +120,19 @@ export function startBus(deps: BusDeps, port: number): Promise<Bus> {
       }
       if (req.method === 'GET' && url.pathname === '/admin/log') {
         return sendJson({ log: router.messages() });
+      }
+      if (req.method === 'GET' && url.pathname === '/admin/questions') {
+        return sendJson({ questions: questions.list() });
+      }
+      if (req.method === 'POST' && url.pathname === '/admin/answer') {
+        const q = questions.take(String(abody.id));
+        if (!q) return sendJson({ ok: false, error: 'no such question' });
+        const choice = Number(abody.choice);
+        if (!Number.isInteger(choice) || choice < 0 || choice >= q.options.length) {
+          return sendJson({ ok: false, error: 'bad choice' });
+        }
+        router.send('boss', q.from, `对“${q.question}”，老板选择：${q.options[choice]}`);
+        return sendJson({ ok: true });
       }
       if (req.method === 'POST' && url.pathname === '/admin/say') {
         const msg = router.send('boss', String(abody.to), String(abody.message));
@@ -123,7 +182,7 @@ export function startBus(deps: BusDeps, port: number): Promise<Bus> {
     }
 
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
-    const server = serverForAgent(agentName, deps);
+    const server = serverForAgent(agentName, deps, questions);
     res.on('close', () => { transport.close(); server.close(); });
     await server.connect(transport);
     await transport.handleRequest(req, res, body);

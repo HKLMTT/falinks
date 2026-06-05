@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { readdirSync, readFileSync } from 'node:fs';
 import { Box, Text, useInput } from 'ink';
-import { parseConsoleInput } from './parse.js';
+import { parseConsoleInput, lastReplyTarget } from './parse.js';
 import { mentionState, applyMention } from './mention.js';
 import { commandState, applyCommand } from './commands.js';
 import { CLIS, dirSuggestions } from './wizard.js';
+import { formatBody } from './log-format.js';
 import { saveClipboardImage, expandImageTokens } from './clipboard.js';
 
 const PKG: { name: string; version: string } = (() => {
@@ -61,6 +62,9 @@ export function App({ port }: { port: number }) {
   const [sel, setSel] = useState(0);
   const [status, setStatus] = useState('');
   const [wizard, setWizard] = useState<WizardState | null>(null);
+  const [questions, setQuestions] = useState<any[]>([]);
+  const [qSel, setQSel] = useState(0);
+  const [skippedQ, setSkippedQ] = useState<string | null>(null);
   const [tagline] = useState(() => TAGLINES[Math.floor(Math.random() * TAGLINES.length)]);
   const defaultCwd = process.cwd();
 
@@ -71,6 +75,8 @@ export function App({ port }: { port: number }) {
         setRoster(r.roster ?? []);
         const l = await admin(port, 'GET', '/admin/log');
         setLog((l.log ?? []).slice(-10));
+        const q = await admin(port, 'GET', '/admin/questions');
+        setQuestions(q.questions ?? []);
       } catch {
         /* up 还没起或断开，忽略 */
       }
@@ -84,11 +90,18 @@ export function App({ port }: { port: number }) {
     const a = parseConsoleInput(line);
     try {
       if (a.kind === 'noop') return;
-      if (a.kind === 'help') { setStatus('@名字 私聊 · 纯文本群发 · /add 加员工(向导) · /remove 删员工'); return; }
+      if (a.kind === 'help') { setStatus('@名字 私聊 · @all 群发 · 纯文本=回复上次对话目标 · /add 加员工 · /remove 删员工'); return; }
       if (a.kind === 'error') { setStatus('⚠ ' + a.message); return; }
       if (a.kind === 'add-start') { setWizard({ name: a.name, step: 'cli', sel: 0 }); return; }
       if (a.kind === 'say') { await admin(port, 'POST', '/admin/say', { to: a.to, message: a.message }); setStatus(`→ ${a.to}`); return; }
       if (a.kind === 'broadcast') { await admin(port, 'POST', '/admin/broadcast', { message: a.message }); setStatus('→ 全员'); return; }
+      if (a.kind === 'reply') {
+        const target = lastReplyTarget(log);
+        if (!target) { setStatus('没有上次对话目标，请 @某人 私聊 或 @all 群发'); return; }
+        await admin(port, 'POST', '/admin/say', { to: target, message: a.message });
+        setStatus(`→ ${target}（回复）`);
+        return;
+      }
       if (a.kind === 'add') { const r = await admin(port, 'POST', '/admin/add', a.spec); setStatus(r.ok ? `＋ ${a.spec.name}` : '⚠ ' + (r.error ?? 'add 失败')); return; }
       if (a.kind === 'remove') { const r = await admin(port, 'POST', '/admin/remove', { name: a.name }); setStatus(r.ok ? `－ ${a.name}` : '⚠ ' + (r.error ?? 'remove 失败')); return; }
     } catch (e: any) {
@@ -96,8 +109,9 @@ export function App({ port }: { port: number }) {
     }
   };
 
-  // 统一的补全下拉：/ 命令优先，否则 @ 成员（排除 boss 等虚拟成员——你自己就是 boss）
-  const names = roster.filter((a) => !a.virtual).map((a) => a.name);
+  // 统一的补全下拉：/ 命令优先，否则 @ 成员（含 all 群发；排除 boss 等虚拟成员——你自己就是 boss）
+  const names = ['all', ...roster.filter((a) => !a.virtual).map((a) => a.name)];
+  const replyTarget = lastReplyTarget(log);
   const cmd = commandState(input);
   const mention = mentionState(input, names);
   let items: { label: string; hint: string }[] = [];
@@ -106,11 +120,16 @@ export function App({ port }: { port: number }) {
     items = cmd.matches.map((c) => ({ label: c.usage, hint: c.hint }));
     complete = (i) => applyCommand(cmd.matches[i].name);
   } else if (mention.active) {
-    items = mention.matches.map((n) => ({ label: '@' + n, hint: '' }));
+    items = mention.matches.map((n) => ({ label: '@' + n, hint: n === 'all' ? '群发全员' : '' }));
     complete = (i) => applyMention(input, mention.matches[i]);
   }
   const active = complete !== null && items.length > 0;
   const selClamped = Math.min(sel, Math.max(0, items.length - 1));
+
+  // 待答的选择题（跳过的不抢）：输入空 + 非向导时进入"答题"态
+  const pendingQ = questions.find((q) => q.id !== skippedQ) ?? null;
+  const answering = !!pendingQ && input === '' && !wizard;
+  const qSelClamped = pendingQ ? Math.min(qSel, Math.max(0, pendingQ.options.length - 1)) : 0;
 
   useInput((char, key) => {
     // 向导模式：优先处理
@@ -158,6 +177,27 @@ export function App({ port }: { port: number }) {
       });
       return;
     }
+
+    // 答题态：有待答选择题且输入框为空 → ↑↓ 选项、Enter 回复、Esc 跳过；一打字就让位给普通输入。
+    if (answering && pendingQ) {
+      if (key.upArrow) { setQSel((s) => Math.max(0, s - 1)); return; }
+      if (key.downArrow) { setQSel((s) => Math.min(pendingQ.options.length - 1, s + 1)); return; }
+      if (key.return) {
+        const id = pendingQ.id; const from = pendingQ.from; const choice = qSelClamped; const picked = pendingQ.options[choice];
+        setQSel(0);
+        void (async () => {
+          await admin(port, 'POST', '/admin/answer', { id, choice });
+          setStatus(`✓ 已回复 ${from}：${picked}`);
+        })();
+        return;
+      }
+      if (key.escape) { setSkippedQ(pendingQ.id); return; }
+      // 其它按键（打字）落到下面普通输入处理
+    }
+
+    // 行首/行尾跳转：Home/End（部分终端发转义序列）或通用的 Ctrl+A / Ctrl+E
+    if ((key as any).home || (key.ctrl && (char === 'a' || char === 'A')) || char === '\x1b[H' || char === '\x1bOH' || char === '\x1b[1~') { setCursor(0); return; }
+    if ((key as any).end || (key.ctrl && (char === 'e' || char === 'E')) || char === '\x1b[F' || char === '\x1bOF' || char === '\x1b[4~') { setCursor(input.length); return; }
 
     if (active) {
       if (key.upArrow) { setSel((s) => Math.max(0, s - 1)); return; }
@@ -224,9 +264,17 @@ export function App({ port }: { port: number }) {
       </Box>
       <Box flexDirection="column" marginTop={1} flexGrow={1}>
         <Text underline>消息</Text>
-        {log.map((m, i) => (
-          <Text key={i}><Text color="cyan">{m.from}</Text>→<Text color="magenta">{m.to}</Text>: {String(m.body).replace(/\s+/g, ' ').trim().slice(0, 300)}</Text>
-        ))}
+        {log.slice(-6).map((m, i, arr) => {
+          const isLatest = i === arr.length - 1;
+          const { lines, truncated } = formatBody(String(m.body), isLatest ? 40 : 3);
+          return (
+            <Box key={i} flexDirection="column" marginTop={i === 0 ? 0 : 1}>
+              <Text><Text color="cyan">{m.from}</Text>→<Text color="magenta">{m.to}</Text></Text>
+              {lines.map((ln, j) => (<Text key={j} wrap="wrap">  {ln}</Text>))}
+              {truncated > 0 ? <Text dimColor>  … +{truncated} 行（完整见 {m.from} 窗口）</Text> : null}
+            </Box>
+          );
+        })}
       </Box>
 
       {wizard ? (
@@ -257,6 +305,15 @@ export function App({ port }: { port: number }) {
         </Box>
       ) : (
         <>
+          {answering && pendingQ ? (
+            <Box flexDirection="column" marginTop={1}>
+              <Text color="yellow">❓ {pendingQ.from} 问你：{pendingQ.question}</Text>
+              {pendingQ.options.map((o: string, i: number) => (
+                <Text key={i} inverse={i === qSelClamped}>  {i + 1}. {o}</Text>
+              ))}
+              <Text dimColor>↑↓ 选 · Enter 回复 · Esc 跳过{questions.length > 1 ? ` · 还有 ${questions.length - 1} 个待答` : ''} · 或打字改普通输入</Text>
+            </Box>
+          ) : null}
           <Box marginTop={1}>
             <Text color="green">› </Text>
             <Text>{input.slice(0, cursor)}</Text>
@@ -270,7 +327,7 @@ export function App({ port }: { port: number }) {
               ))}
             </Box>
           ) : (
-            <Text dimColor>输入 @ 提及成员 · / 查看命令 · 直接打字=群发 · Tab/Enter 补全</Text>
+            <Text dimColor>直接打字=回复 @{replyTarget ?? '(无·先 @某人)'} · @all 群发 · @名字 私聊 · / 命令 · Tab/Enter 补全</Text>
           )}
         </>
       )}

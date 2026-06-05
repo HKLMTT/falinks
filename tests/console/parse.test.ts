@@ -1,12 +1,38 @@
 import { expect, test } from 'vitest';
-import { parseConsoleInput } from '../../src/console/parse.js';
+import { parseConsoleInput, lastReplyTarget } from '../../src/console/parse.js';
 
 test('@name message -> say', () => {
   expect(parseConsoleInput('@alice 在吗')).toEqual({ kind: 'say', to: 'alice', message: '在吗' });
 });
 
-test('plain text -> broadcast', () => {
-  expect(parseConsoleInput('全体开会')).toEqual({ kind: 'broadcast', message: '全体开会' });
+test('@all message -> broadcast', () => {
+  expect(parseConsoleInput('@all 全体开会')).toEqual({ kind: 'broadcast', message: '全体开会' });
+});
+
+test('plain text -> reply (回复上次目标,不再群发)', () => {
+  expect(parseConsoleInput('继续')).toEqual({ kind: 'reply', message: '继续' });
+});
+
+test('lastReplyTarget: boss 最近发给谁就是谁', () => {
+  const log = [
+    { from: 'boss', to: 'lead' },
+    { from: 'lead', to: 'boss' },
+    { from: 'boss', to: 'qa' },
+  ];
+  expect(lastReplyTarget(log)).toBe('qa');
+});
+
+test('lastReplyTarget: 最近一条是别人发给 boss,则目标=发信人', () => {
+  const log = [
+    { from: 'boss', to: 'lead' },
+    { from: 'frontend', to: 'boss' },
+  ];
+  expect(lastReplyTarget(log)).toBe('frontend');
+});
+
+test('lastReplyTarget: 不沾 boss 的消息忽略;无相关返回 null', () => {
+  expect(lastReplyTarget([{ from: 'a', to: 'b' }])).toBeNull();
+  expect(lastReplyTarget([])).toBeNull();
 });
 
 test('/add name cli cwd -> add', () => {
