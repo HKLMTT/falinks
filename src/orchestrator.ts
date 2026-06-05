@@ -38,3 +38,28 @@ export function detectScreenState(screen: string): ScreenState {
 export function isPaneBusy(screen: string): boolean {
   return /esc to interrupt/i.test(screen);
 }
+
+export type PaneStatusAction = 'mark-busy' | 'mark-idle' | 'none';
+
+/**
+ * 按 pane 实况校准花名册状态（双向，非对称去抖）。让状态以 pane 为准，而非只靠消息记账。
+ * - 路由以为 idle、pane 在生成 → mark-busy（即时；反映真实，且偏向"忙"避免往生成中的 pane 投消息）。
+ * - 路由以为 busy、pane 已空闲、过了投递宽限、且连续 idleStreak 次都不忙 → mark-idle
+ *   （去抖：长任务里工具调用间隙 / 跑 bash / 滚屏会让「esc to interrupt」短暂离开视口，单次采样不算数）。
+ * - launching / dead / stuck 不动。
+ */
+export function reconcilePaneStatus(opts: {
+  status: string;
+  paneBusy: boolean;
+  gracePassed: boolean;
+  idleStreak: number;   // 连续采到"不忙"的次数（含本次）
+  idleThreshold: number;
+}): PaneStatusAction {
+  const { status, paneBusy, gracePassed, idleStreak, idleThreshold } = opts;
+  if (status === 'idle') return paneBusy ? 'mark-busy' : 'none';
+  if (status === 'busy') {
+    if (!paneBusy && gracePassed && idleStreak >= idleThreshold) return 'mark-idle';
+    return 'none';
+  }
+  return 'none';
+}

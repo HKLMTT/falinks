@@ -117,6 +117,15 @@ export class Router {
     if (a && a.status !== 'dead') { a.status = 'busy'; a.handling = undefined; a.handlingFrom = undefined; }
   }
 
+  /**
+   * 观察到 pane 正在生成、但路由以为空闲 → 标忙（只把 idle 升 busy，不投递、不设 handling）。
+   * 让花名册反映 pane 真实状态;避免往生成中的 pane 投消息。健康轮询据读屏调用。
+   */
+  observeBusy(name: AgentName): void {
+    const a = this.agents.get(name);
+    if (a && a.status === 'idle') a.status = 'busy';
+  }
+
   get(name: AgentName): AgentRuntime | undefined {
     return this.agents.get(name);
   }

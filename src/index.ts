@@ -6,7 +6,7 @@ import { parseConfig } from './core/config.js';
 import { Router } from './core/router.js';
 import type { AgentRuntime, Message } from './core/types.js';
 import { Guards } from './core/guards.js';
-import { makeDeliverer, detectScreenState, isPaneBusy } from './orchestrator.js';
+import { makeDeliverer, detectScreenState, isPaneBusy, reconcilePaneStatus } from './orchestrator.js';
 import { ITerm2Driver } from './terminal/iterm.js';
 import { startBus, type Bus } from './bus/server.js';
 import { mcpConfigFor, buildAgentLaunch } from './agent/mcp-config.js';
@@ -285,9 +285,11 @@ export async function up(configPath: string) {
   }
   if (!inProcessConsole) console.log(`[falinks] ${t().officeReady(cfg.agents.length)}`);
 
-  // 健康轮询(1.5s)：员工 pane 被关 → 自动下线；以及自动检测空闲 → 投出排队消息。
+  // 健康轮询(1.5s)：员工 pane 被关 → 自动下线；以及按 pane 实况校准花名册 busy/idle。
   const IDLE_GRACE_MS = 3000; // 刚投递后这段时间内不判空闲（避开"已提交但还没开始生成"的空窗）
+  const IDLE_STREAK = 3;      // 连续这么多次采到 pane 不忙才降 idle（去抖，对齐 pane 下线判定）
   const missStreak = new Map<string, number>(); // 连续探测不到 pane 的次数（去抖：osascript 高并发会瞬时误报，连续多次才下线）
+  const idleStreak = new Map<string, number>(); // 连续采到 pane"不忙"的次数（自动空闲去抖）
   setInterval(() => {
     void (async () => {
       for (const [name, sid] of [...sessions]) {
@@ -301,21 +303,33 @@ export async function up(configPath: string) {
             router.removeAgent(name);
             lastDeliverAt.delete(name);
             missStreak.delete(name);
+            idleStreak.delete(name);
             if (!inProcessConsole) console.log(t().workerWindowClosed(name));
             continue;
           }
           missStreak.delete(name); // 探到了，清零
           await driver.setName(sid, name); // 持续把 pane 标题钉成员工名（覆盖 CLI 自改的标题）
 
-          // 清空中（/clear）跳过自动空闲：否则会把排队消息投进正在清空的 pane。
+          // 清空中（/clear）跳过状态校准：否则会把排队消息投进正在清空的 pane。
           if (clearing.has(name)) continue;
 
-          // 自动检测空闲：路由认为 busy 但 pane 已回到空闲（生成结束 / 被 Ctrl+C 打断 / 没调 idle 工具）
-          // → onIdle，把排队消息 pump 出去。读屏失败按"忙"处理；投递后宽限内不判，避免投递空窗误判。
+          // 按 pane 实况校准花名册：pane 在生成却显示 idle → 升 busy（修"干活却显示空闲"）；
+          // busy 但 pane 已空闲、过宽限、连续 IDLE_STREAK 次不忙 → 降 idle 并 pump 排队消息。
+          // 读屏失败按"忙"处理（保守）。单次瞬时空窗（工具间隙/滚屏）不再误降。
           const a = router.get(name);
-          if (a && a.status === 'busy' && Date.now() - (lastDeliverAt.get(name) ?? 0) > IDLE_GRACE_MS) {
-            const busy = isPaneBusy(await driver.readScreen(sid).catch(() => 'esc to interrupt'));
-            if (!busy) router.onIdle(name);
+          if (a && (a.status === 'busy' || a.status === 'idle')) {
+            const paneBusy = isPaneBusy(await driver.readScreen(sid).catch(() => 'esc to interrupt'));
+            const streak = paneBusy ? 0 : (idleStreak.get(name) ?? 0) + 1;
+            idleStreak.set(name, streak);
+            const action = reconcilePaneStatus({
+              status: a.status,
+              paneBusy,
+              gracePassed: Date.now() - (lastDeliverAt.get(name) ?? 0) > IDLE_GRACE_MS,
+              idleStreak: streak,
+              idleThreshold: IDLE_STREAK,
+            });
+            if (action === 'mark-idle') router.onIdle(name);
+            else if (action === 'mark-busy') router.observeBusy(name);
           }
         } catch {
           /* 探测失败忽略，下一轮再试 */
