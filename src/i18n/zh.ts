@@ -80,6 +80,12 @@ export const zh = {
   unknownCommand: (cmd: string) => `未知命令: /${cmd}`,
   usageMention: '用法: @<name> <message> 或 @all <message>',
   unknownError: '未知错误',
+  langFailed: 'lang 失败',
+
+  // —— discovery.ts:按 cwd 寻址运行中的总线 ——
+  busNotFound: '找不到运行中的 falinks —— `falinks` 在运行吗？',
+  busMultiple: (n: number, list: string) => `有 ${n} 个 falinks 在运行，请到对应目录执行：\n${list}`,
+  busInstanceLine: (cwd: string, port: number) => `  ${cwd}（端口 ${port}）`,
 
   // —— cli.ts ——
   exitUpdateHint: (cmd: string) => `已退出。更新命令：${cmd}`,

@@ -1,4 +1,5 @@
 import { runtimeDir, realCwd, readInstance, removeInstanceFile, instancePath, listInstances } from './runtime.js';
+import { t } from './i18n/index.js';
 
 /**
  * 探活三态:alive(确认是 falinks 并拿到身份)/ dead(端口没人听或不是 falinks)/ unknown(超时等,状态不明)。
@@ -70,11 +71,9 @@ export async function resolveBus(
     else if (p.state === 'dead' || p.state === 'alive') removeInstanceFile(e.file);
   }
   if (alive.length === 1) return { ok: true, port: alive[0].port };
-  if (alive.length === 0) return { ok: false, error: '找不到运行中的 falinks —— `falinks` 在运行吗？' };
+  if (alive.length === 0) return { ok: false, error: t().busNotFound };
   return {
     ok: false,
-    error:
-      `有 ${alive.length} 个 falinks 在运行，请到对应目录执行：\n` +
-      alive.map((a) => `  ${a.cwd}（端口 ${a.port}）`).join('\n'),
+    error: t().busMultiple(alive.length, alive.map((a) => t().busInstanceLine(a.cwd, a.port)).join('\n')),
   };
 }

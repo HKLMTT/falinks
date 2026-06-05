@@ -82,6 +82,12 @@ export const en: typeof zh = {
   unknownCommand: (cmd: string) => `unknown command: /${cmd}`,
   usageMention: 'usage: @<name> <message> or @all <message>',
   unknownError: 'unknown error',
+  langFailed: 'lang switch failed',
+
+  // —— discovery.ts ——
+  busNotFound: 'No running falinks found — is `falinks` running?',
+  busMultiple: (n: number, list: string) => `${n} falinks instances are running; run this in the matching directory:\n${list}`,
+  busInstanceLine: (cwd: string, port: number) => `  ${cwd} (port ${port})`,
 
   // —— cli.ts ——
   exitUpdateHint: (cmd: string) => `Exited. Update command: ${cmd}`,

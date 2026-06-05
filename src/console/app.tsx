@@ -216,7 +216,7 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
         void (async () => {
           const r = await admin(port, 'POST', '/admin/lang', { locale: chosen });
           if (r.ok) { setLocale(r.locale); setStatus(t().langSwitched(r.locale)); }
-          else setStatus('⚠ ' + (r.error ?? 'lang 失败'));
+          else setStatus('⚠ ' + (r.error ?? t().langFailed));
         })();
         return;
       }

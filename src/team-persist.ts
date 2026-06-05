@@ -1,5 +1,6 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { bootstrapForRole } from './templates.js';
+import { t } from './i18n/index.js';
 
 /** 动态增删员工时写回配置文件用的最小员工形状（与控制台 /add 发出的 spec 一致）。 */
 export interface PersistAgent {
@@ -24,7 +25,7 @@ export function addAgentToConfigFile(configPath: string, agent: PersistAgent): v
     cli: agent.cli,
     cwd: agent.cwd,
     role: agent.role,
-    bootstrap: agent.bootstrap && agent.bootstrap.length ? agent.bootstrap : bootstrapForRole(agent.role ?? '员工'),
+    bootstrap: agent.bootstrap && agent.bootstrap.length ? agent.bootstrap : bootstrapForRole(agent.role ?? t().wizardDefaultRole),
   });
   writeFileSync(configPath, JSON.stringify(raw, null, 2));
 }
