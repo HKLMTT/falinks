@@ -5,7 +5,7 @@ import { parseConsoleInput, lastReplyTarget } from './parse.js';
 import { mentionState, applyMention } from './mention.js';
 import { commandState, applyCommand } from './commands.js';
 import { CLIS, dirSuggestions } from './wizard.js';
-import { formatBody, nameColor, formatTime, NAME_COLORS } from './log-format.js';
+import { formatBody, nameColor, formatTime, NAME_COLORS, statusGlyph, SPINNER_FRAMES } from './log-format.js';
 import { decodeKey, type KeyEvent } from './keys.js';
 import { saveClipboardImage, expandImageTokens } from './clipboard.js';
 import { t, setLocale } from '../i18n/index.js';
@@ -88,6 +88,15 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
     const h = setInterval(tick, 1000);
     return () => clearInterval(h);
   }, [port]);
+
+  // 状态点动画:有人在忙/启动中才起 ~120ms 定时器逐帧推进(没人在忙就不跑,免无谓重渲染)。
+  const [frame, setFrame] = useState(0);
+  const anyActive = roster.some((a) => !a.virtual && (a.status === 'busy' || a.status === 'launching'));
+  useEffect(() => {
+    if (!anyActive) return;
+    const h = setInterval(() => setFrame((f) => (f + 1) % SPINNER_FRAMES.length), 120);
+    return () => clearInterval(h);
+  }, [anyActive]);
 
   const dispatch = async (line: string) => {
     const a = parseConsoleInput(line);
@@ -330,7 +339,7 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
         <Text underline>{t().roster}</Text>
         {roster.map((a) => (
           <Text key={a.name}>
-            <Text color={color(a.status)}>{a.virtual ? '·' : '●'} </Text>
+            <Text color={color(a.status)}>{statusGlyph(a.status, !!a.virtual, frame)} </Text>
             <Text color={colorFor(a.name)} bold>{a.name}</Text>
             <Text dimColor> {a.role ?? ''} [{a.status}]</Text>
           </Text>

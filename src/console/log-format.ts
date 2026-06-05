@@ -30,3 +30,16 @@ export function formatTime(ts: number): string {
   const p = (n: number) => String(n).padStart(2, '0');
   return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
 }
+
+/** 花名册状态点动画帧(braille spinner，在忙时逐帧滚动）。 */
+export const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+
+/**
+ * 花名册前的状态点:虚拟成员(boss)用小圆点;在忙 / 启动中用 spinner 当前帧（动起来，
+ * 一眼看出谁在干活）;其余(空闲/挂掉)用静态实心点。颜色仍由 status 决定，这里只管字形。
+ */
+export function statusGlyph(status: string, virtual: boolean, frame: number): string {
+  if (virtual) return '·';
+  if (status === 'busy' || status === 'launching') return SPINNER_FRAMES[frame % SPINNER_FRAMES.length];
+  return '●';
+}
