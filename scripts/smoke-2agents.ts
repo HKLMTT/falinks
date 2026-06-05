@@ -32,7 +32,7 @@ async function main() {
   for (const a of cfg.agents) router.addAgent(a.name, a.role);
 
   const sessions = new Map<string, string>();
-  const bus = await startBus({ router, getSessionId: (name) => sessions.get(name) }, cfg.busPort);
+  const bus = await startBus({ router, getSessionId: (name) => sessions.get(name) }, cfg.busPort ?? 0);
   console.log(`[dagent] bus on :${bus.port}`);
 
   const tmp = mkdtempSync(join(tmpdir(), 'dagent-'));
