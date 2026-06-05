@@ -4,7 +4,8 @@ import { execSync } from 'node:child_process';
 import { up } from './index.js';
 import { fetchLatest, isNewer, upgradeCommand } from './update.js';
 import { resolveBus } from './discovery.js';
-import { initLocale, t } from './i18n/index.js';
+import { initLocale, setLocale, detectLocale, t } from './i18n/index.js';
+import { loadSettings, saveSettings } from './settings.js';
 
 const PKG: { name: string; version: string } = (() => {
   try {
@@ -138,6 +139,30 @@ async function main() {
     case 'doctor':
       doctor();
       break;
+    case 'lang': {
+      if (process.stdin.isTTY) {
+        const { runLangPicker } = await import('./lang/run.js');
+        const cur = loadSettings().locale;
+        const picked = await runLangPicker(cur);
+        if (picked === null) return; // 取消
+        const eff = picked === 'auto' ? detectLocale(process.env) : picked;
+        saveSettings({ locale: picked });
+        setLocale(eff);
+        console.log(t().langSwitched(eff));
+        // 若有运行中的实例,顺带切它(失败静默)
+        const r = await resolveBus(process.cwd());
+        if (r.ok) {
+          try {
+            await fetch(`http://127.0.0.1:${r.port}/admin/lang`, {
+              method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ locale: picked }),
+            });
+          } catch { /* 实例没在跑或切换失败,本地已落盘,忽略 */ }
+        }
+      } else {
+        console.log(t().langCurrent(loadSettings().locale));
+      }
+      break;
+    }
     case 'say': {
       const [to, ...msg] = rest;
       console.log(await admin('POST', '/admin/say', { to, message: msg.join(' ') }));

@@ -85,6 +85,7 @@ export const zh = {
   exitUpdateHint: (cmd: string) => `已退出。更新命令：${cmd}`,
   defaultBootstrap: '你是办公室里的 AI 员工，风格简练。',
   configReady: (path: string) => `✅ 配置已就绪（${path}）。运行：falinks`,
+  langCurrent: (l: string) => `当前语言：${l}（用 falinks lang 在交互终端里切换）`,
   doctorClaudeNote: '可选（claude 员工需要）',
   doctorCodexNote: '可选（codex 员工需要）',
   doctorPermHint: '提示：首次运行会弹"自动化"权限请求，需允许 iTerm 被控制。',
@@ -93,7 +94,7 @@ export const zh = {
   defaultHelp:
     'falinks — 在当前目录把多个 AI CLI 编排成一间办公室。\n' +
     '直接运行：  falinks            （首次自动生成配置并启动）\n' +
-    '子命令：    falinks init | doctor | up [config] | say <agent> <msg> | broadcast <msg> | roster | log',
+    '子命令：    falinks init | doctor | lang | up [config] | say <agent> <msg> | broadcast <msg> | roster | log',
 
   // —— setup/app.tsx ——
   setupUpdateFound: (latest: string, current: string) => `🆕 发现新版 ${latest}（当前 v${current}）`,
