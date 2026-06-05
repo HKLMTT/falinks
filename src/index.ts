@@ -12,6 +12,7 @@ import { startBus, type Bus } from './bus/server.js';
 import { mcpConfigFor, buildAgentLaunch } from './agent/mcp-config.js';
 import { runtimeDir, runtimePath, consoleLaunchCommand } from './runtime.js';
 import { renderConsole } from './console/run.js';
+import { chooseAnchor } from './terminal/anchor.js';
 import { loadStore, saveStore, pruneToAgents, type SessionStore } from './session/store.js';
 import { decideClaudeSession, decideCodexSession } from './session/decide.js';
 import { parseStatusSessionId } from './session/capture.js';
@@ -60,7 +61,8 @@ export async function up(configPath: string) {
   pruneToAgents(store, cfg.agents.map((a) => a.name));
   const tmp = mkdtempSync(join(tmpdir(), 'falinks-'));
   let bus: Bus;
-  let lastRight = '';
+  let lastRight = '';      // 上次新建的右侧 pane,作为下次分屏的首选锚点
+  let consoleSid = '';     // 控制台 pane(左侧):整个会话期间一定活着,作为锚点的永久兜底
 
   async function launchInto(
     anchor: string,
@@ -151,9 +153,16 @@ export async function up(configPath: string) {
     router,
     getSessionId: (name) => sessions.get(name),
     onAddAgent: async (spec) => {
-      if (!lastRight) return { ok: false, error: 'layout not ready' };
+      if (!lastRight && !consoleSid) return { ok: false, error: 'layout not ready' };
       if (router.get(spec.name)) return { ok: false, error: 'name exists' };
-      lastRight = await launchInto(lastRight, 'horizontal', spec);
+      // 锚点自愈:lastRight 指向的 pane 可能已被关/被删(野指针),回退到永远活着的控制台 pane。
+      // 否则 splitFrom 抛 anchor not found,此后 /add 全部失败、只能重开。
+      const anchor = await chooseAnchor(lastRight, consoleSid, (s) => driver.paneExists(s));
+      try {
+        lastRight = await launchInto(anchor, 'horizontal', spec);
+      } catch (e: any) {
+        return { ok: false, error: `添加失败:${e?.message ?? e}` };
+      }
       try { addAgentToConfigFile(configPath, spec); } catch { /* 配置写回失败不致命 */ }
       return { ok: true };
     },
@@ -162,6 +171,7 @@ export async function up(configPath: string) {
       if (!sid) return { ok: false, error: 'unknown agent' };
       await driver.closePane(sid);
       sessions.delete(name);
+      if (sid === lastRight) lastRight = consoleSid; // 删的正是当前锚点 → 复位到控制台 pane,别留野指针
       router.removeAgent(name);
       try { removeAgentFromConfigFile(configPath, name); } catch { /* 配置写回失败不致命 */ }
       return { ok: true };
@@ -226,6 +236,7 @@ export async function up(configPath: string) {
   }
 
   let first = true;
+  consoleSid = lastRight; // 此刻 lastRight=控制台 pane(两种模式皆然),记为永久兜底锚点
   for (const a of cfg.agents) {
     if (!inProcessConsole) console.log(`[falinks] 启动员工 ${a.name} (${a.cli})…`);
     lastRight = await launchInto(lastRight, first ? 'vertical' : 'horizontal', a);
@@ -245,6 +256,7 @@ export async function up(configPath: string) {
             missStreak.set(name, n);
             if (n < 3) continue; // 还没连续 3 次，可能是瞬时误报，先不下线
             sessions.delete(name);
+            if (sid === lastRight) lastRight = consoleSid; // 下线的正是当前锚点 → 复位,别留野指针
             router.removeAgent(name);
             lastDeliverAt.delete(name);
             missStreak.delete(name);
