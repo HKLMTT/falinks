@@ -1,15 +1,14 @@
-import { createHash } from 'node:crypto';
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
-import { runtimeDir } from '../runtime.js';
+import { runtimeDir, projectKey } from '../runtime.js';
 
 export interface AgentSession { cli: string; sessionId: string; }
 export interface SessionStore { cwd: string; agents: Record<string, AgentSession>; }
 
-/** 每个项目目录一份存档：~/.falinks/sessions/<cwd 的 sha1 前16位>.json。root 可注入便于测试。 */
+/** 每个项目目录一份存档：~/.falinks/sessions/<projectKey>.json。root 可注入便于测试。
+ *  key 走 projectKey(realpath + sha1)——与 runtime 实例档案同一规范化,符号链接路径不会对不上。 */
 export function sessionStorePath(launchCwd: string, root = runtimeDir()): string {
-  const key = createHash('sha1').update(launchCwd).digest('hex').slice(0, 16);
-  return join(root, 'sessions', `${key}.json`);
+  return join(root, 'sessions', `${projectKey(launchCwd)}.json`);
 }
 
 /** 读存档；不存在或损坏都返回空壳。 */
