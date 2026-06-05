@@ -177,9 +177,15 @@ export async function up(configPath: string) {
     },
     onShutdown: async (closePanes) => {
       if (closePanes) {
-        for (const [, sid] of [...sessions]) await driver.closePane(sid).catch(() => {});
+        const sids = [...sessions.values()];
+        await Promise.all(sids.map((sid) => driver.closePane(sid).catch(() => {})));
+        await sleep(150);
+        // 兜底：偶有 pane 第一次没关掉（iTerm 忙/竞态），查一遍把漏网的重关。
+        await Promise.all(sids.map(async (sid) => {
+          try { if (await driver.paneExists(sid)) await driver.closePane(sid); } catch { /* ignore */ }
+        }));
       }
-      setTimeout(() => process.exit(0), 120); // 先把响应回给控制台,再退 up 进程（分离进程模式也能收工）
+      setTimeout(() => process.exit(0), 200); // 关完再退（分离进程模式下也要退 up）
       return { ok: true };
     },
   }, cfg.busPort);
