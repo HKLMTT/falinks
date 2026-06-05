@@ -169,15 +169,16 @@ export async function up(configPath: string) {
       if (name && !sessions.has(name)) return { ok: false, error: `unknown agent: ${name}` };
       const targets = name ? [name] : router.roster().filter((a) => !a.virtual).map((a) => a.name);
       const cleared: string[] = [];
-      for (const nm of targets) {
+      // 并发清空：每个员工各自 /clear → 等一下 → 重注入 bootstrap，互不阻塞（总耗时≈单个，不再 N 倍）。
+      await Promise.all(targets.map(async (nm) => {
         const sid = sessions.get(nm);
-        if (!sid) continue;
+        if (!sid) return;
         await driver.inject(sid, '/clear', true);    // claude/codex 同名：清空上下文、开新会话
         await sleep(1500);
         const bs = bootstraps.get(nm);
         if (bs) await driver.inject(sid, bs, true);   // 重注入 bootstrap：恢复身份+重新 register，否则员工失忆
         cleared.push(nm);
-      }
+      }));
       return { ok: true, cleared };
     },
     onShutdown: async (closePanes) => {
