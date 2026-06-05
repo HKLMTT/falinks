@@ -182,6 +182,9 @@ export async function up(configPath: string) {
       sessions.delete(name);
       if (sid === lastRight) lastRight = consoleSid; // 删的正是当前锚点 → 复位到控制台 pane,别留野指针
       router.removeAgent(name);
+      lastDeliverAt.delete(name);
+      missStreak.delete(name);
+      idleStreak.delete(name); // 与 pane 下线路径对齐:清干净,防同名 re-add 继承旧去抖计数
       try { removeAgentFromConfigFile(configPath, name); } catch { /* 配置写回失败不致命 */ }
       return { ok: true };
     },
