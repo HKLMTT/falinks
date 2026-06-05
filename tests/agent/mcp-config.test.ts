@@ -44,10 +44,11 @@ test('claude resume: includes --resume and NOT --session-id', () => {
   expect(r.command).toBe('claude --mcp-config /tmp/alice-mcp.json --dangerously-skip-permissions --resume uuid-resume');
 });
 
-test('codex resume: uses resume <id> with bootstrap (nudge) as prompt', () => {
-  const r = buildAgentLaunch('codex', { ...spec, resumeId: 'cid-1', bootstrap: '【falinks 已恢复会话】请重新 register。' });
+test('codex resume: uses resume <id> with no prompt (恢复静默,不重放任务)', () => {
+  const r = buildAgentLaunch('codex', { ...spec, resumeId: 'cid-1', bootstrap: '不应出现' });
   expect(r.command).toContain('resume cid-1');
-  expect(r.command).toContain("'【falinks 已恢复会话】请重新 register。'");
+  expect(r.command).not.toContain('不应出现');
+  expect(r.command.trimEnd().endsWith('resume cid-1')).toBe(true);
   expect(r.command).toContain('--no-alt-screen');
   expect(r.needsBootstrapInject).toBe(false);
 });

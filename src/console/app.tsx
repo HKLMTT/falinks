@@ -5,7 +5,7 @@ import { parseConsoleInput, lastReplyTarget } from './parse.js';
 import { mentionState, applyMention } from './mention.js';
 import { commandState, applyCommand } from './commands.js';
 import { CLIS, dirSuggestions } from './wizard.js';
-import { formatBody } from './log-format.js';
+import { formatBody, nameColor, formatTime } from './log-format.js';
 import { saveClipboardImage, expandImageTokens } from './clipboard.js';
 
 const PKG: { name: string; version: string } = (() => {
@@ -284,7 +284,12 @@ export function App({ port }: { port: number }) {
           const { lines, truncated } = formatBody(String(m.body), isLatest ? 40 : 3);
           return (
             <Box key={i} flexDirection="column" marginTop={i === 0 ? 0 : 1}>
-              <Text><Text color="cyan">{m.from}</Text>→<Text color="magenta">{m.to}</Text></Text>
+              <Text>
+                {m.ts ? <Text dimColor>{formatTime(m.ts)} </Text> : null}
+                <Text color={nameColor(m.from)}>{m.from}</Text>
+                <Text> → </Text>
+                <Text color={nameColor(m.to)}>{m.to}</Text>
+              </Text>
               {lines.map((ln, j) => (<Text key={j} wrap="wrap">  {ln}</Text>))}
               {truncated > 0 ? <Text dimColor>  … +{truncated} 行（完整见 {m.from} 窗口）</Text> : null}
             </Box>
