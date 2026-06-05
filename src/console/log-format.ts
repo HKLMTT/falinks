@@ -11,10 +11,12 @@ export function formatBody(body: string, maxLines: number): { lines: string[]; t
   return { lines: lines.slice(0, maxLines), truncated: lines.length - maxLines };
 }
 
-/** 给消息流水里的发言人配色：不同名字稳定地分到不同颜色（Ink 颜色名）。 */
-const NAME_COLORS = [
-  'cyan', 'green', 'yellow', 'blue', 'magenta', 'red',
-  'cyanBright', 'greenBright', 'yellowBright', 'blueBright', 'magentaBright', 'redBright',
+/** 给发言人配色的调色板：尽量多且互相区分（名字按花名册顺序取色，基本不重复）。 */
+export const NAME_COLORS = [
+  'cyan', 'green', 'yellow', 'magenta', 'blue', 'red',
+  'cyanBright', 'greenBright', 'yellowBright', 'magentaBright', 'blueBright', 'redBright',
+  '#ff8800', '#00d7af', '#af87ff', '#ff5fd7', '#5fd7ff', '#d7ff5f',
+  '#ffaf5f', '#5fffaf',
 ];
 export function nameColor(name: string): string {
   let h = 0;

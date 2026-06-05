@@ -5,7 +5,7 @@ import { parseConsoleInput, lastReplyTarget } from './parse.js';
 import { mentionState, applyMention } from './mention.js';
 import { commandState, applyCommand } from './commands.js';
 import { CLIS, dirSuggestions } from './wizard.js';
-import { formatBody, nameColor, formatTime } from './log-format.js';
+import { formatBody, nameColor, formatTime, NAME_COLORS } from './log-format.js';
 import { decodeKey, type KeyEvent } from './keys.js';
 import { saveClipboardImage, expandImageTokens } from './clipboard.js';
 
@@ -123,6 +123,10 @@ export function App({ port }: { port: number }) {
 
   // 统一的补全下拉：/ 命令优先，否则 @ 成员（含 all 群发；排除 boss 等虚拟成员——你自己就是 boss）
   const names = ['all', ...roster.filter((a) => !a.virtual).map((a) => a.name)];
+  // 给花名册每个人分配一个不重复的颜色（按花名册顺序取调色板）；消息里同名复用，花名册外的名字回退到 hash 色。
+  const colorMap = new Map<string, string>();
+  roster.forEach((a, i) => colorMap.set(a.name, NAME_COLORS[i % NAME_COLORS.length]));
+  const colorFor = (n: string) => colorMap.get(n) ?? nameColor(n);
   const replyTarget = lastReplyTarget(log);
   const cmd = commandState(input);
   const mention = mentionState(input, names);
@@ -312,7 +316,7 @@ export function App({ port }: { port: number }) {
         {roster.map((a) => (
           <Text key={a.name}>
             <Text color={color(a.status)}>{a.virtual ? '·' : '●'} </Text>
-            <Text color={nameColor(a.name)} bold>{a.name}</Text>
+            <Text color={colorFor(a.name)} bold>{a.name}</Text>
             <Text dimColor> {a.role ?? ''} [{a.status}]</Text>
           </Text>
         ))}
@@ -326,9 +330,9 @@ export function App({ port }: { port: number }) {
             <Box key={i} flexDirection="column" marginTop={i === 0 ? 0 : 1}>
               <Text>
                 {m.ts ? <Text dimColor>{formatTime(m.ts)} </Text> : null}
-                <Text color={nameColor(m.from)}>{m.from}</Text>
+                <Text color={colorFor(m.from)}>{m.from}</Text>
                 <Text> → </Text>
-                <Text color={nameColor(m.to)}>{m.to}</Text>
+                <Text color={colorFor(m.to)}>{m.to}</Text>
               </Text>
               {lines.map((ln, j) => (<Text key={j} wrap="wrap">  {ln}</Text>))}
               {truncated > 0 ? <Text dimColor>  … +{truncated} 行（完整见 {m.from} 窗口）</Text> : null}

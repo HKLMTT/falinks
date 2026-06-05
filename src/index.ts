@@ -46,6 +46,7 @@ export async function up(configPath: string) {
   };
   const sessions = new Map<string, string>();
   const bootstraps = new Map<string, string>(); // name -> 完整 bootstrap（/clear 后重注入,恢复员工身份）
+  const clearing = new Set<string>(); // 正在 /clear 的员工：健康轮询期间别自动 onIdle（否则会把排队消息投进正在清空的 pane）
   const launchCwd = (() => { try { return realpathSync(process.cwd()); } catch { return process.cwd(); } })();
   const router = new Router(deliverer, {
     now: () => Date.now(), genId: () => `m${++n}`, routes: cfg.routes, guards,
@@ -173,11 +174,17 @@ export async function up(configPath: string) {
       await Promise.all(targets.map(async (nm) => {
         const sid = sessions.get(nm);
         if (!sid) return;
-        await driver.inject(sid, '/clear', true);    // claude/codex 同名：清空上下文、开新会话
-        await sleep(1500);
-        const bs = bootstraps.get(nm);
-        if (bs) await driver.inject(sid, bs, true);   // 重注入 bootstrap：恢复身份+重新 register，否则员工失忆
-        cleared.push(nm);
+        clearing.add(nm);                             // 清空期间健康轮询别自动 onIdle
+        router.hold(nm);                              // 标忙→发来的消息排队，不投进正在清空的 pane
+        try {
+          await driver.inject(sid, '/clear', true);   // claude/codex 同名：清空上下文、开新会话
+          await sleep(1500);
+          const bs = bootstraps.get(nm);
+          if (bs) await driver.inject(sid, bs, true); // 重注入 bootstrap：恢复身份+重新 register（→idle→投出排队消息）
+          cleared.push(nm);
+        } finally {
+          clearing.delete(nm);
+        }
       }));
       return { ok: true, cleared };
     },
@@ -224,23 +231,31 @@ export async function up(configPath: string) {
     lastRight = await launchInto(lastRight, first ? 'vertical' : 'horizontal', a);
     first = false;
   }
-  console.log(`[falinks] ✅ 办公室就绪：${cfg.agents.length} 名员工 + 控制台。Ctrl-C 收工。`);
+  if (!inProcessConsole) console.log(`[falinks] ✅ 办公室就绪：${cfg.agents.length} 名员工 + 控制台。Ctrl-C 收工。`);
 
   // 健康轮询(1.5s)：员工 pane 被关 → 自动下线；以及自动检测空闲 → 投出排队消息。
   const IDLE_GRACE_MS = 3000; // 刚投递后这段时间内不判空闲（避开"已提交但还没开始生成"的空窗）
+  const missStreak = new Map<string, number>(); // 连续探测不到 pane 的次数（去抖：osascript 高并发会瞬时误报，连续多次才下线）
   setInterval(() => {
     void (async () => {
       for (const [name, sid] of [...sessions]) {
         try {
           if (!(await driver.paneExists(sid))) {
+            const n = (missStreak.get(name) ?? 0) + 1;
+            missStreak.set(name, n);
+            if (n < 3) continue; // 还没连续 3 次，可能是瞬时误报，先不下线
             sessions.delete(name);
             router.removeAgent(name);
             lastDeliverAt.delete(name);
-            // 单窗口（进程内控制台）时不打印，避免污染 Ink 画面（花名册会自动反映下线）。
+            missStreak.delete(name);
             if (!inProcessConsole) console.log(`[falinks] ${name} 的窗口已关，自动下线`);
             continue;
           }
+          missStreak.delete(name); // 探到了，清零
           await driver.setName(sid, name); // 持续把 pane 标题钉成员工名（覆盖 CLI 自改的标题）
+
+          // 清空中（/clear）跳过自动空闲：否则会把排队消息投进正在清空的 pane。
+          if (clearing.has(name)) continue;
 
           // 自动检测空闲：路由认为 busy 但 pane 已回到空闲（生成结束 / 被 Ctrl+C 打断 / 没调 idle 工具）
           // → onIdle，把排队消息 pump 出去。读屏失败按"忙"处理；投递后宽限内不判，避免投递空窗误判。

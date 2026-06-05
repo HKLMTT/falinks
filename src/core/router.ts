@@ -108,6 +108,15 @@ export class Router {
     if (a.status === 'busy') a.status = 'stuck';
   }
 
+  /**
+   * 暂时标忙（如 /clear 清空上下文期间）：让发来的消息进 inbox 排队，
+   * 不会投进正在清空/重启的 pane。员工清完重新 register（→idle）会自动把排队的 pump 出去。
+   */
+  hold(name: AgentName): void {
+    const a = this.agents.get(name);
+    if (a && a.status !== 'dead') { a.status = 'busy'; a.handling = undefined; a.handlingFrom = undefined; }
+  }
+
   get(name: AgentName): AgentRuntime | undefined {
     return this.agents.get(name);
   }
