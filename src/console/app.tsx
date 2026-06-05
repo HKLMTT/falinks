@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { readdirSync, readFileSync } from 'node:fs';
-import { Box, Text, useInput } from 'ink';
+import { Box, Text, useInput, useStdin } from 'ink';
 import { parseConsoleInput, lastReplyTarget } from './parse.js';
 import { mentionState, applyMention } from './mention.js';
 import { commandState, applyCommand } from './commands.js';
@@ -67,6 +67,21 @@ export function App({ port }: { port: number }) {
   const [skippedQ, setSkippedQ] = useState<string | null>(null);
   const [tagline] = useState(() => TAGLINES[Math.floor(Math.random() * TAGLINES.length)]);
   const defaultCwd = process.cwd();
+
+  // 物理 Home/End：Ink 不把它们传给 useInput，只能直接听 stdin 的转义序列。用 ref 取事件发生时的输入长度。
+  const io = useRef({ input: '', cursor: 0 });
+  io.current = { input, cursor };
+  const { stdin } = useStdin();
+  useEffect(() => {
+    if (!stdin) return;
+    const onData = (d: Buffer | string) => {
+      const s = d.toString();
+      if (s === '\x1b[H' || s === '\x1bOH' || s === '\x1b[1~' || s === '\x1b[7~') setCursor(0);
+      else if (s === '\x1b[F' || s === '\x1bOF' || s === '\x1b[4~' || s === '\x1b[8~') setCursor(io.current.input.length);
+    };
+    stdin.on('data', onData);
+    return () => { stdin.off('data', onData); };
+  }, [stdin]);
 
   useEffect(() => {
     const tick = async () => {
@@ -195,9 +210,9 @@ export function App({ port }: { port: number }) {
       // 其它按键（打字）落到下面普通输入处理
     }
 
-    // 行首/行尾跳转：Home/End（部分终端发转义序列）或通用的 Ctrl+A / Ctrl+E
-    if ((key as any).home || (key.ctrl && (char === 'a' || char === 'A')) || char === '\x1b[H' || char === '\x1bOH' || char === '\x1b[1~') { setCursor(0); return; }
-    if ((key as any).end || (key.ctrl && (char === 'e' || char === 'E')) || char === '\x1b[F' || char === '\x1bOF' || char === '\x1b[4~') { setCursor(input.length); return; }
+    // 行首/行尾：Ctrl+A / Ctrl+E（物理 Home/End 由下方 stdin 监听处理——Ink 会把 Home/End 吞掉不传给 useInput）
+    if (key.ctrl && (char === 'a' || char === 'A')) { setCursor(0); return; }
+    if (key.ctrl && (char === 'e' || char === 'E')) { setCursor(input.length); return; }
 
     if (active) {
       if (key.upArrow) { setSel((s) => Math.max(0, s - 1)); return; }
