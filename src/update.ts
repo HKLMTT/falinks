@@ -1,3 +1,8 @@
+/** 全局更新命令（macOS 全局安装需 sudo）。 */
+export function upgradeCommand(pkg: string): string {
+  return `sudo npm i -g ${pkg}`;
+}
+
 /** latest 是否比 current 新（简单 semver 数值比较，忽略预发布后缀）。 */
 export function isNewer(latest: string, current: string): boolean {
   const pa = latest.split('-')[0].split('.').map((x) => Number(x) || 0);

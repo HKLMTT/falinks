@@ -3,6 +3,15 @@ import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { execSync } from 'node:child_process';
 import { up } from './index.js';
 import { runtimePath } from './runtime.js';
+import { fetchLatest, isNewer, upgradeCommand } from './update.js';
+
+const PKG: { name: string; version: string } = (() => {
+  try {
+    return JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+  } catch {
+    return { name: '@liujia307/falinks', version: '' };
+  }
+})();
 
 function runtimePort(): number {
   try {
@@ -37,13 +46,18 @@ function currentTeamLabel(): string | null {
 
 /**
  * 选团队并落到配置文件。
+ * update：有新版时先弹一屏（继续 / 退出去更新）。
  * TTY：每次都弹选单（已有配置则默认"继续当前"，回车秒过；选别的会覆盖配置）。
  * 非 TTY：无配置则写默认单员工，有配置则沿用。
  */
-async function chooseTeam(): Promise<void> {
+async function chooseTeam(update: { latest: string; current: string; pkg: string } | null = null): Promise<void> {
   if (process.stdin.isTTY) {
-    const { runSetup } = await import('./setup/run.js');
-    const cfg = await runSetup(process.cwd(), currentTeamLabel());
+    const { runSetup, QUIT_FOR_UPDATE } = await import('./setup/run.js');
+    const cfg = await runSetup(process.cwd(), currentTeamLabel(), update);
+    if (cfg === QUIT_FOR_UPDATE) {
+      console.log(`已退出。更新命令：${upgradeCommand(PKG.name)}`);
+      process.exit(0);
+    }
     if (cfg !== null) writeFileSync(DEFAULT_CONFIG_PATH, JSON.stringify(cfg, null, 2)); // null=继续当前，不覆盖
   } else if (!existsSync(DEFAULT_CONFIG_PATH)) {
     writeDefaultConfig();
@@ -68,9 +82,14 @@ async function init() {
   console.log(`✅ 配置已就绪（${DEFAULT_CONFIG_PATH}）。运行：falinks`);
 }
 
-/** 裸 `falinks` 的一键运行：每次都先选团队（默认沿用当前），再起。 */
+/** 裸 `falinks` 的一键运行：先查更新（有则问继续/退出去更新），再选团队（默认沿用当前），再起。 */
 async function runHere() {
-  await chooseTeam();
+  let update: { latest: string; current: string; pkg: string } | null = null;
+  if (process.stdin.isTTY && PKG.version) {
+    const latest = await fetchLatest(PKG.name);
+    if (latest && isNewer(latest, PKG.version)) update = { latest, current: PKG.version, pkg: PKG.name };
+  }
+  await chooseTeam(update);
   await up(DEFAULT_CONFIG_PATH);
 }
 

@@ -5,7 +5,6 @@ import { parseConsoleInput } from './parse.js';
 import { mentionState, applyMention } from './mention.js';
 import { commandState, applyCommand } from './commands.js';
 import { CLIS, dirSuggestions } from './wizard.js';
-import { fetchLatest, isNewer } from '../update.js';
 import { saveClipboardImage, expandImageTokens } from './clipboard.js';
 
 const PKG: { name: string; version: string } = (() => {
@@ -63,14 +62,7 @@ export function App({ port }: { port: number }) {
   const [status, setStatus] = useState('');
   const [wizard, setWizard] = useState<WizardState | null>(null);
   const [tagline] = useState(() => TAGLINES[Math.floor(Math.random() * TAGLINES.length)]);
-  const [update, setUpdate] = useState<string | null>(null);
   const defaultCwd = process.cwd();
-
-  useEffect(() => {
-    void fetchLatest(PKG.name).then((latest) => {
-      if (latest && VERSION && isNewer(latest, VERSION)) setUpdate(latest);
-    });
-  }, []);
 
   useEffect(() => {
     const tick = async () => {
@@ -223,9 +215,6 @@ export function App({ port }: { port: number }) {
         <Text color="cyan" bold>╠╣ ╠═╣║  ║║║║╠╩╗╚═╗</Text>
         <Text color="cyan" bold>╚  ╩ ╩╩═╝╩╝╚╝╩ ╩╚═╝</Text>
         <Text dimColor>v{VERSION} · {tagline}</Text>
-        {update ? (
-          <Text color="yellow">🆕 有新版 {update}（当前 v{VERSION}）· 更新：sudo npm i -g {PKG.name}</Text>
-        ) : null}
       </Box>
       <Box flexDirection="column" marginTop={1}>
         <Text underline>花名册</Text>
