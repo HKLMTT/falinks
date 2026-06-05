@@ -82,3 +82,41 @@ test('resolveBus:unknown 的不删档案也不当活的', async () => {
   expect(r.ok).toBe(false);
   expect(readInstance(c1, root)).not.toBeNull();
 });
+
+// I-1: 200 + 非 JSON body = 不是 falinks → dead(stale 档案应自愈清理)
+test('probeBus:200 + 非 JSON body → dead', async () => {
+  const fHtml = (async () => new Response('<html>not json</html>', { status: 200 })) as typeof fetch;
+  expect((await probeBus(1, fHtml)).state).toBe('dead');
+});
+
+// I-2: alive 分支缺 pid 字段 → dead
+test('probeBus:alive 分支缺 pid → dead', async () => {
+  const fNoPid = (async () =>
+    new Response(JSON.stringify({ cwd: '/a' }), { status: 200 })) as typeof fetch;
+  expect((await probeBus(1, fNoPid)).state).toBe('dead');
+});
+
+// M-1: 本项目档案首次 unknown、扫描阶段第二次探活恢复 alive → 命中且档案保留
+test('resolveBus:本项目首次 unknown、扫描期恢复 alive → 命中', async () => {
+  const root = tmpRoot(); const cwd = tmpCwd();
+  writeInstance({ port: 50003, pid: 1, cwd, startedAt: 1 }, root);
+  let call = 0;
+  const fetchFn = (async () => {
+    call++;
+    if (call === 1) { const e: any = new Error('aborted'); e.name = 'AbortError'; throw e; }
+    return new Response(JSON.stringify({ cwd, pid: 1, startedAt: 1 }), { status: 200 });
+  }) as typeof fetch;
+  const r = await resolveBus(cwd, { root, fetchFn });
+  expect(r).toEqual({ ok: true, port: 50003 });
+  expect(readInstance(cwd, root)).not.toBeNull();
+});
+
+// M-2: AggregateError 形态的 ECONNREFUSED(Node 24 undici 实际形态)→ dead
+test('probeBus:ECONNREFUSED 以 AggregateError 形式包装 → dead', async () => {
+  const fAgg = (async () => {
+    const e: any = new TypeError('fetch failed');
+    e.cause = new AggregateError([Object.assign(new Error('refused'), { code: 'ECONNREFUSED' })]);
+    throw e;
+  }) as typeof fetch;
+  expect((await probeBus(1, fAgg)).state).toBe('dead');
+});

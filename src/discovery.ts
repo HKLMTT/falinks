@@ -22,8 +22,14 @@ export async function probeBus(port: number, fetchFn: typeof fetch = fetch, time
   try {
     const res = await fetchFn(`http://127.0.0.1:${port}/admin/info`, { signal: ac.signal });
     if (!res.ok) return { state: 'dead' }; // 端口被非 falinks 服务占着
-    const info = await res.json();
-    if (typeof info?.cwd !== 'string') return { state: 'dead' };
+    let info: any;
+    try {
+      info = await res.json();
+    } catch (e: any) {
+      if (e?.name === 'SyntaxError') return { state: 'dead' }; // 200 + 非 JSON = 不是 falinks
+      throw e;
+    }
+    if (typeof info?.cwd !== 'string' || typeof info?.pid !== 'number') return { state: 'dead' };
     return { state: 'alive', info };
   } catch (e: any) {
     return isConnRefused(e) ? { state: 'dead' } : { state: 'unknown' };
@@ -42,15 +48,16 @@ export type Resolved = { ok: true; port: number } | { ok: false; error: string }
  */
 export async function resolveBus(
   cwd: string,
-  opts?: { root?: string; fetchFn?: typeof fetch },
+  opts?: { root?: string; fetchFn?: typeof fetch; timeoutMs?: number },
 ): Promise<Resolved> {
   const root = opts?.root ?? runtimeDir();
   const fetchFn = opts?.fetchFn ?? fetch;
+  const timeoutMs = opts?.timeoutMs;
   const me = realCwd(cwd);
 
   const mine = readInstance(cwd, root);
   if (mine) {
-    const p = await probeBus(mine.port, fetchFn);
+    const p = await probeBus(mine.port, fetchFn, timeoutMs ?? 500);
     if (p.state === 'alive' && p.info.cwd === me) return { ok: true, port: mine.port };
     if (p.state === 'dead' || p.state === 'alive') removeInstanceFile(instancePath(cwd, root)); // dead 或 cwd 不符=stale
     // unknown:不删,落到扫描(还会再探一次,仍 unknown 则跳过)
@@ -58,7 +65,7 @@ export async function resolveBus(
 
   const alive: { port: number; cwd: string }[] = [];
   for (const e of listInstances(root)) {
-    const p = await probeBus(e.info.port, fetchFn);
+    const p = await probeBus(e.info.port, fetchFn, timeoutMs ?? 500);
     if (p.state === 'alive' && p.info.cwd === e.info.cwd) alive.push({ port: e.info.port, cwd: e.info.cwd });
     else if (p.state === 'dead' || p.state === 'alive') removeInstanceFile(e.file);
   }
