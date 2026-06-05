@@ -15,9 +15,11 @@
 每条消息渲染成一个块:
 - 头部:`from → to`(from 青色,to 品红,与现状一致)。
 - 正文:**保留换行**(不再 `replace(/\s+/g,' ')`),每行缩进 2 空格,用 Ink `<Text wrap="wrap">` 按终端宽度自动折行。
-- 正文按行数封顶(默认每条 ≤ 12 行),超出在末尾加暗色 `… +N 行(完整见 {from} 窗口)`。
+- **截断策略(按用户要求:当前回复看全,历史给预览)**:
+  - **最新一条**:保留全文(安全上限 40 行,纯防超长把输入框挤出屏幕;正常回复≈全文)。
+  - **其余(历史)**:每条只显示前 3 行预览,超出加暗色 `… +N 行(完整见 {from} 窗口)`。
 - 条与条之间空一行。
-- 面板仍只显示最近若干条(保留现状的 `slice(-10)`,但因每条更高,实际渲染时按"最近 N 条"控制;N 取 6)。
+- 面板显示最近 6 条(历史预览 + 最新全文)。
 
 ### A.2 纯函数(可单测)
 `src/console/log-format.ts`:
@@ -29,7 +31,9 @@ export function formatBody(body: string, maxLines: number): { lines: string[]; t
 - 超过 `maxLines` 则截到 `maxLines`,`truncated = 原行数 - maxLines`,否则 0;
 - 折行交给 Ink(不在此函数做宽度换行)。
 
-console 渲染:对 `log.slice(-6)` 每条 → 头部 `<Text>` + `formatBody(body,12).lines` 各渲一行(缩进 + `wrap="wrap"`)+ 截断提示 + 空行。
+console 渲染:对 `log.slice(-6)` 每条 →
+- 最新一条用 `formatBody(body, 40)`,其余用 `formatBody(body, 3)`;
+- 头部 `<Text>` + 各正文行(缩进 + `wrap="wrap"`)+ `truncated>0` 时的截断提示 + 空行。
 
 ### A.3 改动范围
 `src/console/app.tsx`(消息渲染段)+ 新文件 `src/console/log-format.ts`。
@@ -101,7 +105,7 @@ class QuestionStore {
 ## 实测验收(用户真终端)
 1. 起 1 个员工,让它 `ask(to="boss", "选哪个方案", ["A","B","C"])`。
 2. 控制台出现 picker;老板选 B;员工 pane 收到「【来自 boss】对"选哪个方案",老板选择:B」。
-3. 消息面板里历史消息多行、保留换行、条间留白、长消息有「… +N 行」。
+3. 消息面板里:历史消息多行、保留换行、条间留白、过长的历史显示 3 行预览 +「… +N 行」;**最新一条回复显示全文**。
 
 ## 明确不做(YAGNI)
 解析 CLI 原生提示;老板自定义文本回答(只点选项);pending 问题持久化(进程内即可);消息面板滚动(靠每条封顶 + 最近 N 条)。
