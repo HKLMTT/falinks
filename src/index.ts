@@ -185,7 +185,6 @@ export async function up(configPath: string) {
   }, cfg.busPort);
   mkdirSync(runtimeDir(), { recursive: true });
   writeFileSync(runtimePath(), JSON.stringify({ port: bus.port }));
-  console.log(`[falinks] bus on :${bus.port}`);
 
   // 单窗口：若在 iTerm 交互终端里运行，当前 pane 直接当控制台，员工向右 split——只有一个窗口。
   // 否则（非 iTerm / 非 TTY）回退：另开窗口放一个独立的控制台进程。
@@ -194,7 +193,14 @@ export async function up(configPath: string) {
 
   if (inProcessConsole) {
     lastRight = here!;
+    // 清掉选单残留，给一个干净的"准备中"画面（裸日志会很丑），就绪后再 renderConsole。
+    process.stdout.write('\x1b[2J\x1b[3J\x1b[H');
+    process.stdout.write(
+      `\n  ⏳ falinks 正在准备 ${cfg.agents.length} 名员工（${cfg.agents.map((a) => a.name).join(' / ')}）…\n` +
+      `     首次启动每个员工要等 CLI 就绪，可能十几秒，请稍候。\n`,
+    );
   } else {
+    console.log(`[falinks] bus on :${bus.port}`);
     const consoleCmd = consoleLaunchCommand(process.argv[1], process.execPath);
     lastRight = await driver.launch({ cwd: process.cwd(), command: consoleCmd });
     await sleep(800);
@@ -202,7 +208,7 @@ export async function up(configPath: string) {
 
   let first = true;
   for (const a of cfg.agents) {
-    console.log(`[falinks] 启动员工 ${a.name} (${a.cli})…`);
+    if (!inProcessConsole) console.log(`[falinks] 启动员工 ${a.name} (${a.cli})…`);
     lastRight = await launchInto(lastRight, first ? 'vertical' : 'horizontal', a);
     first = false;
   }

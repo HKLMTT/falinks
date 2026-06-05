@@ -270,7 +270,14 @@ export function App({ port }: { port: number }) {
       return;
     }
     if (ev.type === 'backspace') {
-      if (cursor > 0) { setInput((v) => v.slice(0, cursor - 1) + v.slice(cursor)); setCursor((c) => c - 1); setSel(0); }
+      if (cursor > 0) {
+        // 若光标紧跟在 [图片N] 之后，整体删掉这个占位（像 Claude Code 把附件当一个整体删），而不是逐字符。
+        const m = input.slice(0, cursor).match(/\[图片\d+\]$/);
+        const del = m ? m[0].length : 1;
+        setInput((v) => v.slice(0, cursor - del) + v.slice(cursor));
+        setCursor((c) => c - del);
+        setSel(0);
+      }
       return;
     }
     if (ev.type === 'text') {
@@ -303,7 +310,11 @@ export function App({ port }: { port: number }) {
       <Box flexDirection="column" marginTop={1}>
         <Text underline>花名册</Text>
         {roster.map((a) => (
-          <Text key={a.name} color={color(a.status)}>{a.virtual ? '·' : '●'} {a.name} <Text dimColor>{a.role ?? ''} [{a.status}]</Text></Text>
+          <Text key={a.name}>
+            <Text color={color(a.status)}>{a.virtual ? '·' : '●'} </Text>
+            <Text color={nameColor(a.name)} bold>{a.name}</Text>
+            <Text dimColor> {a.role ?? ''} [{a.status}]</Text>
+          </Text>
         ))}
       </Box>
       <Box flexDirection="column" marginTop={1} flexGrow={1}>
