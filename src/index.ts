@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { parseConfig } from './core/config.js';
 import { Router } from './core/router.js';
 import { Guards } from './core/guards.js';
-import { makeDeliverer, detectScreenState } from './orchestrator.js';
+import { makeDeliverer, detectScreenState, isPaneBusy } from './orchestrator.js';
 import { ITerm2Driver } from './terminal/iterm.js';
 import { startBus, type Bus } from './bus/server.js';
 import { mcpConfigFor, buildAgentLaunch } from './agent/mcp-config.js';
@@ -170,7 +170,8 @@ export async function up(configPath: string) {
   }
   console.log(`[falinks] ✅ 办公室就绪：${cfg.agents.length} 名员工 + 控制台。Ctrl-C 收工。`);
 
-  // 健康轮询：员工 pane 被关 → 自动下线（移出花名册）。
+  // 健康轮询：员工 pane 被关 → 自动下线；以及自动检测空闲 → 投出排队消息。
+  const idleStreak = new Map<string, number>(); // 连续"看起来空闲"的次数（防启动竞态，连续2次才 onIdle）
   setInterval(() => {
     void (async () => {
       for (const [name, sid] of [...sessions]) {
@@ -178,10 +179,27 @@ export async function up(configPath: string) {
           if (!(await driver.paneExists(sid))) {
             sessions.delete(name);
             router.removeAgent(name);
+            idleStreak.delete(name);
             // 单窗口（进程内控制台）时不打印，避免污染 Ink 画面（花名册会自动反映下线）。
             if (!inProcessConsole) console.log(`[falinks] ${name} 的窗口已关，自动下线`);
+            continue;
+          }
+          await driver.setName(sid, name); // 持续把 pane 标题钉成员工名（覆盖 CLI 自改的标题）
+
+          // 自动检测空闲：路由认为 busy 但 pane 已回到空闲（生成结束 / 被 Ctrl+C 打断 / 没调 idle 工具）
+          // → 连续 2 次确认后 onIdle，把排队消息 pump 出去。读屏失败按"忙"处理，避免误判。
+          const a = router.get(name);
+          if (a && a.status === 'busy') {
+            const busy = isPaneBusy(await driver.readScreen(sid).catch(() => 'esc to interrupt'));
+            if (busy) {
+              idleStreak.set(name, 0);
+            } else {
+              const n = (idleStreak.get(name) ?? 0) + 1;
+              idleStreak.set(name, n);
+              if (n >= 2) { idleStreak.set(name, 0); router.onIdle(name); }
+            }
           } else {
-            await driver.setName(sid, name); // 持续把 pane 标题钉成员工名（覆盖 CLI 自改的标题）
+            idleStreak.delete(name);
           }
         } catch {
           /* 探测失败忽略，下一轮再试 */
