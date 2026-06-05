@@ -42,6 +42,14 @@ test('扇出给不同对象各自独立 thread（cap=1 也都成功，不被静�
   expect(a!.thread).not.toBe(b!.thread);
 });
 
+test('boss(虚拟)连发多条不会撞回合上限（每次都是新线程，人发起的长对话不被丢）', () => {
+  const { router } = setup({ maxTurnsPerThread: 1, maxInjectionsPerMinute: 100, loopWindow: 99 });
+  router.addVirtual('boss');
+  expect(router.send('boss', 'alice', '需求1')).toBeTruthy();
+  expect(router.send('boss', 'alice', '需求2')).toBeTruthy();
+  expect(router.send('boss', 'alice', '需求3')).toBeTruthy();
+});
+
 test('turn-cap 在同一对上累计：超过上限后丢弃（循环保护仍在）', () => {
   const { router } = setup({ maxTurnsPerThread: 2, maxInjectionsPerMinute: 100, loopWindow: 99 });
   expect(router.send('alice', 'bob', 'm1')).toBeTruthy();    // pair(alice,bob) 第1回合

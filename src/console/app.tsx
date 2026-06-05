@@ -109,13 +109,13 @@ export function App({ port }: { port: number }) {
       if (a.kind === 'help') { setStatus('@名字 私聊 · @all 群发 · 纯文本=回复上次对话目标 · /add 加员工 · /remove 删员工 · /clear [名字] 清空上下文'); return; }
       if (a.kind === 'error') { setStatus('⚠ ' + a.message); return; }
       if (a.kind === 'add-start') { setWizard({ name: a.name, step: 'cli', sel: 0 }); return; }
-      if (a.kind === 'say') { await admin(port, 'POST', '/admin/say', { to: a.to, message: a.message }); setStatus(`→ ${a.to}`); return; }
+      if (a.kind === 'say') { const r = await admin(port, 'POST', '/admin/say', { to: a.to, message: a.message }); setStatus(r.ok ? `→ ${a.to}` : '⚠ 未送达 ' + a.to + '：' + (r.error ?? '被护栏拦截')); return; }
       if (a.kind === 'broadcast') { await admin(port, 'POST', '/admin/broadcast', { message: a.message }); setStatus('→ 全员'); return; }
       if (a.kind === 'reply') {
         const target = lastReplyTarget(log);
         if (!target) { setStatus('没有上次对话目标，请 @某人 私聊 或 @all 群发'); return; }
-        await admin(port, 'POST', '/admin/say', { to: target, message: a.message });
-        setStatus(`→ ${target}（回复）`);
+        const r = await admin(port, 'POST', '/admin/say', { to: target, message: a.message });
+        setStatus(r.ok ? `→ ${target}（回复）` : `⚠ 未送达 ${target}：${r.error ?? '被护栏拦截'}`);
         return;
       }
       if (a.kind === 'add') { const r = await admin(port, 'POST', '/admin/add', a.spec); setStatus(r.ok ? `＋ ${a.spec.name}` : '⚠ ' + (r.error ?? 'add 失败')); return; }
