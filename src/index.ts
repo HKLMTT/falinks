@@ -1,4 +1,4 @@
-import { readFileSync, mkdtempSync, writeFileSync, mkdirSync, realpathSync } from 'node:fs';
+import { readFileSync, mkdtempSync, writeFileSync, mkdirSync, realpathSync, rmSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -10,7 +10,8 @@ import { makeDeliverer, detectScreenState, isPaneBusy } from './orchestrator.js'
 import { ITerm2Driver } from './terminal/iterm.js';
 import { startBus, type Bus } from './bus/server.js';
 import { mcpConfigFor, buildAgentLaunch } from './agent/mcp-config.js';
-import { runtimeDir, runtimePath, consoleLaunchCommand } from './runtime.js';
+import { runtimeDir, runtimePath, consoleLaunchCommand, writeInstance, readInstance, removeInstanceIfOwner, removeInstanceFile, instancePath } from './runtime.js';
+import { probeBus } from './discovery.js';
 import { renderConsole } from './console/run.js';
 import { chooseAnchor } from './terminal/anchor.js';
 import { loadStore, saveStore, pruneToAgents, type SessionStore } from './session/store.js';
@@ -149,6 +150,22 @@ export async function up(configPath: string) {
     return sid;
   }
 
+  // 防双开:同目录的 sessions/messages 是共享的,双开必然互相污染。
+  const existing = readInstance(launchCwd);
+  if (existing) {
+    const p = await probeBus(existing.port);
+    if (p.state === 'alive' && p.info.cwd === launchCwd) {
+      console.error(`该目录已有 falinks 在运行（端口 ${existing.port}）。先在那边 Ctrl-C 收工，再启动。`);
+      process.exit(1);
+    }
+    if (p.state === 'unknown') {
+      console.error(`疑似有 falinks 在运行（端口 ${existing.port}）但探活超时。确认没在运行后删除：${instancePath(launchCwd)}`);
+      process.exit(1);
+    }
+    removeInstanceFile(instancePath(launchCwd)); // 确认死了/张冠李戴:清掉尸体
+  }
+
+  let portWarning = ''; // 显式端口被占回退时的提示;控制台模式 stderr 会被清屏吞掉,改走首条 status
   bus = await startBus({
     router,
     getSessionId: (name) => sessions.get(name),
@@ -211,9 +228,26 @@ export async function up(configPath: string) {
       setTimeout(() => process.exit(0), 200); // 关完再退（分离进程模式下也要退 up）
       return { ok: true };
     },
-  }, cfg.busPort ?? 0);
+  }, cfg.busPort ?? 0, {
+    identity: { cwd: launchCwd, startedAt: Date.now() },
+    onPortFallback: (wanted, got) => { portWarning = `⚠ 端口 ${wanted} 被占用，已自动改用 ${got}`; },
+  });
   mkdirSync(runtimeDir(), { recursive: true });
-  writeFileSync(runtimePath(), JSON.stringify({ port: bus.port }));
+  rmSync(runtimePath(), { force: true }); // 旧版全局 runtime.json:一次性迁移清理
+  const inst = { port: bus.port, pid: process.pid, cwd: launchCwd, startedAt: Date.now() };
+  if (!writeInstance(inst)) {
+    // wx 失败=毫秒级竞态里别人先写了:再探一次,活着就让位,死的覆盖。
+    const race = readInstance(launchCwd);
+    const p = race ? await probeBus(race.port) : null;
+    if (p?.state === 'alive' && p.info.cwd === launchCwd) {
+      console.error(`该目录已有 falinks 在运行（端口 ${race!.port}）。`);
+      process.exit(1);
+    }
+    writeInstance(inst, undefined, { force: true });
+  }
+  process.on('exit', () => removeInstanceIfOwner(launchCwd, process.pid));
+  process.on('SIGTERM', () => process.exit(0)); // 默认 SIGTERM 不走 exit 钩子,显式转一下
+  process.on('SIGINT', () => process.exit(0));  // 非控制台模式 Ctrl-C(控制台模式 raw mode 自行处理)
 
   // 单窗口：若在 iTerm 交互终端里运行，当前 pane 直接当控制台，员工向右 split——只有一个窗口。
   // 否则（非 iTerm / 非 TTY）回退：另开窗口放一个独立的控制台进程。
@@ -230,7 +264,8 @@ export async function up(configPath: string) {
     );
   } else {
     console.log(`[falinks] bus on :${bus.port}`);
-    const consoleCmd = consoleLaunchCommand(process.argv[1], process.execPath);
+    if (portWarning) console.error(`[falinks] ${portWarning}`);
+    const consoleCmd = consoleLaunchCommand(process.argv[1], process.execPath, bus.port);
     lastRight = await driver.launch({ cwd: process.cwd(), command: consoleCmd });
     await sleep(800);
   }
@@ -284,5 +319,5 @@ export async function up(configPath: string) {
   }, 1500);
 
   // 单窗口：在当前 pane（左）进程内渲染控制台，接管本终端。
-  if (inProcessConsole) renderConsole(bus.port);
+  if (inProcessConsole) renderConsole(bus.port, portWarning || undefined);
 }

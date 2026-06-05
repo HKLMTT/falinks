@@ -52,7 +52,7 @@ type WizardState =
   | { name: string; step: 'role'; cli: string; roleText: string }
   | { name: string; step: 'cwd'; cli: string; role: string; path: string; sel: number };
 
-export function App({ port }: { port: number }) {
+export function App({ port, initialStatus }: { port: number; initialStatus?: string }) {
   const [roster, setRoster] = useState<any[]>([]);
   const [log, setLog] = useState<any[]>([]);
   const [input, setInput] = useState('');
@@ -61,7 +61,7 @@ export function App({ port }: { port: number }) {
   const [histIdx, setHistIdx] = useState<number | null>(null);
   const [attachments, setAttachments] = useState<string[]>([]);
   const [sel, setSel] = useState(0);
-  const [status, setStatus] = useState('');
+  const [status, setStatus] = useState(initialStatus ?? '');
   const [wizard, setWizard] = useState<WizardState | null>(null);
   const [questions, setQuestions] = useState<any[]>([]);
   const [qSel, setQSel] = useState(0);
