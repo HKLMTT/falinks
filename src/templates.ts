@@ -52,10 +52,9 @@ export const PRESET_TEMPLATES: TeamTemplate[] = [
   },
 ];
 
-/** 由一组成员生成 falinks 配置（所有员工工作目录=cwd）。 */
-export function configFromMembers(members: TeamMember[], cwd: string, busPort = 7878) {
+/** 由一组成员生成 falinks 配置(所有员工工作目录=cwd)。busPort 不写:缺省自动分配,多实例不冲突。 */
+export function configFromMembers(members: TeamMember[], cwd: string) {
   return {
-    busPort,
     agents: members.map((m) => ({ name: m.name, cli: m.cli, cwd, role: m.role, bootstrap: bootstrapForRole(m.role) })),
     routes: {},
   };

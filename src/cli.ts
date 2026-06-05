@@ -67,7 +67,6 @@ async function chooseTeam(update: { latest: string; current: string; pkg: string
 function writeDefaultConfig(): void {
   const cwd = process.cwd();
   const config = {
-    busPort: 7878,
     agents: [
       { name: 'alice', cli: 'claude', cwd, bootstrap: '你是办公室里的 AI 员工，风格简练。' },
     ],

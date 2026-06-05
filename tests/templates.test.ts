@@ -23,8 +23,8 @@ test('bootstrapForRole embeds the role', () => {
 });
 
 test('configFromMembers maps members to agents at the given cwd with derived bootstrap', () => {
-  const cfg = configFromMembers([{ name: 'bob', cli: 'codex', role: '后端' }], '/proj', 7878);
-  expect(cfg.busPort).toBe(7878);
+  const cfg = configFromMembers([{ name: 'bob', cli: 'codex', role: '后端' }], '/proj');
+  expect('busPort' in cfg).toBe(false);
   expect(cfg.agents).toEqual([
     { name: 'bob', cli: 'codex', cwd: '/proj', role: '后端', bootstrap: bootstrapForRole('后端') },
   ]);
