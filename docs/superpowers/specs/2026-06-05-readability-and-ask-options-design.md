@@ -96,11 +96,45 @@ class QuestionStore {
 
 ---
 
+## 设计 C — 防误群发:`@all` + 默认回复上次目标
+
+现状:纯文本 = 群发全员,极易误操作。改为:
+
+### C.1 输入语义(`console/parse.ts`)
+- `@all <消息>` → 群发(`broadcast`)。是**唯一**的群发入口。
+- `@<名字> <消息>` → 私聊(`say`,名字 ≠ `all`)。
+- 纯文本(不以 `@`/`/` 开头) → 新动作 `reply`,发给"上一次对话目标"。
+- `/命令` → 不变。
+- `ConsoleAction` 去掉"纯文本→broadcast",新增 `{ kind:'reply'; message }`;`broadcast` 改由 `@all` 触发。
+
+### C.2 上一次对话目标(纯函数,可单测)
+`console/parse.ts` 新增:
+```
+export function lastReplyTarget(log: {from:string;to:string}[], self?='boss'): string | null
+```
+从 log 末尾往前找第一条与 self 相关的消息:`to===self` 取 `from`;`from===self` 取 `to`;都不沾则跳过;找不到返回 null。
+- `@名字` 发出后下个轮询(log 出现 boss→名字)即更新目标;员工给 boss 发消息(X→boss)也会把目标切到 X——符合"最近一条对话的对方"。
+
+### C.3 控制台行为(`console/app.tsx`)
+- `@` 补全候选加入 `all`(`['all', ...真实成员名]`),`@a` 能补出 `@all`。
+- dispatch 处理 `reply`:`const target = lastReplyTarget(log)`;有目标 → `POST /admin/say {to:target}`;无目标 → 提示「没有上次对话目标,请 @某人 或 @all 群发」,不群发。
+- 输入提示行改为体现新语义并显示当前目标:`直接打字=回复 @{target||'(无)'} · @all 群发 · @名字 私聊 · / 命令`。
+- `/help` 文案同步加 `@all 群发`。
+
+### C.4 输入框 HOME/END 跳转
+`useInput` 增加:`Home`(或 `Ctrl+A`)→ `cursor=0`;`End`(或 `Ctrl+E`)→ `cursor=input.length`。Ink 的 `key.home`/`key.end` 不一定可靠,故同时支持 `Ctrl+A`/`Ctrl+E`(终端通用行首/行尾)。
+
+### C.5 改动范围
+`console/parse.ts`(语义 + `lastReplyTarget`)、`console/app.tsx`(reply 分派、@all 补全、提示行、HOME/END)、`console/commands.ts`/help 文案。
+
+---
+
 ## 测试(vitest,纯函数 + FakeDriver/Router,不碰真 CLI/iTerm)
 - `log-format`:`formatBody` 保留换行、去首尾空行、按 maxLines 截断且 truncated 计数正确、空 body。
 - `QuestionStore`:add 生成唯一 id、list、take 取出即删、take 不存在返回 undefined。
 - bus `ask` 工具:to=boss 进 pending(`/admin/questions` 能查到);to=agent 走 `router.send` 投递带编号选项的消息(FakeDriver 收到注入)。
 - admin `/admin/answer`:正常下标 → `router.send('boss', from, …)` 注回且 pending 清空;越界/未知 id → 友好错误。
+- `parse`:`@all x`→broadcast;`@bob x`→say;纯文本→reply;`lastReplyTarget` 各情形(boss 发出、收到、无相关、X↔Y 不沾 boss)。
 
 ## 实测验收(用户真终端)
 1. 起 1 个员工,让它 `ask(to="boss", "选哪个方案", ["A","B","C"])`。
