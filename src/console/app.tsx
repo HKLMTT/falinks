@@ -1,11 +1,12 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { readdirSync, readFileSync } from 'node:fs';
-import { Box, Text, useInput, useStdin } from 'ink';
+import { Box, Text, useStdin } from 'ink';
 import { parseConsoleInput, lastReplyTarget } from './parse.js';
 import { mentionState, applyMention } from './mention.js';
 import { commandState, applyCommand } from './commands.js';
 import { CLIS, dirSuggestions } from './wizard.js';
 import { formatBody, nameColor, formatTime } from './log-format.js';
+import { decodeKey, type KeyEvent } from './keys.js';
 import { saveClipboardImage, expandImageTokens } from './clipboard.js';
 
 const PKG: { name: string; version: string } = (() => {
@@ -69,20 +70,10 @@ export function App({ port }: { port: number }) {
   const [tagline] = useState(() => TAGLINES[Math.floor(Math.random() * TAGLINES.length)]);
   const defaultCwd = process.cwd();
 
-  // 物理 Home/End + Shift+Enter：Ink 不把它们传给 useInput，只能直接听 stdin 的转义序列。用 ref 取事件发生时的输入/光标。
-  const io = useRef({ input: '', cursor: 0 });
-  io.current = { input, cursor };
-  const { stdin } = useStdin();
-  useEffect(() => {
-    if (!stdin) return;
-    const onData = (d: Buffer | string) => {
-      const s = d.toString();
-      if (s === '\x1b[H' || s === '\x1bOH' || s === '\x1b[1~' || s === '\x1b[7~') setCursor(0);
-      else if (s === '\x1b[F' || s === '\x1bOF' || s === '\x1b[4~' || s === '\x1b[8~') setCursor(io.current.input.length);
-    };
-    stdin.on('data', onData);
-    return () => { stdin.off('data', onData); };
-  }, [stdin]);
+  // 自研键盘输入：开 kitty 协议后，自己读 stdin + decodeKey，规范化成按键事件交给 handleKey。
+  // 这样 Shift+Enter（kitty CSI-u）能和回车区分，且不依赖终端配置；中文/方向键/Ctrl 组合也照常。
+  const { stdin, setRawMode } = useStdin();
+  useEffect(() => { setRawMode?.(true); }, [setRawMode]);
 
   useEffect(() => {
     const tick = async () => {
@@ -152,12 +143,12 @@ export function App({ port }: { port: number }) {
   const answering = !!pendingQ && input === '' && !wizard;
   const qSelClamped = pendingQ ? Math.min(qSel, Math.max(0, pendingQ.options.length - 1)) : 0;
 
-  useInput((char, key) => {
+  function handleKey(ev: KeyEvent) {
     // Ctrl+C：不直接退，先问是否关闭员工窗口（优先于一切）。
     if (confirmExit) {
-      if (key.escape) { setConfirmExit(false); return; }
-      if (key.return || char === 'y' || char === 'Y' || char === 'n' || char === 'N') {
-        const closePanes = !(char === 'n' || char === 'N'); // n=保留窗口；y/Enter=关闭
+      if (ev.type === 'esc') { setConfirmExit(false); return; }
+      if (ev.type === 'enter' || (ev.type === 'text' && /^[yYnN]$/.test(ev.text))) {
+        const closePanes = !(ev.type === 'text' && (ev.text === 'n' || ev.text === 'N')); // n=保留窗口；y/Enter=关闭
         void (async () => {
           try { await admin(port, 'POST', '/admin/shutdown', { closePanes }); } catch { /* ignore */ }
           process.exit(0);
@@ -166,28 +157,28 @@ export function App({ port }: { port: number }) {
       }
       return; // 确认中，吞掉其它键
     }
-    if (key.ctrl && (char === 'c' || char === 'C')) { setConfirmExit(true); return; }
+    if (ev.type === 'ctrl' && ev.key === 'c') { setConfirmExit(true); return; }
 
     // 向导模式：优先处理
     if (wizard) {
-      if (key.escape) { setWizard(null); setStatus('已取消添加'); return; }
+      if (ev.type === 'esc') { setWizard(null); setStatus('已取消添加'); return; }
       if (wizard.step === 'cli') {
-        if (key.upArrow) { setWizard({ ...wizard, sel: Math.max(0, wizard.sel - 1) }); return; }
-        if (key.downArrow) { setWizard({ ...wizard, sel: Math.min(CLIS.length - 1, wizard.sel + 1) }); return; }
-        if (key.return || key.tab) { setWizard({ name: wizard.name, step: 'role', cli: CLIS[wizard.sel], roleText: '' }); return; }
+        if (ev.type === 'up') { setWizard({ ...wizard, sel: Math.max(0, wizard.sel - 1) }); return; }
+        if (ev.type === 'down') { setWizard({ ...wizard, sel: Math.min(CLIS.length - 1, wizard.sel + 1) }); return; }
+        if (ev.type === 'enter' || ev.type === 'tab') { setWizard({ name: wizard.name, step: 'role', cli: CLIS[wizard.sel], roleText: '' }); return; }
         return;
       }
       if (wizard.step === 'role') {
-        if (key.return) { setWizard({ name: wizard.name, step: 'cwd', cli: wizard.cli, role: wizard.roleText.trim() || '员工', path: defaultCwd, sel: 0 }); return; }
-        if (key.backspace || key.delete) { setWizard({ ...wizard, roleText: wizard.roleText.slice(0, -1) }); return; }
-        if (char && !key.ctrl && !key.meta && !key.escape && !key.tab) { setWizard({ ...wizard, roleText: wizard.roleText + char }); return; }
+        if (ev.type === 'enter') { setWizard({ name: wizard.name, step: 'cwd', cli: wizard.cli, role: wizard.roleText.trim() || '员工', path: defaultCwd, sel: 0 }); return; }
+        if (ev.type === 'backspace') { setWizard({ ...wizard, roleText: wizard.roleText.slice(0, -1) }); return; }
+        if (ev.type === 'text') { setWizard({ ...wizard, roleText: wizard.roleText + ev.text }); return; }
         return;
       }
       const sugs = dirSuggestions(wizard.path, fsListDirs);
-      if (key.upArrow) { setWizard({ ...wizard, sel: Math.max(0, wizard.sel - 1) }); return; }
-      if (key.downArrow) { setWizard({ ...wizard, sel: Math.min(Math.max(0, sugs.length - 1), wizard.sel + 1) }); return; }
-      if (key.tab) { if (sugs.length) setWizard({ ...wizard, path: sugs[Math.min(wizard.sel, sugs.length - 1)] + '/', sel: 0 }); return; }
-      if (key.return) {
+      if (ev.type === 'up') { setWizard({ ...wizard, sel: Math.max(0, wizard.sel - 1) }); return; }
+      if (ev.type === 'down') { setWizard({ ...wizard, sel: Math.min(Math.max(0, sugs.length - 1), wizard.sel + 1) }); return; }
+      if (ev.type === 'tab') { if (sugs.length) setWizard({ ...wizard, path: sugs[Math.min(wizard.sel, sugs.length - 1)] + '/', sel: 0 }); return; }
+      if (ev.type === 'enter') {
         const w = wizard;
         setWizard(null);
         void (async () => {
@@ -196,13 +187,13 @@ export function App({ port }: { port: number }) {
         })();
         return;
       }
-      if (key.backspace || key.delete) { setWizard({ ...wizard, path: wizard.path.slice(0, -1), sel: 0 }); return; }
-      if (char && !key.ctrl && !key.meta) { setWizard({ ...wizard, path: wizard.path + char, sel: 0 }); return; }
+      if (ev.type === 'backspace') { setWizard({ ...wizard, path: wizard.path.slice(0, -1), sel: 0 }); return; }
+      if (ev.type === 'text') { setWizard({ ...wizard, path: wizard.path + ev.text, sel: 0 }); return; }
       return;
     }
 
     // Ctrl+V：读系统剪贴板里的截图，存临时文件，输入框只插入短占位 [图片N]（发送时展开成真实路径）
-    if (key.ctrl && (char === 'v' || char === 'V')) {
+    if (ev.type === 'ctrl' && ev.key === 'v') {
       void saveClipboardImage().then((p) => {
         if (!p) { setStatus('剪贴板里没有图片'); return; }
         const token = `[图片${attachments.length + 1}]`;
@@ -216,9 +207,9 @@ export function App({ port }: { port: number }) {
 
     // 答题态：有待答选择题且输入框为空 → ↑↓ 选项、Enter 回复、Esc 跳过；一打字就让位给普通输入。
     if (answering && pendingQ) {
-      if (key.upArrow) { setQSel((s) => Math.max(0, s - 1)); return; }
-      if (key.downArrow) { setQSel((s) => Math.min(pendingQ.options.length - 1, s + 1)); return; }
-      if (key.return) {
+      if (ev.type === 'up') { setQSel((s) => Math.max(0, s - 1)); return; }
+      if (ev.type === 'down') { setQSel((s) => Math.min(pendingQ.options.length - 1, s + 1)); return; }
+      if (ev.type === 'enter') {
         const id = pendingQ.id; const from = pendingQ.from; const choice = qSelClamped; const picked = pendingQ.options[choice];
         setQSel(0);
         void (async () => {
@@ -227,33 +218,31 @@ export function App({ port }: { port: number }) {
         })();
         return;
       }
-      if (key.escape) { setSkippedQ(pendingQ.id); return; }
+      if (ev.type === 'esc') { setSkippedQ(pendingQ.id); return; }
       // 其它按键（打字）落到下面普通输入处理
     }
 
-    // 行首/行尾：Ctrl+A / Ctrl+E（物理 Home/End 由下方 stdin 监听处理——Ink 会把 Home/End 吞掉不传给 useInput）
-    if (key.ctrl && (char === 'a' || char === 'A')) { setCursor(0); return; }
-    if (key.ctrl && (char === 'e' || char === 'E')) { setCursor(input.length); return; }
+    // 行首/行尾：Home/End 或 Ctrl+A / Ctrl+E
+    if (ev.type === 'home' || (ev.type === 'ctrl' && ev.key === 'a')) { setCursor(0); return; }
+    if (ev.type === 'end' || (ev.type === 'ctrl' && ev.key === 'e')) { setCursor(input.length); return; }
 
     if (active) {
-      if (key.upArrow) { setSel((s) => Math.max(0, s - 1)); return; }
-      if (key.downArrow) { setSel((s) => Math.min(items.length - 1, s + 1)); return; }
-      if (key.tab || key.return) { const c = complete!(selClamped); setInput(c); setCursor(c.length); setSel(0); return; }
+      if (ev.type === 'up') { setSel((s) => Math.max(0, s - 1)); return; }
+      if (ev.type === 'down') { setSel((s) => Math.min(items.length - 1, s + 1)); return; }
+      if (ev.type === 'tab' || ev.type === 'enter') { const c = complete!(selClamped); setInput(c); setCursor(c.length); setSel(0); return; }
     }
 
-    if (key.leftArrow) { setCursor((c) => Math.max(0, c - 1)); return; }
-    if (key.rightArrow) { setCursor((c) => Math.min(input.length, c + 1)); return; }
+    if (ev.type === 'left') { setCursor((c) => Math.max(0, c - 1)); return; }
+    if (ev.type === 'right') { setCursor((c) => Math.min(input.length, c + 1)); return; }
 
-    if (key.upArrow) {
-      // 历史：上一条
+    if (ev.type === 'up') {
       if (history.length) {
         const ni = histIdx === null ? history.length - 1 : Math.max(0, histIdx - 1);
         setHistIdx(ni); setInput(history[ni]); setCursor(history[ni].length);
       }
       return;
     }
-    if (key.downArrow) {
-      // 历史：下一条（到底则清空）
+    if (ev.type === 'down') {
       if (histIdx !== null) {
         const ni = histIdx + 1;
         if (ni >= history.length) { setHistIdx(null); setInput(''); setCursor(0); }
@@ -262,14 +251,13 @@ export function App({ port }: { port: number }) {
       return;
     }
 
-    if (key.return) {
-      // 换行（多行输入）：① Shift/Option/Meta+Enter（终端以 meta/shift+return 上报，如 iTerm 把 Shift+Return 绑成发 ESC+CR）；
-      //                  ② 行尾 `\` + 回车（零配置）。其余回车=发送。
-      if (key.meta || key.shift) {
-        setInput((v) => v.slice(0, cursor) + '\n' + v.slice(cursor));
-        setCursor((c) => c + 1);
-        return;
-      }
+    // Shift+Enter = 换行（多行输入）；普通回车 = 发送（行尾 `\` + 回车 也换行，作为兜底）。
+    if (ev.type === 'shift-enter') {
+      setInput((v) => v.slice(0, cursor) + '\n' + v.slice(cursor));
+      setCursor((c) => c + 1);
+      return;
+    }
+    if (ev.type === 'enter') {
       if (input[cursor - 1] === '\\') {
         setInput((v) => v.slice(0, cursor - 1) + '\n' + v.slice(cursor)); // 删 \ 插 \n，光标不变
         return;
@@ -281,17 +269,26 @@ export function App({ port }: { port: number }) {
       void dispatch(line);
       return;
     }
-    if (key.backspace || key.delete) {
+    if (ev.type === 'backspace') {
       if (cursor > 0) { setInput((v) => v.slice(0, cursor - 1) + v.slice(cursor)); setCursor((c) => c - 1); setSel(0); }
       return;
     }
-    if (char && !key.ctrl && !key.meta && !key.escape && !key.tab) {
-      setInput((v) => v.slice(0, cursor) + char + v.slice(cursor));
-      setCursor((c) => c + char.length);
+    if (ev.type === 'text') {
+      setInput((v) => v.slice(0, cursor) + ev.text + v.slice(cursor));
+      setCursor((c) => c + ev.text.length);
       setSel(0);
       return;
     }
-  });
+  }
+
+  useEffect(() => {
+    if (!stdin) return;
+    const onData = (d: Buffer | string) => handleKey(decodeKey(d.toString()));
+    stdin.on('data', onData);
+    return () => { stdin.off('data', onData); };
+    // 每次渲染重挂，保证闭包里拿到最新 state；依赖列出 handleKey 读到的所有状态。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stdin, input, cursor, wizard, confirmExit, questions, skippedQ, qSel, history, histIdx, attachments, sel, log, roster]);
 
   const color = (s: string) => (s === 'idle' ? 'green' : s === 'busy' ? 'yellow' : s === 'dead' ? 'red' : 'gray');
 
