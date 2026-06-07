@@ -11,3 +11,4 @@ spike/layout.ids
 spike/mcp/echo-server.log
 spike/mcp/server.log
 up.log
+.playwright-mcp/
