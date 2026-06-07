@@ -15,6 +15,14 @@
   ],
   "license": "MIT",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/HKLMTT/falinks.git"
+  },
+  "homepage": "https://github.com/HKLMTT/falinks#readme",
+  "bugs": {
+    "url": "https://github.com/HKLMTT/falinks/issues"
+  },
   "publishConfig": {
     "access": "public",
     "provenance": true
