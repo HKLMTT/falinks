@@ -34,24 +34,40 @@ git push && git push --tags
 
 ## 首次配置清单(一次性,已完成的打勾)
 
+> ⚠️ 顺序很重要:npm 的 Trusted Publishing 配置页要求**包已存在**,所以"第一次发布"
+> 必须手动发一次,之后才能配置可信发布者、把后续发布交给 CI。
+
 ### 1. GitHub 仓库
 
-- [ ] `gh auth login` 登录 GitHub(浏览器授权)
-- [ ] 创建公开仓库并推送(`gh repo create … --public --source . --push`)
+- [x] `gh auth login` 登录 GitHub(浏览器授权)
+- [x] 创建公开仓库并推送
 
-### 2. npm 可信发布者(必须在 npmjs.com 网页上配,一次即可)
+### 2. 首次手动发布(仅第一次,把包在 npm 上建出来)
 
-1. 登录 [npmjs.com](https://www.npmjs.com),进入包页面:`@liujia307/falinks`
-2. **Settings** → 找到 **Trusted Publisher**(或 "Publishing access" 区域)
-3. 选择 **GitHub Actions**,填:
-   - **Organization or user**:你的 GitHub 用户名(仓库 owner)
-   - **Repository**:仓库名(如 `falinks`)
+本地 npm 缓存若有权限问题,用 `--cache` 指向临时目录绕过(无需 sudo)。首次发布关掉
+provenance(provenance 只能在 CI 的 OIDC 环境生成):
+
+```bash
+npm whoami   # 确认已登录(应为 hklmtt);没登录则 npm login
+npm publish --access public --provenance=false --cache /tmp/npm-falinks-cache
+# 若账号开了 2FA,加 --otp=<6位验证码>
+```
+
+### 3. npm 可信发布者(包发出来后,在 npmjs.com 网页上配,一次即可)
+
+1. 打开包设置页:`https://www.npmjs.com/package/@hklmtt/falinks/access`
+2. 找到 **Trusted Publisher** → 选 **GitHub Actions**,填:
+   - **Organization or user**:`HKLMTT`
+   - **Repository**:`falinks`
    - **Workflow filename**:`release.yml`(只填文件名,不带路径)
-   - **Environment**:留空
+   - **Environment name**:留空
+3. (推荐)同页 **Publishing access** 选 "require 2FA and disallow tokens":
+   CI 走 OIDC 不受影响,但任何被盗 token 都发不了这个包。
 4. 保存。
 
-配置完成后,只有"这个仓库的这个工作流"能发这个包,别处(包括本地 `npm publish`)
-仍可用你的 npm 账号手动发,但 CI 不再需要任何 token。
+配置完成后,只有"这个仓库的这个工作流"能自动发这个包;以后发版只需打 tag(见上文流程)。
+本地手动 `npm publish` 仍可用(需登录 + 2FA),但日常都走 tag。
+
 
 > 注意:Trusted Publishing 要求 npm CLI ≥ 11.5.1,工作流里已处理(`npm i -g npm@latest`)。
 

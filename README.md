@@ -41,7 +41,7 @@
 ## 安装
 
 ```bash
-npm install -g @liujia307/falinks   # macOS 全局安装通常需 sudo：sudo npm i -g @liujia307/falinks
+npm install -g @hklmtt/falinks   # macOS 全局安装通常需 sudo：sudo npm i -g @hklmtt/falinks
 falinks doctor      # 自检环境（Node / iTerm2 / claude / codex）
 ```
 

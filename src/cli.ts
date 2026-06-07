@@ -11,7 +11,7 @@ const PKG: { name: string; version: string } = (() => {
   try {
     return JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
   } catch {
-    return { name: '@liujia307/falinks', version: '' };
+    return { name: '@hklmtt/falinks', version: '' };
   }
 })();
 

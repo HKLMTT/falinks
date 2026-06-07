@@ -1,5 +1,5 @@
 {
-  "name": "@liujia307/falinks",
+  "name": "@hklmtt/falinks",
   "version": "0.4.0",
   "description": "把多个终端 AI CLI（Claude Code、Codex…）编排成一间办公室：分屏真实窗口里的员工，通过 MCP 总线互相对话协作，外加一个控制台。",
   "keywords": [
@@ -15,6 +15,10 @@
   ],
   "license": "MIT",
   "type": "module",
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
   "bin": {
     "falinks": "dist/cli.js"
   },

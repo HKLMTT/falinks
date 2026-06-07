@@ -19,5 +19,5 @@ test('ignores pre-release suffix', () => {
 });
 
 test('upgradeCommand builds the global sudo install command', () => {
-  expect(upgradeCommand('@liujia307/falinks')).toBe('sudo npm i -g @liujia307/falinks');
+  expect(upgradeCommand('@hklmtt/falinks')).toBe('sudo npm i -g @hklmtt/falinks');
 });
