@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.1
+
+- 无功能变更:验证 GitHub Actions + npm Trusted Publishing(OIDC)自动发布链路;发布产物带 provenance 溯源签名。
+
 ## 0.4.0
 
 - **多个项目可同时各开一间办公室**：端口自动分配（`busPort` 不再必填，缺省由系统分配；显式指定的端口被占时自动回退并在控制台提示）；每个项目独立维护一份 `~/.falinks/runtime/<hash>.json` 档案，互不干扰；`falinks say/roster/log` 等子命令按当前目录寻址——活着的实例只有一个时任意目录可用，多个时列出各项目路径让你选；同目录防双开（已有活实例则报错退出）；崩溃残留档案自动探活自愈（用 pid + busPort 做身份核对，防止端口复用劫持）。新生成的配置/模板不再写 `busPort` 字段。
