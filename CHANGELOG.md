@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.3
+
+- 文档:README 改为双语——README.md 英文版(npm/GitHub 首页),新增 README.zh-CN.md 中文版,顶部互相链接。
+
 ## 0.4.2
 
 - 修复:控制台输入 `/lang`(及 `/help`)后回车不再补出尾空格、像在等参数;无参命令补全时回车/Tab 直接执行——`/lang` 回车即弹语言选择器。
