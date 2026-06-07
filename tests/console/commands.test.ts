@@ -42,3 +42,12 @@ test('every command carries a usage string', () => {
 test('applyCommand yields /<name> + space', () => {
   expect(applyCommand('add')).toBe('/add ');
 });
+
+test('lang/help 标记为无参命令(补全时直接执行,不补尾空格)', () => {
+  const byName = Object.fromEntries(COMMANDS.map((c) => [c.name, c]));
+  expect(byName.lang.noArgs).toBe(true);
+  expect(byName.help.noArgs).toBe(true);
+  expect(byName.add.noArgs).toBeUndefined();
+  expect(byName.remove.noArgs).toBeUndefined();
+  expect(byName.clear.noArgs).toBeUndefined();
+});

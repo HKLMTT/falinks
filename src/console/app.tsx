@@ -275,7 +275,16 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
     if (active) {
       if (ev.type === 'up') { setSel((s) => Math.max(0, s - 1)); return; }
       if (ev.type === 'down') { setSel((s) => Math.min(items.length - 1, s + 1)); return; }
-      if (ev.type === 'tab' || ev.type === 'enter') { const c = complete!(selClamped); setInput(c); setCursor(c.length); setSel(0); return; }
+      if (ev.type === 'tab' || ev.type === 'enter') {
+        // 无参命令(/lang、/help):回车/Tab 直接执行,不补成 "/cmd " 让人以为还要输参数。
+        if (cmd.active && cmd.matches[selClamped]?.noArgs) {
+          const name = cmd.matches[selClamped].name;
+          setInput(''); setCursor(0); setSel(0);
+          void dispatch('/' + name);
+          return;
+        }
+        const c = complete!(selClamped); setInput(c); setCursor(c.length); setSel(0); return;
+      }
     }
 
     if (ev.type === 'left') { setCursor((c) => Math.max(0, c - 1)); return; }

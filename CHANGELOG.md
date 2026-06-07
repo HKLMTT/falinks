@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.2
+
+- 修复:控制台输入 `/lang`(及 `/help`)后回车不再补出尾空格、像在等参数;无参命令补全时回车/Tab 直接执行——`/lang` 回车即弹语言选择器。
+
 ## 0.4.1
 
 - 无功能变更:验证 GitHub Actions + npm Trusted Publishing(OIDC)自动发布链路;发布产物带 provenance 溯源签名。

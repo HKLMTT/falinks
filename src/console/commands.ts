@@ -4,6 +4,7 @@ export interface CommandDef {
   name: string;
   usage: string;
   hint: string;
+  noArgs?: boolean; // 无参命令(lang/help):补全时回车/Tab 直接执行,不补成 "/cmd " 让人以为要输参数
 }
 
 /** 控制台支持的斜杠命令（用于 / 补全与帮助）。usage 是纯 ASCII 不入词典;hint 随 locale 动态从词典取。 */
@@ -11,8 +12,8 @@ export const COMMANDS: CommandDef[] = [
   { name: 'add', usage: '/add <name> <cli> <cwd>', get hint() { return t().cmdHint.add; } },
   { name: 'remove', usage: '/remove <name>', get hint() { return t().cmdHint.remove; } },
   { name: 'clear', usage: '/clear [name]', get hint() { return t().cmdHint.clear; } },
-  { name: 'lang', usage: '/lang', get hint() { return t().cmdHint.lang; } },
-  { name: 'help', usage: '/help', get hint() { return t().cmdHint.help; } },
+  { name: 'lang', usage: '/lang', noArgs: true, get hint() { return t().cmdHint.lang; } },
+  { name: 'help', usage: '/help', noArgs: true, get hint() { return t().cmdHint.help; } },
 ];
 
 export interface CommandState {
