@@ -1,0 +1,43 @@
+name: Release
+
+# 打 tag(v*)自动发 npm:校验 tag 与 package.json 版本一致 → 全量测试 → Trusted Publishing 发布。
+# 认证走 npm Trusted Publishing(OIDC):不存任何长期密钥,需在 npmjs.com 包设置里
+# 把本仓库+本工作流登记为可信发布者(见 docs/RELEASE.md)。
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+  id-token: write # OIDC:npm Trusted Publishing 必需
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          registry-url: https://registry.npmjs.org
+
+      # Trusted Publishing 需要 npm CLI >= 11.5.1
+      - run: npm install -g npm@latest
+
+      - name: 校验 tag 与 package.json 版本一致
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          PKG="$(node -p "require('./package.json').version")"
+          if [ "$TAG" != "$PKG" ]; then
+            echo "::error::tag v$TAG 与 package.json 版本 $PKG 不一致,拒绝发布"
+            exit 1
+          fi
+
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npm test
+
+      # prepublishOnly 会自动 build;OIDC 下无需 NODE_AUTH_TOKEN,且自动附带 provenance
+      - run: npm publish
