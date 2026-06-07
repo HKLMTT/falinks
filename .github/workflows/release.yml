@@ -39,5 +39,18 @@ jobs:
       - run: npx tsc --noEmit
       - run: npm test
 
+      - name: 该版本是否已发布(已发则跳过,保证打 tag 幂等、不报红)
+        id: published
+        run: |
+          VER="$(node -p "require('./package.json').version")"
+          if npm view "@hklmtt/falinks@$VER" version >/dev/null 2>&1; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::@hklmtt/falinks@$VER 已在 npm 上,跳过发布"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
       # prepublishOnly 会自动 build;OIDC 下无需 NODE_AUTH_TOKEN,且自动附带 provenance
-      - run: npm publish
+      - name: 发布到 npm(Trusted Publishing)
+        if: steps.published.outputs.skip == 'false'
+        run: npm publish
