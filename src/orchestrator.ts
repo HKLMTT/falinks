@@ -32,11 +32,21 @@ export function detectScreenState(screen: string): ScreenState {
 }
 
 /**
- * 从读屏文本判断员工此刻是否"正在生成"。claude 与 codex 生成时都显示「esc to interrupt」。
+ * 从读屏文本判断员工此刻是否"正在生成"（仅作兜底；权威「闲」信号是员工调 idle 工具、「忙」是消息投递）。
  * 不忙 = 已回到空闲提示符（生成结束 / 被 Ctrl+C 打断 / 没调 idle 工具）——用于自动检测空闲、把排队消息投出去。
+ *
+ * ⚠️ 只认 Claude/Codex 的**生成 spinner 结构**,绝不依赖、也绝不被 statusLine 误触（statusLine 用户可自定义,
+ * 每个人都不一样）。「esc to interrupt」是状态行最右段,窄分屏里被 pane 宽度裁掉,iTerm `text of s` 抓不到,
+ * 所以再认裁不掉的 spinner 计时器:
+ * - claude 生成中：`<动词>… (<计时器>)`,如 `Hashing… (5m 28s · ↓ 5.7k tokens)`。计时器单位用**小写** s/m 匹配,
+ *   大小写敏感以避开自定义 statusLine 里的 `(1M context)` 之类。
+ * - codex 生成中：`Working (<Ns> …)`。
+ * 完成态 `Brewed for 58s`（有 for、无 `…(`、无括号计时器）与各种自定义 statusLine 均不命中。
  */
 export function isPaneBusy(screen: string): boolean {
-  return /esc to interrupt/i.test(screen);
+  return /esc to interrupt/i.test(screen)         // 通用、未裁切（两种 CLI）
+      || /…\s*\(\d+\s*[ms]\b/.test(screen)        // claude spinner: <动词>… (16s / 5m 28s …)
+      || /\bworking\b\s*\(\d+\s*s\b/i.test(screen); // codex: Working (3s …)
 }
 
 export type PaneStatusAction = 'mark-busy' | 'mark-idle' | 'none';
