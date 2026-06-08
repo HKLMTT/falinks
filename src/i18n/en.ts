@@ -60,6 +60,13 @@ export const en: typeof zh = {
     ({ launching: 'launching', idle: 'idle', busy: 'busy', stuck: 'stuck', dead: 'dead' } as Record<string, string>)[s] ?? s,
   msgQueued: '⏳ queued',
   msgDelivered: '✓ delivered',
+  diagWarn: (drops: number, injFails: number, fastIdle: number) => {
+    const parts: string[] = [];
+    if (drops) parts.push(`${drops} dropped by guardrail`);
+    if (injFails) parts.push(`${injFails} inject failures`);
+    if (fastIdle) parts.push(`${fastIdle} suspect early-idle`);
+    return `⚠ collab diag: ${parts.join(' · ')} (may stall the team; /clear all to reset)`;
+  },
   mouseEnabled: '🖱 mouse-wheel: on (hold Option to drag-select)',
   mouseDisabled: '🖱 mouse-wheel: off (native drag-select restored)',
   browseHint: (pos: number, total: number) => `History ${pos}/${total} · PgUp/PgDn select · Enter expand/collapse · Esc exit`,
@@ -78,7 +85,7 @@ export const en: typeof zh = {
   cmdHint: {
     add: 'add a worker',
     remove: 'remove a worker',
-    clear: "clear a worker's context, no name = everyone",
+    clear: "clear a worker's context, no name = everyone (incl. boss history)",
     lang: 'Switch language (zh/en)',
     mouse: 'toggle mouse-wheel scrolling',
     help: 'show usage',

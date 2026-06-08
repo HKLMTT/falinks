@@ -43,6 +43,8 @@ export interface BusDeps {
   onClear?(name?: string): Promise<{ ok: boolean; cleared?: string[]; error?: string }>;
   onShutdown?(closePanes: boolean): Promise<{ ok: boolean }>;
   onLang?(locale: 'zh' | 'en' | 'auto'): Promise<'zh' | 'en'>;
+  /** 返回最近的诊断事件(守卫丢消息/注入失败/可疑自动 idle)；缺省视为无诊断。 */
+  getDiag?(): unknown[];
 }
 
 export interface Bus {
@@ -69,6 +71,15 @@ function serverForAgent(agentName: string, deps: BusDeps, questions: QuestionSto
   const { router } = deps;
   const server = new McpServer({ name: `falinks-bus-${agentName}`, version: '1.0.0' }, { capabilities: {} });
 
+  // send 返回 undefined 有三种原因,旧代码一律报 "unknown or dead target" → agent 误判对方已死而放弃,
+  // 实际可能是被守卫(回合上限/循环/限流)拦下。这里据当前花名册状态准确分类,给 agent 可行动的反馈。
+  const explainUndeliverable = (to: string): string => {
+    const target = router.resolve(to);
+    if (!target) return `unknown target: ${to}`;
+    if (router.get(target)?.status === 'dead') return `target dead: ${to}`;
+    return `blocked by guardrail (turn cap / loop / rate limit), message NOT delivered: ${to}`;
+  };
+
   server.registerTool('register', { description: t().toolDescRegister, inputSchema: {} }, async () => {
     const sid = deps.getSessionId(agentName);
     if (!sid) return ok({ ok: false, error: 'no session for agent' });
@@ -80,7 +91,7 @@ function serverForAgent(agentName: string, deps: BusDeps, questions: QuestionSto
     description: t().toolDescSendmsg, inputSchema: { to: z.string(), message: z.string() },
   }, async ({ to, message }) => {
     const msg = router.send(agentName, to, message);
-    return msg ? ok({ ok: true, id: msg.id, to: msg.to }) : ok({ ok: false, error: `unknown or dead target: ${to}` });
+    return msg ? ok({ ok: true, id: msg.id, to: msg.to }) : ok({ ok: false, error: explainUndeliverable(to) });
   });
 
   server.registerTool('idle', { description: t().toolDescIdle, inputSchema: {} }, async () => {
@@ -98,7 +109,7 @@ function serverForAgent(agentName: string, deps: BusDeps, questions: QuestionSto
     }
     const body = t().askToPeer(question, options.map((o, i) => `${i + 1}. ${o}`).join('\n'), agentName);
     const msg = router.send(agentName, to, body);
-    return msg ? ok({ ok: true, id: msg.id, to: msg.to }) : ok({ ok: false, error: `unknown or dead target: ${to}` });
+    return msg ? ok({ ok: true, id: msg.id, to: msg.to }) : ok({ ok: false, error: explainUndeliverable(to) });
   });
 
   server.registerTool('who', { description: t().toolDescWho, inputSchema: {} }, async () => {
@@ -147,6 +158,13 @@ export async function startBus(deps: BusDeps, port: number, opts?: BusOptions): 
       }
       if (req.method === 'GET' && url.pathname === '/admin/questions') {
         return sendJson({ questions: questions.list() });
+      }
+      if (req.method === 'GET' && url.pathname === '/admin/diag') {
+        const all = deps.getDiag ? deps.getDiag() : [];
+        const limitRaw = url.searchParams.get('limit');
+        const limit = limitRaw !== null ? Number(limitRaw) : NaN;
+        const diag = Number.isInteger(limit) && limit > 0 ? all.slice(-limit) : all;
+        return sendJson({ diag });
       }
       if (req.method === 'POST' && url.pathname === '/admin/answer') {
         const q = questions.take(String(abody.id));

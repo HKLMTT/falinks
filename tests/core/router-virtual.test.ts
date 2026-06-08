@@ -41,6 +41,15 @@ test('messages() records all successful sends in order', () => {
   ]);
 });
 
+test('clearLog 清空消息流水(boss 历史)', () => {
+  const { router } = setup();
+  router.send('boss', 'alice', 'task one');
+  router.send('alice', 'boss', 'done');
+  expect(router.messages().length).toBe(2);
+  router.clearLog();
+  expect(router.messages()).toEqual([]);
+});
+
 test('sending to a real member still delivers (regression)', () => {
   const { router, delivered } = setup();
   router.send('boss', 'alice', 'hi');

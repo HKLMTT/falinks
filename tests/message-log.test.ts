@@ -2,7 +2,7 @@ import { expect, test } from 'vitest';
 import { mkdtempSync, readFileSync, appendFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { messageLogPath, appendMessageLog, loadMessageLog } from '../src/message-log.js';
+import { messageLogPath, appendMessageLog, loadMessageLog, clearMessageLog } from '../src/message-log.js';
 
 const M = (i: number) => ({ id: `m${i}`, from: 'boss', to: 'alice', body: `msg ${i}`, ts: i });
 
@@ -39,6 +39,21 @@ test('文件超过 2×cap 行时压缩重写到最近 cap 条', () => {
   const lines = readFileSync(messageLogPath(cwd, root), 'utf8').split('\n').filter((l) => l.trim());
   expect(lines.length).toBe(3);
   expect(JSON.parse(lines[0]).id).toBe('m5');
+});
+
+test('clearMessageLog 删除流水,之后 load 返回空', () => {
+  const root = mkdtempSync(join(tmpdir(), 'falinks-msg-'));
+  const cwd = '/p/foo';
+  appendMessageLog(cwd, M(1), root);
+  appendMessageLog(cwd, M(2), root);
+  expect(loadMessageLog(cwd, 300, root)).toHaveLength(2);
+  clearMessageLog(cwd, root);
+  expect(loadMessageLog(cwd, 300, root)).toEqual([]);
+});
+
+test('clearMessageLog 文件不存在时不抛', () => {
+  const root = mkdtempSync(join(tmpdir(), 'falinks-msg-'));
+  expect(() => clearMessageLog('/p/none', root)).not.toThrow();
 });
 
 test('坏行被跳过,不抛', () => {

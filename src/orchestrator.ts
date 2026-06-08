@@ -8,15 +8,23 @@ export function formatMessage(msg: Message): string {
   return t().incomingMsg(msg.from, msg.body);
 }
 
-/** 用 driver 构造一个 Deliverer：注入格式化文本并提交（提交的可靠性由 driver 负责）。 */
-export function makeDeliverer(driver: TerminalDriver): Deliverer {
+/**
+ * 用 driver 构造一个 Deliverer：注入格式化文本并提交（提交的可靠性由 driver 负责）。
+ * onFail：注入失败时回调——此时消息已被 pump 出 inbox、却没进 pane（消息丢失,发件人却以为发出去了）,
+ * 上层据此落盘诊断,让"悄悄丢消息"可见。
+ */
+export function makeDeliverer(
+  driver: TerminalDriver,
+  onFail?: (agent: AgentRuntime, msg: Message, err: unknown) => void,
+): Deliverer {
   return {
     deliver(agent: AgentRuntime, msg: Message): void {
       if (!agent.sessionId) throw new Error(`deliver: agent ${agent.name} has no sessionId`);
       const text = formatMessage(msg);
-      // 注入是异步 I/O；Router 不等待。失败时打日志（Plan 1B 接 markDead）。
+      // 注入是异步 I/O；Router 不等待。失败时打日志 + 回调（消息此刻已丢失）。
       void driver.inject(agent.sessionId, text, true).catch((e) => {
         console.error(`[deliver] inject to ${agent.name} failed:`, e);
+        onFail?.(agent, msg, e);
       });
     },
   };

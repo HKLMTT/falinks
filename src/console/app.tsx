@@ -5,7 +5,7 @@ import { parseConsoleInput, lastReplyTarget } from './parse.js';
 import { mentionState, applyMention } from './mention.js';
 import { commandState, applyCommand } from './commands.js';
 import { CLIS, dirSuggestions } from './wizard.js';
-import { nameColor, formatTime, NAME_COLORS, statusGlyph, SPINNER_FRAMES, deliveryState, moveSel, windowRange, visibleCount } from './log-format.js';
+import { nameColor, formatTime, NAME_COLORS, statusGlyph, SPINNER_FRAMES, deliveryState, moveSel, scrollWindow, displayWidth, wrapRows, browseRowBudget, visibleCount } from './log-format.js';
 import { renderMarkdown } from './markdown.js';
 import { decodeKey, type KeyEvent, MOUSE_PUSH, MOUSE_POP } from './keys.js';
 import { saveClipboardImage, expandImageTokens } from './clipboard.js';
@@ -45,6 +45,7 @@ type WizardState =
 export function App({ port, initialStatus }: { port: number; initialStatus?: string }) {
   const [roster, setRoster] = useState<any[]>([]);
   const [log, setLog] = useState<any[]>([]);
+  const [diag, setDiag] = useState<any[]>([]); // 协作诊断事件(守卫丢消息/注入失败/可疑过早 idle)
   const [input, setInput] = useState('');
   const [cursor, setCursor] = useState(0);
   const [history, setHistory] = useState<string[]>([]);
@@ -61,6 +62,7 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
   // 回看历史:selBack=选中条距最新多少条(0=最新),null=实时态;histBuf=进入回看时缓存的全量历史;expanded=已展开的消息 id。
   const [selBack, setSelBack] = useState<number | null>(null);
   const [histBuf, setHistBuf] = useState<any[]>([]);
+  const winStartRef = useRef(0); // 回看视口顶部锚点(跨帧保持,实现"光标移动而视口不动、撞边才滚")
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   // 鼠标滚轮:默认开(像 Claude Code)。开=接管终端鼠标上报,滚轮翻历史;关=恢复原生拖选复制。
   const [mouseOn, setMouseOn] = useState(true);
@@ -84,16 +86,17 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
   // 等于或超过都会让 Ink 每帧整屏清除(clearTerminal),配合轮询重渲染就是持续闪烁。
   const { stdout } = useStdout();
   const [rows, setRows] = useState(stdout?.rows ?? 24);
+  const [cols, setCols] = useState(stdout?.columns ?? 80);
   useEffect(() => {
     if (!stdout) return;
-    const onResize = () => setRows(stdout.rows ?? 24);
+    const onResize = () => { setRows(stdout.rows ?? 24); setCols(stdout.columns ?? 80); };
     stdout.on('resize', onResize);
     return () => { stdout.off('resize', onResize); };
   }, [stdout]);
 
   // 轮询去重:数据没变就不 setState——否则每秒一个新数组引用就重渲染一次,
   // 内容一高(超过终端行数)Ink 还会整屏清除,空闲时界面也持续闪。
-  const lastSeen = useRef({ roster: '', log: '', questions: '' });
+  const lastSeen = useRef({ roster: '', log: '', questions: '', diag: '' });
   useEffect(() => {
     const tick = async () => {
       try {
@@ -107,6 +110,9 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
         const q = await admin(port, 'GET', '/admin/questions');
         const qs = JSON.stringify(q.questions ?? []);
         if (qs !== lastSeen.current.questions) { lastSeen.current.questions = qs; setQuestions(q.questions ?? []); }
+        const d = await admin(port, 'GET', '/admin/diag?limit=200');
+        const ds = JSON.stringify(d.diag ?? []);
+        if (ds !== lastSeen.current.diag) { lastSeen.current.diag = ds; setDiag(d.diag ?? []); }
       } catch {
         /* up 还没起或断开，忽略 */
       }
@@ -393,12 +399,32 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
   const color = (s: string) => (s === 'idle' ? 'green' : s === 'busy' ? 'yellow' : s === 'dead' ? 'red' : 'gray');
 
   // 消息区数据:实时态贴底显示 log 最近 VIS 条;回看态按选中条(selIdx)铺一窗 histBuf。
-  // VIS 随终端高度自适应(粗估每条折叠约占 4 行:1 头 + ≤3 正文/边距),不再固定 6 条留大片空白。
-  // 多出的部分由消息区 overflow:hidden 贴边裁掉(实时态裁顶留最新,回看态裁底)。
+  // 实时态:VIS 随高度自适应、贴底裁顶(最新永远可见)。
+  // 回看态:按**真实行高**打包窗口(windowByHeight),保证选中条可见且不溢出被裁底——
+  //   旧的按"条数"取窗会让多行消息溢出、顶对齐把选中条和最新几条裁到屏幕外。
   const VIS = visibleCount(rows, roster.length);
   const browsing = selBack !== null;
   const selIdx = browsing ? histBuf.length - 1 - (selBack as number) : -1;
-  const win = browsing ? windowRange(selIdx, histBuf.length, VIS) : { start: 0, end: 0 };
+  // 回看态某条消息渲染占用的行数:头1 + 正文(≤cap,按列宽折行算)+ 截断提示1;展开则全量。与下方渲染口径一致。
+  const bodyCols = Math.max(1, cols - 2); // 正文行有 2 列缩进
+  const browseMsgHeight = (i: number): number => {
+    const m = histBuf[i];
+    if (!m) return 1;
+    const lines = renderMarkdown(String(m.body));
+    const cap = expanded.has(m.id) ? lines.length : 3;
+    let h = 1; // 头一行
+    for (const ln of lines.slice(0, cap)) {
+      const w = ln.reduce((a: number, s: any) => a + displayWidth(String(s.text)), 0);
+      h += wrapRows(w, bodyCols);
+    }
+    if (lines.length > cap) h += 1; // "+N 行/展开" 提示
+    return h;
+  };
+  // 视口锚点:让光标在视口内移动、撞边才滚动(scrollWindow)。存在 ref 里跨帧保持滚动位置。
+  const win = browsing
+    ? scrollWindow(winStartRef.current, selIdx, histBuf.length, browseRowBudget(rows, roster.length), browseMsgHeight)
+    : { start: 0, end: 0 };
+  if (browsing) winStartRef.current = win.start; // 回看态:记下当前视口顶,供下一帧增量滚动
   const shownMsgs = browsing ? histBuf.slice(win.start, win.end) : log.slice(-VIS);
   const baseIdx = browsing ? win.start : Math.max(0, log.length - VIS); // shownMsgs[i] 的绝对下标
 
@@ -428,7 +454,16 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
           <Text underline>{t().messages}</Text>
           {browsing ? <Text color="cyan"> · {t().browseHint(selIdx + 1, histBuf.length)}</Text> : null}
         </Box>
-        <Box flexDirection="column" flexGrow={1} overflow="hidden" justifyContent={browsing ? 'flex-start' : 'flex-end'}>
+        {(() => {
+          // 协作诊断警告:有守卫丢消息/注入失败/可疑过早 idle 时顶一行,提醒可能卡死(贴底永远可见)。
+          const drops = diag.filter((e) => e?.kind === 'guard-drop').length;
+          const injFails = diag.filter((e) => e?.kind === 'inject-fail').length;
+          const fastIdle = diag.filter((e) => e?.kind === 'auto-idle').length;
+          if (!drops && !injFails && !fastIdle) return null;
+          return <Box flexShrink={0}><Text color="yellow">{t().diagWarn(drops, injFails, fastIdle)}</Text></Box>;
+        })()}
+        {/* 实时态与回看态都贴底渲染:回看态选中条是窗口末条,贴底→紧挨输入框、必然完整可见,溢出裁顶(更早的上下文)。 */}
+        <Box flexDirection="column" flexGrow={1} overflow="hidden" justifyContent="flex-end">
           {shownMsgs.map((m, i) => {
             const absIdx = baseIdx + i;
             const selected = browsing && absIdx === selIdx;

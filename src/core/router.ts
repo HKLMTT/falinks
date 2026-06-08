@@ -12,6 +12,8 @@ export interface RouterDeps {
   routes?: Record<string, AgentName>; // role/别名 -> 真实 agent 名
   guards?: Guards;
   onLog?: (msg: Message) => void; // 每条消息入流水后回调（用于持久化）
+  /** 守卫拦下并丢弃一条消息时回调（turn-cap/loop/rate-limit）——用于诊断落盘，让"悄悄丢消息"可见。 */
+  onDrop?: (info: { from: AgentName; to: AgentName; reason: string; thread?: string }) => void;
   logCap?: number; // 内存流水滚动上限（默认 300）
 }
 
@@ -28,6 +30,11 @@ export class Router {
   seedLog(msgs: Message[]): void {
     const cap = this.deps.logCap ?? 300;
     this.messageLog = msgs.slice(-cap);
+  }
+
+  /** 清空内存消息流水(boss 历史对话)。全员 /clear 时与各 pane 上下文一起清干净。 */
+  clearLog(): void {
+    this.messageLog = [];
   }
 
   /** 注册一个虚拟成员（如 boss）：无窗口、立即 idle、消息只入日志不注入。 */
@@ -72,10 +79,12 @@ export class Router {
       const dec = g.checkMessage(thread, body);
       if (!dec.ok) {
         console.warn(`[guard] thread ${thread} broken: ${dec.reason} (${from} -> ${target})`);
+        this.deps.onDrop?.({ from, to: target, reason: dec.reason ?? 'guard', thread });
         return undefined;
       }
       if (!g.allowInjection()) {
         console.warn(`[guard] rate limit hit, dropping ${from} -> ${target}`);
+        this.deps.onDrop?.({ from, to: target, reason: 'rate-limit', thread });
         return undefined;
       }
     }

@@ -1,0 +1,56 @@
+import { appendFileSync, readFileSync, writeFileSync, mkdirSync, existsSync, rmSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { join, dirname } from 'node:path';
+import { runtimeDir } from './runtime.js';
+
+/**
+ * 诊断事件流水:记录"会悄悄打断协作流程"的事件,便于反复卡死后回溯定位。
+ * 三类:
+ * - guard-drop:消息被守卫(回合上限/循环/限流)拦下、整条丢弃 → 收件人永远收不到。
+ * - inject-fail:消息已出队但注入 pane 失败 → 消息丢失,发件人却以为发出去了。
+ * - auto-idle:健康轮询把某员工自动判为 idle(可能在它还没真正回完时就降,导致下一条排队消息叠注入)。
+ */
+export const DIAG_CAP = 1000;
+
+export type DiagEvent =
+  | { kind: 'guard-drop'; from: string; to: string; reason: string; thread?: string; ts: number }
+  | { kind: 'inject-fail'; to: string; error: string; msgId?: string; ts: number }
+  | { kind: 'auto-idle'; name: string; sinceDeliverMs: number; ts: number };
+
+/** 每个项目目录一份诊断流水:~/.falinks/diag/<cwd 的 sha1 前16位>.jsonl。root 可注入便于测试。 */
+export function diagPath(cwd: string, root = runtimeDir()): string {
+  const key = createHash('sha1').update(cwd).digest('hex').slice(0, 16);
+  return join(root, 'diag', `${key}.jsonl`);
+}
+
+/** 追加一条诊断事件(O(1) 追加)。 */
+export function appendDiag(cwd: string, ev: DiagEvent, root = runtimeDir()): void {
+  const p = diagPath(cwd, root);
+  mkdirSync(dirname(p), { recursive: true });
+  appendFileSync(p, JSON.stringify(ev) + '\n');
+}
+
+/** 读最近 cap 条;坏行跳过;文件超过 2×cap 行时顺手压缩重写。 */
+export function loadDiag(cwd: string, cap = DIAG_CAP, root = runtimeDir()): DiagEvent[] {
+  const p = diagPath(cwd, root);
+  if (!existsSync(p)) return [];
+  let lines: string[];
+  try {
+    lines = readFileSync(p, 'utf8').split('\n').filter((l) => l.trim());
+  } catch {
+    return [];
+  }
+  const evs = lines
+    .map((l) => { try { return JSON.parse(l) as DiagEvent; } catch { return null; } })
+    .filter((e): e is DiagEvent => e !== null);
+  const tail = evs.slice(-cap);
+  if (evs.length > cap * 2) {
+    try { writeFileSync(p, tail.map((e) => JSON.stringify(e)).join('\n') + '\n'); } catch { /* 压缩失败无所谓 */ }
+  }
+  return tail;
+}
+
+/** 清空某项目的诊断流水(删除文件)。不存在为 no-op。 */
+export function clearDiag(cwd: string, root = runtimeDir()): void {
+  rmSync(diagPath(cwd, root), { force: true });
+}

@@ -70,3 +70,42 @@ test('onIdle clears handling thread', () => {
   router.onIdle('alice');
   expect(router.get('alice')!.handling).toBeUndefined();
 });
+
+test('onDrop:turn-cap 丢消息时上报 reason=turn-cap + 收发双方', () => {
+  const drops: any[] = [];
+  const deliverer: Deliverer = { deliver: () => {} };
+  let n = 0;
+  const guards = new Guards({ maxTurnsPerThread: 2, maxInjectionsPerMinute: 100, loopWindow: 99 }, () => 0);
+  const router = new Router(deliverer, { now: () => 0, genId: () => `m${++n}`, guards, onDrop: (d) => drops.push(d) });
+  router.addAgent('alice'); router.register('alice', 'SA');
+  router.addAgent('bob'); router.register('bob', 'SB');
+  router.send('alice', 'bob', 'm1');
+  router.send('bob', 'alice', 'm2');
+  router.send('alice', 'bob', 'm3'); // 超上限被丢
+  expect(drops).toHaveLength(1);
+  expect(drops[0]).toMatchObject({ from: 'alice', to: 'bob', reason: 'turn-cap' });
+});
+
+test('onDrop:限流丢消息时上报 reason=rate-limit', () => {
+  const drops: any[] = [];
+  const deliverer: Deliverer = { deliver: () => {} };
+  let n = 0;
+  const guards = new Guards({ maxTurnsPerThread: 99, maxInjectionsPerMinute: 1, loopWindow: 99 }, () => 0);
+  const router = new Router(deliverer, { now: () => 0, genId: () => `m${++n}`, guards, onDrop: (d) => drops.push(d) });
+  router.addAgent('alice'); router.register('alice', 'SA');
+  router.addAgent('bob'); router.register('bob', 'SB');
+  router.send('system', 'alice', 'a');
+  router.send('system', 'bob', 'b'); // 限流丢
+  expect(drops).toEqual([expect.objectContaining({ from: 'system', to: 'bob', reason: 'rate-limit' })]);
+});
+
+test('onDrop:未知目标不触发(那不是守卫丢,是寻址失败)', () => {
+  const drops: any[] = [];
+  const deliverer: Deliverer = { deliver: () => {} };
+  let n = 0;
+  const guards = new Guards({ maxTurnsPerThread: 99, maxInjectionsPerMinute: 100, loopWindow: 99 }, () => 0);
+  const router = new Router(deliverer, { now: () => 0, genId: () => `m${++n}`, guards, onDrop: (d) => drops.push(d) });
+  router.addAgent('alice'); router.register('alice', 'SA');
+  router.send('alice', 'ghost', 'hi');
+  expect(drops).toHaveLength(0);
+});

@@ -18,7 +18,8 @@ import { loadStore, saveStore, pruneToAgents, type SessionStore } from './sessio
 import { decideClaudeSession, decideCodexSession } from './session/decide.js';
 import { parseStatusSessionId } from './session/capture.js';
 import { addAgentToConfigFile, removeAgentFromConfigFile } from './team-persist.js';
-import { loadMessageLog, appendMessageLog, MESSAGE_LOG_CAP } from './message-log.js';
+import { loadMessageLog, appendMessageLog, clearMessageLog, MESSAGE_LOG_CAP } from './message-log.js';
+import { appendDiag, clearDiag, loadDiag } from './diag.js';
 import { t, setLocale, detectLocale } from './i18n/index.js';
 import { saveSettings } from './settings.js';
 
@@ -29,9 +30,13 @@ export async function up(configPath: string) {
   const driver = new ITerm2Driver();
   let n = 0;
   const guards = new Guards(cfg.guards, () => Date.now());
+  const launchCwd = (() => { try { return realpathSync(process.cwd()); } catch { return process.cwd(); } })();
   // 包一层 deliverer：记录每个员工"最近一次被投递"的时刻，给自动空闲检测做投递后宽限（防投递空窗误判）。
   const lastDeliverAt = new Map<string, number>();
-  const baseDeliverer = makeDeliverer(driver);
+  // 注入失败 = 消息已出队却没进 pane（永久丢失,发件人却以为发出去了）→ 落盘诊断,让其可见。
+  const baseDeliverer = makeDeliverer(driver, (agent, msg, err) => {
+    try { appendDiag(launchCwd, { kind: 'inject-fail', to: agent.name, error: String((err as any)?.message ?? err), msgId: msg.id, ts: Date.now() }); } catch { /* 诊断落盘失败不致命 */ }
+  });
   const deliverer = {
     deliver(agent: AgentRuntime, msg: Message) {
       lastDeliverAt.set(agent.name, Date.now());
@@ -41,12 +46,13 @@ export async function up(configPath: string) {
   const sessions = new Map<string, string>();
   const bootstraps = new Map<string, string>(); // name -> 完整 bootstrap（/clear 后重注入,恢复员工身份）
   const clearing = new Set<string>(); // 正在 /clear 的员工：健康轮询期间别自动 onIdle（否则会把排队消息投进正在清空的 pane）
-  const launchCwd = (() => { try { return realpathSync(process.cwd()); } catch { return process.cwd(); } })();
   const historyCap = cfg.historyCap ?? MESSAGE_LOG_CAP;
   const router = new Router(deliverer, {
     now: () => Date.now(), genId: () => `m${++n}`, routes: cfg.routes, guards,
     logCap: historyCap,
     onLog: (msg) => { try { appendMessageLog(launchCwd, msg); } catch { /* 持久化失败不致命 */ } },
+    // 守卫拦下并丢弃消息（turn-cap/loop/rate-limit）→ 落盘诊断,让"悄悄丢消息"可回溯。
+    onDrop: (d) => { try { appendDiag(launchCwd, { kind: 'guard-drop', from: d.from, to: d.to, reason: d.reason, thread: d.thread, ts: Date.now() }); } catch { /* 诊断落盘失败不致命 */ } },
   });
   router.addVirtual('boss');
   router.seedLog(loadMessageLog(launchCwd, historyCap) as Message[]); // 恢复历史消息流水
@@ -209,6 +215,13 @@ export async function up(configPath: string) {
           clearing.delete(nm);
         }
       }));
+      // 全员 /clear（未指定 name）：连 boss 的历史对话流水也一并清空（内存 + 持久化）。
+      // 指定某个 AI 时只清那一个 pane 的上下文，boss 历史保留。
+      if (!name) {
+        router.clearLog();
+        try { clearMessageLog(launchCwd); } catch { /* 持久化清理失败不致命 */ }
+        try { clearDiag(launchCwd); } catch { /* 同上 */ }
+      }
       return { ok: true, cleared };
     },
     onShutdown: async (closePanes) => {
@@ -230,6 +243,7 @@ export async function up(configPath: string) {
       saveSettings({ locale: l }); // 存用户选择(含 auto)，下次启动 initLocale 再解析
       return eff;
     },
+    getDiag: () => { try { return loadDiag(launchCwd); } catch { return []; } },
   }, cfg.busPort ?? 0, {
     identity: { cwd: launchCwd, startedAt: Date.now() },
     onPortFallback: (wanted, got) => { portWarning = t().portFallback(wanted, got); },
@@ -292,6 +306,7 @@ export async function up(configPath: string) {
   // 健康轮询(1.5s)：员工 pane 被关 → 自动下线；以及按 pane 实况校准花名册 busy/idle。
   const IDLE_GRACE_MS = 3000; // 刚投递后这段时间内不判空闲（避开"已提交但还没开始生成"的空窗）
   const IDLE_STREAK = 3;      // 连续这么多次采到 pane 不忙才降 idle（去抖，对齐 pane 下线判定）
+  const SUSPECT_FAST_IDLE_MS = 8000; // 投递后这么快就被自动降 idle 视为"可疑(可能没回完)",落盘诊断
   const missStreak = new Map<string, number>(); // 连续探测不到 pane 的次数（去抖：osascript 高并发会瞬时误报，连续多次才下线）
   const idleStreak = new Map<string, number>(); // 连续采到 pane"不忙"的次数（自动空闲去抖）
   setInterval(() => {
@@ -332,7 +347,15 @@ export async function up(configPath: string) {
               idleStreak: streak,
               idleThreshold: IDLE_STREAK,
             });
-            if (action === 'mark-idle') router.onIdle(name);
+            if (action === 'mark-idle') {
+              // 只记"投递后异常快就被降 idle"的可疑情形(接近宽限下限):正常长任务结束的 since 很大、不记,避免刷屏。
+              // 若反复卡死时这里频繁出现,佐证"还没回完就被降 idle、下条排队消息叠注入打断上一轮"。
+              const since = Date.now() - (lastDeliverAt.get(name) ?? 0);
+              if (since < SUSPECT_FAST_IDLE_MS) {
+                try { appendDiag(launchCwd, { kind: 'auto-idle', name, sinceDeliverMs: since, ts: Date.now() }); } catch { /* 诊断落盘失败不致命 */ }
+              }
+              router.onIdle(name);
+            }
             else if (action === 'mark-busy') router.observeBusy(name);
           }
         } catch {

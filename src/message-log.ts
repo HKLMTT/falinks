@@ -1,4 +1,4 @@
-import { appendFileSync, readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
+import { appendFileSync, readFileSync, writeFileSync, mkdirSync, existsSync, rmSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { join, dirname } from 'node:path';
 import { runtimeDir } from './runtime.js';
@@ -37,4 +37,9 @@ export function loadMessageLog(cwd: string, cap = MESSAGE_LOG_CAP, root = runtim
     try { writeFileSync(p, tail.map((m) => JSON.stringify(m)).join('\n') + '\n'); } catch { /* 压缩失败无所谓 */ }
   }
   return tail;
+}
+
+/** 清空某项目的消息流水(boss 历史对话):删除持久化文件。不存在为 no-op。 */
+export function clearMessageLog(cwd: string, root = runtimeDir()): void {
+  rmSync(messageLogPath(cwd, root), { force: true });
 }
