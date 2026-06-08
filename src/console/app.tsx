@@ -5,7 +5,7 @@ import { parseConsoleInput, lastReplyTarget } from './parse.js';
 import { mentionState, applyMention } from './mention.js';
 import { commandState, applyCommand } from './commands.js';
 import { CLIS, dirSuggestions } from './wizard.js';
-import { formatBody, nameColor, formatTime, NAME_COLORS, statusGlyph, SPINNER_FRAMES } from './log-format.js';
+import { formatBody, nameColor, formatTime, NAME_COLORS, statusGlyph, SPINNER_FRAMES, deliveryState, moveSel, windowRange } from './log-format.js';
 import { decodeKey, type KeyEvent } from './keys.js';
 import { saveClipboardImage, expandImageTokens } from './clipboard.js';
 import { t, setLocale } from '../i18n/index.js';
@@ -57,6 +57,10 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
   const [qSel, setQSel] = useState(0);
   const [skippedQ, setSkippedQ] = useState<string | null>(null);
   const [confirmExit, setConfirmExit] = useState(false);
+  // 回看历史:selBack=选中条距最新多少条(0=最新),null=实时态;histBuf=进入回看时缓存的全量历史;expanded=已展开的消息 id。
+  const [selBack, setSelBack] = useState<number | null>(null);
+  const [histBuf, setHistBuf] = useState<any[]>([]);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [tagline] = useState(() => t().taglines[Math.floor(Math.random() * t().taglines.length)]);
   const defaultCwd = process.cwd();
 
@@ -91,7 +95,7 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
         const r = await admin(port, 'GET', '/admin/roster');
         const rs = JSON.stringify(r.roster ?? []);
         if (rs !== lastSeen.current.roster) { lastSeen.current.roster = rs; setRoster(r.roster ?? []); }
-        const l = await admin(port, 'GET', '/admin/log');
+        const l = await admin(port, 'GET', '/admin/log?limit=80');
         const recent = (l.log ?? []).slice(-10);
         const ls = JSON.stringify(recent);
         if (ls !== lastSeen.current.log) { lastSeen.current.log = ls; setLog(recent); }
@@ -238,6 +242,33 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
       return;
     }
 
+    // 回看历史:PageUp/PageDown 在消息条目间选择(实时态下 PageUp 进入,拉全量缓存);
+    // 回看态下 Enter 展开/收起选中条、Esc 退出、打字也退出并落到输入框。
+    if (ev.type === 'pageup' || ev.type === 'pagedown') {
+      const dir = ev.type === 'pageup' ? 'older' : 'newer';
+      if (selBack === null) {
+        if (dir === 'newer') return; // 实时态按 PageDown 无意义
+        void admin(port, 'GET', '/admin/log').then((l) => {
+          const full = l.log ?? [];
+          setHistBuf(full);
+          setSelBack(moveSel(null, full.length, 'older'));
+        });
+        return;
+      }
+      setSelBack((sb) => moveSel(sb, histBuf.length, dir));
+      return;
+    }
+    if (selBack !== null) {
+      const cur = histBuf[histBuf.length - 1 - selBack];
+      if (ev.type === 'enter') {
+        if (cur) setExpanded((s) => { const n = new Set(s); n.has(cur.id) ? n.delete(cur.id) : n.add(cur.id); return n; });
+        return;
+      }
+      if (ev.type === 'esc') { setSelBack(null); return; }
+      if (ev.type !== 'text') { setSelBack(null); return; } // 非打字键:退出回看(打字键则退出后落到下面输入)
+      setSelBack(null);
+    }
+
     // Ctrl+V：读系统剪贴板里的截图，存临时文件，输入框只插入短占位 [图片N]（发送时展开成真实路径）
     if (ev.type === 'ctrl' && ev.key === 'v') {
       void saveClipboardImage().then((p) => {
@@ -350,9 +381,17 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
     return () => { stdin.off('data', onData); };
     // 每次渲染重挂，保证闭包里拿到最新 state；依赖列出 handleKey 读到的所有状态。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stdin, input, cursor, wizard, langPick, confirmExit, questions, skippedQ, qSel, history, histIdx, attachments, sel, log, roster]);
+  }, [stdin, input, cursor, wizard, langPick, confirmExit, questions, skippedQ, qSel, history, histIdx, attachments, sel, log, roster, selBack, histBuf, expanded]);
 
   const color = (s: string) => (s === 'idle' ? 'green' : s === 'busy' ? 'yellow' : s === 'dead' ? 'red' : 'gray');
+
+  // 消息区数据:实时态贴底显示 log 最近 VIS 条;回看态按选中条(selIdx)铺一窗 histBuf。
+  const VIS = 6;
+  const browsing = selBack !== null;
+  const selIdx = browsing ? histBuf.length - 1 - (selBack as number) : -1;
+  const win = browsing ? windowRange(selIdx, histBuf.length, VIS) : { start: 0, end: 0 };
+  const shownMsgs = browsing ? histBuf.slice(win.start, win.end) : log.slice(-VIS);
+  const baseIdx = browsing ? win.start : Math.max(0, log.length - VIS); // shownMsgs[i] 的绝对下标
 
   return (
     // 根盒钉在 rows-1(严格 < 终端行数)并裁剪溢出:输出永不触发 Ink 的整屏清除分支,
@@ -371,26 +410,38 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
           <Text key={a.name}>
             <Text color={color(a.status)}>{statusGlyph(a.status, !!a.virtual, frame)} </Text>
             <Text color={colorFor(a.name)} bold>{a.name}</Text>
-            <Text dimColor> {a.role ?? ''} [{a.status}]</Text>
+            <Text dimColor> {a.role ?? ''} [{t().agentStatus(a.status)}]</Text>
           </Text>
         ))}
       </Box>
       <Box flexDirection="column" marginTop={1} flexGrow={1} overflow="hidden">
-        <Box flexShrink={0}><Text underline>{t().messages}</Text></Box>
-        <Box flexDirection="column" flexGrow={1} overflow="hidden" justifyContent="flex-end">
-          {log.slice(-6).map((m, i, arr) => {
-            const isLatest = i === arr.length - 1;
-            const { lines, truncated } = formatBody(String(m.body), isLatest ? 40 : 3);
+        <Box flexShrink={0}>
+          <Text underline>{t().messages}</Text>
+          {browsing ? <Text color="cyan"> · {t().browseHint(selIdx + 1, histBuf.length)}</Text> : null}
+        </Box>
+        <Box flexDirection="column" flexGrow={1} overflow="hidden" justifyContent={browsing ? 'flex-start' : 'flex-end'}>
+          {shownMsgs.map((m, i) => {
+            const absIdx = baseIdx + i;
+            const selected = browsing && absIdx === selIdx;
+            const isLatest = !browsing && absIdx === log.length - 1;
+            const expandedHere = browsing && expanded.has(m.id);
+            const { lines, truncated } = formatBody(String(m.body), expandedHere ? 200 : (isLatest ? 40 : 3));
             return (
               <Box key={i} flexDirection="column" flexShrink={0} marginTop={i === 0 ? 0 : 1}>
                 <Text>
+                  {selected ? <Text color="cyan" bold>❯ </Text> : null}
                   {m.ts ? <Text dimColor>{formatTime(m.ts)} </Text> : null}
-                  <Text color={colorFor(m.from)}>{m.from}</Text>
+                  <Text color={colorFor(m.from)} bold={selected}>{m.from}</Text>
                   <Text> → </Text>
-                  <Text color={colorFor(m.to)}>{m.to}</Text>
+                  <Text color={colorFor(m.to)} bold={selected}>{m.to}</Text>
+                  {(() => {
+                    const ds = deliveryState(m.to, !!m.queued, roster);
+                    if (ds === 'none') return null;
+                    return <Text dimColor> {ds === 'queued' ? t().msgQueued : t().msgDelivered}</Text>;
+                  })()}
                 </Text>
                 {lines.map((ln, j) => (<Text key={j} wrap="wrap">  {ln}</Text>))}
-                {truncated > 0 ? <Text dimColor>  {t().moreLines(truncated, m.from)}</Text> : null}
+                {truncated > 0 ? <Text dimColor>  {browsing ? t().expandMore(truncated) : t().moreLines(truncated, m.from)}</Text> : null}
               </Box>
             );
           })}

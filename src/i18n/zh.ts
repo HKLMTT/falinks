@@ -54,13 +54,20 @@ export const zh = {
   answerOrType: ' · 或打字改普通输入',
   roster: '花名册',
   messages: '消息',
+  /** 花名册里的员工状态本地化（未知值原样返回，前向兼容新状态）。 */
+  agentStatus: (s: string): string =>
+    ({ launching: '启动中', idle: '空闲', busy: '工作中', stuck: '卡住', dead: '已下线' } as Record<string, string>)[s] ?? s,
+  msgQueued: '⏳ 排队中',
+  msgDelivered: '✓ 已送达',
+  browseHint: (pos: number, total: number) => `回看中 第 ${pos}/${total} · PgUp/PgDn 选择 · Enter 展开/收起 · Esc 退出`,
+  expandMore: (n: number) => `… +${n} 行 · Enter 展开`,
   langAuto: '跟随系统',
   langZh: '中文',
   langEn: 'English',
   langPickTitle: '选择语言（↑↓ 选 · Enter 确认 · Esc 取消）',
   langSwitched: (l: string) => `已切换语言：${l}`,
   moreLines: (n: number, from: string) => `… +${n} 行（完整见 ${from} 窗口）`,
-  inputHint: (target: string) => `直接打字=回复 @${target} · @all 群发 · @名字 私聊 · \\\\+回车 换行 · / 命令`,
+  inputHint: (target: string) => `直接打字=回复 @${target} · @all 群发 · @名字 私聊 · \\\\+回车 换行 · PgUp 回看 · / 命令`,
   noReplyTargetShort: '(无·先 @某人)',
   broadcastAllHint: '群发全员',
 

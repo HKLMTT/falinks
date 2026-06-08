@@ -3,8 +3,8 @@ import { createHash } from 'node:crypto';
 import { join, dirname } from 'node:path';
 import { runtimeDir } from './runtime.js';
 
-/** 消息流水的滚动上限：内存与磁盘都只保留最近这么多条。 */
-export const MESSAGE_LOG_CAP = 300;
+/** 消息流水的滚动上限：内存与磁盘都只保留最近这么多条（可被 config.historyCap 覆盖）。 */
+export const MESSAGE_LOG_CAP = 5000;
 
 /** 每个项目目录一份消息流水：~/.falinks/messages/<cwd 的 sha1 前16位>.jsonl。root 可注入便于测试。 */
 export function messageLogPath(cwd: string, root = runtimeDir()): string {

@@ -42,13 +42,14 @@ export async function up(configPath: string) {
   const bootstraps = new Map<string, string>(); // name -> 完整 bootstrap（/clear 后重注入,恢复员工身份）
   const clearing = new Set<string>(); // 正在 /clear 的员工：健康轮询期间别自动 onIdle（否则会把排队消息投进正在清空的 pane）
   const launchCwd = (() => { try { return realpathSync(process.cwd()); } catch { return process.cwd(); } })();
+  const historyCap = cfg.historyCap ?? MESSAGE_LOG_CAP;
   const router = new Router(deliverer, {
     now: () => Date.now(), genId: () => `m${++n}`, routes: cfg.routes, guards,
-    logCap: MESSAGE_LOG_CAP,
+    logCap: historyCap,
     onLog: (msg) => { try { appendMessageLog(launchCwd, msg); } catch { /* 持久化失败不致命 */ } },
   });
   router.addVirtual('boss');
-  router.seedLog(loadMessageLog(launchCwd) as Message[]); // 恢复历史消息流水
+  router.seedLog(loadMessageLog(launchCwd, historyCap) as Message[]); // 恢复历史消息流水
 
   const store: SessionStore = loadStore(launchCwd);
   pruneToAgents(store, cfg.agents.map((a) => a.name));

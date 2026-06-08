@@ -134,6 +134,15 @@ export class Router {
     return [...this.agents.values()];
   }
 
+  /** 此刻仍在各员工 inbox 里等待投递的消息 id 集合（控制台据此显示"排队中/已送达"）。 */
+  queuedMessageIds(): Set<string> {
+    const ids = new Set<string>();
+    for (const a of this.agents.values()) {
+      for (const m of a.inbox) ids.add(m.id);
+    }
+    return ids;
+  }
+
   /** 若 agent 空闲且 inbox 非空，取出一条投递并标 busy。 */
   private pump(a: AgentRuntime): void {
     if (a.status !== 'idle') return;

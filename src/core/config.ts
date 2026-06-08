@@ -16,6 +16,7 @@ export interface GuardConfig {
 
 export interface FalinksConfig {
   busPort?: number; // 缺省 = 启动时自动分配(listen 0)
+  historyCap?: number; // 消息流水保留上限(内存+磁盘),缺省由调用方回退默认(MESSAGE_LOG_CAP)
   agents: AgentConfig[];
   routes: Record<string, AgentName>;
   guards: GuardConfig;
@@ -26,6 +27,8 @@ export function parseConfig(raw: any): FalinksConfig {
   if (!raw || typeof raw !== 'object') throw new Error('config must be an object');
   if (raw.busPort !== undefined && typeof raw.busPort !== 'number')
     throw new Error('config.busPort must be a number');
+  if (raw.historyCap !== undefined && (typeof raw.historyCap !== 'number' || !Number.isInteger(raw.historyCap) || raw.historyCap <= 0))
+    throw new Error('config.historyCap must be a positive integer');
   if (!Array.isArray(raw.agents) || raw.agents.length === 0)
     throw new Error('config.agents must have at least one agent');
 
@@ -53,5 +56,5 @@ export function parseConfig(raw: any): FalinksConfig {
     loopWindow: typeof gd.loopWindow === 'number' ? gd.loopWindow : 3,
   };
 
-  return { busPort: raw.busPort, agents, routes, guards };
+  return { busPort: raw.busPort, historyCap: raw.historyCap, agents, routes, guards };
 }

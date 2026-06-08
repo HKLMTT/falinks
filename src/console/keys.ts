@@ -17,6 +17,8 @@ export type KeyEvent =
   | { type: 'esc' }
   | { type: 'up' }
   | { type: 'down' }
+  | { type: 'pageup' }   // PageUp：回看历史(选更早一条)
+  | { type: 'pagedown' } // PageDown：回看历史(选更新一条 / 退出)
   | { type: 'left' }
   | { type: 'right' }
   | { type: 'home' }
@@ -53,6 +55,8 @@ export function decodeKey(s: string): KeyEvent {
   if (s === '\x1b[D' || s === '\x1bOD') return { type: 'left' };
   if (s === '\x1b[H' || s === '\x1bOH' || s === '\x1b[1~' || s === '\x1b[7~') return { type: 'home' };
   if (s === '\x1b[F' || s === '\x1bOF' || s === '\x1b[4~' || s === '\x1b[8~') return { type: 'end' };
+  if (s === '\x1b[5~') return { type: 'pageup' };
+  if (s === '\x1b[6~') return { type: 'pagedown' };
   if (s === '\x1b') return { type: 'esc' };
 
   // 单字节 Ctrl+字母(传统)：0x01..0x1a → ctrl+a..ctrl+z（排除已处理的 \r=0x0d、\t=0x09、\x08）

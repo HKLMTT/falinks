@@ -138,7 +138,12 @@ export async function startBus(deps: BusDeps, port: number, opts?: BusOptions): 
         return sendJson({ roster: router.roster().map((a) => ({ name: a.name, role: a.role, status: a.status, virtual: !!a.virtual })) });
       }
       if (req.method === 'GET' && url.pathname === '/admin/log') {
-        return sendJson({ log: router.messages() });
+        const queued = router.queuedMessageIds();
+        const all = router.messages().map((m) => ({ ...m, queued: queued.has(m.id) }));
+        const limitRaw = url.searchParams.get('limit');
+        const limit = limitRaw !== null ? Number(limitRaw) : NaN;
+        const log = Number.isInteger(limit) && limit > 0 ? all.slice(-limit) : all;
+        return sendJson({ log });
       }
       if (req.method === 'GET' && url.pathname === '/admin/questions') {
         return sendJson({ questions: questions.list() });

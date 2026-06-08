@@ -31,6 +31,21 @@ export function formatTime(ts: number): string {
   return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
 }
 
+/**
+ * 一条消息在消息行里要不要显示投递徽标、显示哪个。
+ * 只给"投给真实员工"的消息显示：虚拟成员(boss)只记日志不投递、不在册的目标都返回 none。
+ * queued = 该消息此刻仍在目标 inbox 里（由 /admin/log 的 queued 字段给出）。
+ */
+export function deliveryState(
+  to: string,
+  queued: boolean,
+  roster: { name: string; virtual?: boolean }[],
+): 'queued' | 'delivered' | 'none' {
+  const target = roster.find((a) => a.name === to);
+  if (!target || target.virtual) return 'none';
+  return queued ? 'queued' : 'delivered';
+}
+
 /** 花名册状态点动画帧(braille spinner，在忙时逐帧滚动）。 */
 export const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
@@ -42,4 +57,23 @@ export function statusGlyph(status: string, virtual: boolean, frame: number): st
   if (virtual) return '·';
   if (status === 'busy' || status === 'launching') return SPINNER_FRAMES[frame % SPINNER_FRAMES.length];
   return '●';
+}
+
+/**
+ * 回看选中位移。selBack = 选中条距最新多少条（0=最新），null = 实时态（不在回看）。
+ * dir='older'(Ctrl+↑)：往更早走，封顶在最早一条；从实时态进入则选中最新(0)。
+ * dir='newer'(Ctrl+↓)：往更新走；越过最新（selBack<0）→ 返回 null = 退出回看。
+ */
+export function moveSel(selBack: number | null, total: number, dir: 'older' | 'newer'): number | null {
+  if (total <= 0) return null;
+  if (dir === 'older') return selBack === null ? 0 : Math.min(total - 1, selBack + 1);
+  if (selBack === null) return null;
+  return selBack - 1 < 0 ? null : selBack - 1;
+}
+
+/** 让选中条落在视口内的渲染窗口 [start,end)：尽量居中，触顶/触底夹紧。 */
+export function windowRange(selIdx: number, total: number, size: number): { start: number; end: number } {
+  if (total <= size) return { start: 0, end: total };
+  const start = Math.min(Math.max(0, selIdx - Math.floor(size / 2)), total - size);
+  return { start, end: start + size };
 }
