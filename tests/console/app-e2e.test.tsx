@@ -28,6 +28,16 @@ function fakeStdin() {
 }
 const strip = (s: string) => s.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '');
 
+// 条件等待:轮询 pred 直到为真或超时(CI 比本地慢,固定 sleep 会 flaky)。
+async function waitFor(pred: () => boolean, timeout = 8000, step = 25): Promise<void> {
+  const deadline = Date.now() + timeout;
+  while (Date.now() < deadline) {
+    if (pred()) return;
+    await new Promise((r) => setTimeout(r, step));
+  }
+  if (!pred()) throw new Error('waitFor: 超时未满足条件');
+}
+
 let bus: Bus; let driver: FakeDriver; let router: Router;
 const sessions = new Map<string, string>();
 
@@ -52,18 +62,16 @@ test('e2e:花名册状态本地化 + 消息徽标(排队中/已送达)真实渲�
 
   const stdout = fakeStdout(140, 60); // 高终端:内容不被视口裁剪
   const inst = render(<App port={bus.port} />, { stdout, stdin: fakeStdin(), exitOnCtrlC: false, patchConsole: false });
+  const allText = () => strip((stdout.frames as string[]).join('\n')); // 所有帧累积文本(出现过即可)
   try {
-    await new Promise((r) => setTimeout(r, 1500)); // 等首轮轮询拉到 /admin/roster + /admin/log
-    const text = strip((stdout.frames as string[]).join('\n'));
-
-    // 花名册状态本地化(zh):alice 忙 → 工作中, bob 闲 → 空闲(非英文 idle/busy)
-    expect(text).toContain('工作中');
-    expect(text).toContain('空闲');
-    expect(text).not.toMatch(/\[busy\]|\[idle\]/);
-
-    // 消息徽标:排队的 second → 排队中;已投递的 first → 已送达
-    expect(text).toContain('排队中');
-    expect(text).toContain('已送达');
+    // 等首轮轮询拉到 /admin/roster + /admin/log 并渲染(条件等待,不靠固定 sleep)
+    await waitFor(() => ['工作中', '空闲', '排队中', '已送达'].every((s) => allText().includes(s)));
+    const text = allText();
+    expect(text).toContain('工作中');     // 花名册:alice 忙 → 工作中
+    expect(text).toContain('空闲');       // bob 闲 → 空闲
+    expect(text).not.toMatch(/\[busy\]|\[idle\]/); // 不再是英文原始状态
+    expect(text).toContain('排队中');     // 排队的 second
+    expect(text).toContain('已送达');     // 已投递的 first
   } finally {
     inst.unmount();
   }
@@ -90,26 +98,33 @@ test('e2e:PageUp 回看翻看更早消息 + Enter 展开折叠正文', async () 
   const stdin = fakeStdin();
   const inst = render(<App port={bus.port} />, { stdout, stdin, exitOnCtrlC: false, patchConsole: false });
   const stdinAny = stdin as any;
-  const press = async (seq: string, ms = 70) => { stdinAny.emit('data', Buffer.from(seq)); await new Promise((r) => setTimeout(r, ms)); };
-  const lastFrame = () => strip(((stdout.frames as string[]).at(-1)) ?? '');
+  const allText = () => strip((stdout.frames as string[]).join('\n'));
+  // 最近一帧"完整渲染"(含 logo 框线 ╔)的文本 —— 用于"当前态"断言(如退出回看后不应再有指示条)。
+  const lastContent = () => {
+    const frames = (stdout.frames as string[]).map(strip).filter((f) => f.includes('╔'));
+    return frames.length ? frames[frames.length - 1] : '';
+  };
+  const press = async (seq: string) => { stdinAny.emit('data', Buffer.from(seq)); await new Promise((r) => setTimeout(r, 20)); };
   try {
-    await new Promise((r) => setTimeout(r, 400)); // 首轮轮询
-    // 实时态:只见尾部(MSG-12 在,MSG-01 不在)
-    expect(lastFrame()).toContain('MSG-12');
+    await waitFor(() => allText().includes('MSG-12')); // 首轮轮询:实时态见尾部
 
-    await press('\x1b[5~', 300); // PageUp 进入回看(拉全量)
-    for (let k = 0; k < 8; k++) await press('\x1b[5~'); // 选到 MSG-04(越过实时尾部)
-    const browsed = lastFrame();
-    expect(browsed).toContain('回看中');   // 指示条
-    expect(browsed).toContain('MSG-01');   // 看到了实时尾部之外的更早消息
-    expect(browsed).not.toContain('L5');   // MSG-04 此刻折叠,看不到第 5 行
+    // PageUp 进入回看(拉全量),逐条往上选;每按一次等指示条"第 pos/12"出现以确保已生效。
+    await press('\x1b[5~');
+    await waitFor(() => allText().includes('第 12/12')); // 进入,选中最新(MSG-12)
+    for (let pos = 11; pos >= 4; pos--) { // 再上翻 8 次 → 选到 MSG-04
+      await press('\x1b[5~');
+      await waitFor(() => allText().includes(`第 ${pos}/12`));
+    }
 
-    await press('\r'); // Enter 展开选中的 MSG-04
-    expect(lastFrame()).toContain('L5');   // 展开后看到全文
+    await waitFor(() => allText().includes('MSG-01')); // 看到了实时尾部之外的更早消息
+    expect(allText()).toContain('回看中');           // 指示条
+    expect(allText()).not.toContain('L5');           // MSG-04 此刻折叠,第 5 行还没出现过
 
-    await press('\x1b'); // Esc 退出回看
-    await new Promise((r) => setTimeout(r, 400));
-    expect(lastFrame()).not.toContain('回看中');
+    await press('\r');                               // Enter 展开选中的 MSG-04
+    await waitFor(() => allText().includes('L5'));   // 展开后看到全文
+
+    await press('\x1b');                             // Esc 退出回看
+    await waitFor(() => !lastContent().includes('回看中')); // 当前帧不再有指示条
   } finally {
     inst.unmount();
   }
