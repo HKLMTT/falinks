@@ -55,3 +55,30 @@ test('isPaneBusy: 完成态摘要(Brewed/Crunched/Baked for …)= 不忙', () =>
   expect(isPaneBusy('Crunched for 1m 55s\n❯')).toBe(false);
   expect(isPaneBusy('Baked for 9m 24s\n❯')).toBe(false);
 });
+
+// 回归(真实 qa 卡死场景):scrollback 里冻着旧 spinner 帧,但底部已是输入框+状态栏 = 已空闲。
+// 旧实现扫全屏会命中残留 spinner → 误判忙、卡住不降;新实现只看底部活区 → 不忙。
+test('isPaneBusy: scrollback 残留旧 spinner、底部已回空闲提示符 = 不忙(qa 卡死回归)', () => {
+  const screen = [
+    '· Wibbling… (1m 17s · ↑ 1.7k tokens)',   // 50 行前冻住的旧 spinner 帧
+    '⏺ 一些历史输出……',
+    '✻ Crunched for 1m 56s',                   // 本回合已结束(过去式摘要)
+    '※ recap: 全部通过 (disable recaps in /config)',
+    '────────────────────────────────────────',
+    '❯ 授权你代删 backend 那 5 条',
+    '────────────────────────────────────────',
+    '  pasg-dev │ ctx ██░░ 21% │ Opus 4.8 (1M context)',
+    '  ⏵⏵ bypass permissions on (shift+tab to cycle) · ← for agents',
+  ].join('\n');
+  expect(isPaneBusy(screen)).toBe(false);
+});
+
+// 反向:真正生成中,spinner 在最底、无空闲状态栏 = 忙(scrollback 里就算有旧状态栏也不误判)。
+test('isPaneBusy: scrollback 有旧状态栏但底部是 live spinner = 忙', () => {
+  const screen = [
+    '  ⏵⏵ bypass permissions on (shift+tab to cycle)', // 上一轮空闲态的旧状态栏,已滚上去
+    '⏺ 正在处理……',
+    '✻ Hashing… (12s · ↑ 2.1k tokens)',                // live spinner 在最底
+  ].join('\n');
+  expect(isPaneBusy(screen)).toBe(true);
+});

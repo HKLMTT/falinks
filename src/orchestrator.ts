@@ -35,18 +35,21 @@ export function detectScreenState(screen: string): ScreenState {
  * 从读屏文本判断员工此刻是否"正在生成"（仅作兜底；权威「闲」信号是员工调 idle 工具、「忙」是消息投递）。
  * 不忙 = 已回到空闲提示符（生成结束 / 被 Ctrl+C 打断 / 没调 idle 工具）——用于自动检测空闲、把排队消息投出去。
  *
- * ⚠️ 只认 Claude/Codex 的**生成 spinner 结构**,绝不依赖、也绝不被 statusLine 误触（statusLine 用户可自定义,
- * 每个人都不一样）。「esc to interrupt」是状态行最右段,窄分屏里被 pane 宽度裁掉,iTerm `text of s` 抓不到,
- * 所以再认裁不掉的 spinner 计时器:
- * - claude 生成中：`<动词>… (<计时器>)`,如 `Hashing… (5m 28s · ↓ 5.7k tokens)`。计时器单位用**小写** s/m 匹配,
- *   大小写敏感以避开自定义 statusLine 里的 `(1M context)` 之类。
- * - codex 生成中：`Working (<Ns> …)`。
- * 完成态 `Brewed for 58s`（有 for、无 `…(`、无括号计时器）与各种自定义 statusLine 均不命中。
+ * ⚠️ 只看屏幕**底部活区**(最后几行非空),不扫全屏:scrollback 里会残留旧的 spinner 帧
+ * (如 `Wibbling… (1m 17s …)`,长任务滚屏时被冻在历史里),全屏匹配会把已空闲的 pane 误判成忙、卡住不降。
+ * 生成时 spinner 恒在最底行;空闲时最底是输入框 + 状态栏。判据:
+ * - 底部状态栏出现 `shift+tab to cycle` / `bypass permissions on` = 已回到空闲提示符 → 不忙(压过任何残留)。
+ * - 否则底部活区里有生成标志才算忙:`esc to interrupt` / claude `<动词>… (16s|5m 28s)` / codex `Working (3s)`。
+ *   计时器单位用**小写** s/m(大小写敏感),避开自定义 statusLine 里的 `(1M context)` 之类。
  */
 export function isPaneBusy(screen: string): boolean {
-  return /esc to interrupt/i.test(screen)         // 通用、未裁切（两种 CLI）
-      || /…\s*\(\d+\s*[ms]\b/.test(screen)        // claude spinner: <动词>… (16s / 5m 28s …)
-      || /\bworking\b\s*\(\d+\s*s\b/i.test(screen); // codex: Working (3s …)
+  const lines = screen.split('\n').map((l) => l.replace(/\s+$/, '')).filter((l) => l);
+  const tail = lines.slice(-6).join('\n');   // 活区:判忙只看这里
+  const bottom = lines.slice(-2).join('\n'); // 最底:输入框状态栏出现在这里才算回到空闲
+  if (/shift\+tab to cycle|bypass permissions on/i.test(bottom)) return false;
+  return /esc to interrupt/i.test(tail)
+      || /…\s*\(\d+\s*[ms]\b/.test(tail)
+      || /\bworking\b\s*\(\d+\s*s\b/i.test(tail);
 }
 
 export type PaneStatusAction = 'mark-busy' | 'mark-idle' | 'none';
