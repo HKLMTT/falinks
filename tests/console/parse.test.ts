@@ -77,3 +77,7 @@ test('/lang with arg -> error (no args accepted)', () => {
 test('empty input -> noop', () => {
   expect(parseConsoleInput('   ').kind).toBe('noop');
 });
+
+test('/mouse -> mouse-toggle', () => {
+  expect(parseConsoleInput('/mouse')).toEqual({ kind: 'mouse-toggle' });
+});

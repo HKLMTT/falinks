@@ -77,3 +77,13 @@ export function windowRange(selIdx: number, total: number, size: number): { star
   const start = Math.min(Math.max(0, selIdx - Math.floor(size / 2)), total - size);
   return { start, end: start + size };
 }
+
+/**
+ * 消息区可见条数:随终端高度自适应,不再固定 6 条留大片空白。
+ * 粗估每条折叠约占 4 行(1 头 + ≤3 正文/边距);扣掉固定区(logo/花名册/标题/输入)。
+ * 夹紧到 [6, 60]:太矮保底 6、太高封顶 60(多出的由消息区 overflow 裁掉)。
+ */
+export function visibleCount(rows: number, rosterLen: number): number {
+  const chrome = 8 + rosterLen;
+  return Math.min(60, Math.max(6, Math.floor((rows - chrome) / 4)));
+}

@@ -13,6 +13,7 @@ export const COMMANDS: CommandDef[] = [
   { name: 'remove', usage: '/remove <name>', get hint() { return t().cmdHint.remove; } },
   { name: 'clear', usage: '/clear [name]', get hint() { return t().cmdHint.clear; } },
   { name: 'lang', usage: '/lang', noArgs: true, get hint() { return t().cmdHint.lang; } },
+  { name: 'mouse', usage: '/mouse', noArgs: true, get hint() { return t().cmdHint.mouse; } },
   { name: 'help', usage: '/help', noArgs: true, get hint() { return t().cmdHint.help; } },
 ];
 

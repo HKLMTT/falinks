@@ -60,6 +60,8 @@ export const en: typeof zh = {
     ({ launching: 'launching', idle: 'idle', busy: 'busy', stuck: 'stuck', dead: 'dead' } as Record<string, string>)[s] ?? s,
   msgQueued: '⏳ queued',
   msgDelivered: '✓ delivered',
+  mouseEnabled: '🖱 mouse-wheel: on (hold Option to drag-select)',
+  mouseDisabled: '🖱 mouse-wheel: off (native drag-select restored)',
   browseHint: (pos: number, total: number) => `History ${pos}/${total} · PgUp/PgDn select · Enter expand/collapse · Esc exit`,
   expandMore: (n: number) => `… +${n} lines · Enter to expand`,
   langAuto: 'Follow system',
@@ -78,6 +80,7 @@ export const en: typeof zh = {
     remove: 'remove a worker',
     clear: "clear a worker's context, no name = everyone",
     lang: 'Switch language (zh/en)',
+    mouse: 'toggle mouse-wheel scrolling',
     help: 'show usage',
   } as Record<string, string>,
 

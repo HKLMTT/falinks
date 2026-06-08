@@ -59,6 +59,8 @@ export const zh = {
     ({ launching: '启动中', idle: '空闲', busy: '工作中', stuck: '卡住', dead: '已下线' } as Record<string, string>)[s] ?? s,
   msgQueued: '⏳ 排队中',
   msgDelivered: '✓ 已送达',
+  mouseEnabled: '🖱 鼠标滚轮:开（拖选复制请按住 Option 拖）',
+  mouseDisabled: '🖱 鼠标滚轮:关（恢复原生拖选复制）',
   browseHint: (pos: number, total: number) => `回看中 第 ${pos}/${total} · PgUp/PgDn 选择 · Enter 展开/收起 · Esc 退出`,
   expandMore: (n: number) => `… +${n} 行 · Enter 展开`,
   langAuto: '跟随系统',
@@ -77,6 +79,7 @@ export const zh = {
     remove: '删一个员工',
     clear: '清空某员工上下文,不带名=全员',
     lang: '切换语言(中/英)',
+    mouse: '开关鼠标滚轮滚动',
     help: '显示用法',
   } as Record<string, string>,
 

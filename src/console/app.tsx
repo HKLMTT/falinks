@@ -5,8 +5,9 @@ import { parseConsoleInput, lastReplyTarget } from './parse.js';
 import { mentionState, applyMention } from './mention.js';
 import { commandState, applyCommand } from './commands.js';
 import { CLIS, dirSuggestions } from './wizard.js';
-import { formatBody, nameColor, formatTime, NAME_COLORS, statusGlyph, SPINNER_FRAMES, deliveryState, moveSel, windowRange } from './log-format.js';
-import { decodeKey, type KeyEvent } from './keys.js';
+import { nameColor, formatTime, NAME_COLORS, statusGlyph, SPINNER_FRAMES, deliveryState, moveSel, windowRange, visibleCount } from './log-format.js';
+import { renderMarkdown } from './markdown.js';
+import { decodeKey, type KeyEvent, MOUSE_PUSH, MOUSE_POP } from './keys.js';
 import { saveClipboardImage, expandImageTokens } from './clipboard.js';
 import { t, setLocale } from '../i18n/index.js';
 
@@ -61,6 +62,8 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
   const [selBack, setSelBack] = useState<number | null>(null);
   const [histBuf, setHistBuf] = useState<any[]>([]);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  // 鼠标滚轮:默认开(像 Claude Code)。开=接管终端鼠标上报,滚轮翻历史;关=恢复原生拖选复制。
+  const [mouseOn, setMouseOn] = useState(true);
   const [tagline] = useState(() => t().taglines[Math.floor(Math.random() * t().taglines.length)]);
   const defaultCwd = process.cwd();
 
@@ -74,6 +77,8 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
   // 这样 Shift+Enter（kitty CSI-u）能和回车区分，且不依赖终端配置；中文/方向键/Ctrl 组合也照常。
   const { stdin, setRawMode } = useStdin();
   useEffect(() => { setRawMode?.(true); }, [setRawMode]);
+  // 鼠标上报随 mouseOn 开关(默认开)。退出时由 run.tsx 的还原钩子兜底再发一次 MOUSE_POP(幂等)。
+  useEffect(() => { process.stdout.write(mouseOn ? MOUSE_PUSH : MOUSE_POP); }, [mouseOn]);
 
   // 终端行数(只读跟踪,用于视口裁剪):根盒高度钉在 rows-1——必须严格小于终端行数,
   // 等于或超过都会让 Ink 每帧整屏清除(clearTerminal),配合轮询重渲染就是持续闪烁。
@@ -128,6 +133,7 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
       if (a.kind === 'error') { setStatus('⚠ ' + a.message); return; }
       if (a.kind === 'add-start') { setWizard({ name: a.name, step: 'cli', sel: 0 }); return; }
       if (a.kind === 'lang-start') { setLangPick(0); return; }
+      if (a.kind === 'mouse-toggle') { const next = !mouseOn; setMouseOn(next); setStatus(next ? t().mouseEnabled : t().mouseDisabled); return; }
       if (a.kind === 'say') { const r = await admin(port, 'POST', '/admin/say', { to: a.to, message: a.message }); setStatus(r.ok ? t().sayOk(a.to) : '⚠ ' + t().sayUndelivered(a.to, r.error ?? t().guardrailBlocked)); return; }
       if (a.kind === 'broadcast') { await admin(port, 'POST', '/admin/broadcast', { message: a.message }); setStatus(t().broadcastOk); return; }
       if (a.kind === 'reply') {
@@ -190,6 +196,7 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
       return; // 确认中，吞掉其它键
     }
     if (ev.type === 'ctrl' && ev.key === 'c') { setConfirmExit(true); return; }
+    if (ev.type === 'mouse') return; // 鼠标点击/释放:吞掉,不干扰输入与各模式
 
     // 向导模式：优先处理
     if (wizard) {
@@ -242,10 +249,10 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
       return;
     }
 
-    // 回看历史:PageUp/PageDown 在消息条目间选择(实时态下 PageUp 进入,拉全量缓存);
+    // 回看历史:PageUp/PageDown 或鼠标滚轮在消息条目间选择(实时态下往上=进入,拉全量缓存);
     // 回看态下 Enter 展开/收起选中条、Esc 退出、打字也退出并落到输入框。
-    if (ev.type === 'pageup' || ev.type === 'pagedown') {
-      const dir = ev.type === 'pageup' ? 'older' : 'newer';
+    if (ev.type === 'pageup' || ev.type === 'pagedown' || ev.type === 'wheel-up' || ev.type === 'wheel-down') {
+      const dir = (ev.type === 'pageup' || ev.type === 'wheel-up') ? 'older' : 'newer';
       if (selBack === null) {
         if (dir === 'newer') return; // 实时态按 PageDown 无意义
         void admin(port, 'GET', '/admin/log').then((l) => {
@@ -381,12 +388,14 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
     return () => { stdin.off('data', onData); };
     // 每次渲染重挂，保证闭包里拿到最新 state；依赖列出 handleKey 读到的所有状态。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stdin, input, cursor, wizard, langPick, confirmExit, questions, skippedQ, qSel, history, histIdx, attachments, sel, log, roster, selBack, histBuf, expanded]);
+  }, [stdin, input, cursor, wizard, langPick, confirmExit, questions, skippedQ, qSel, history, histIdx, attachments, sel, log, roster, selBack, histBuf, expanded, mouseOn]);
 
   const color = (s: string) => (s === 'idle' ? 'green' : s === 'busy' ? 'yellow' : s === 'dead' ? 'red' : 'gray');
 
   // 消息区数据:实时态贴底显示 log 最近 VIS 条;回看态按选中条(selIdx)铺一窗 histBuf。
-  const VIS = 6;
+  // VIS 随终端高度自适应(粗估每条折叠约占 4 行:1 头 + ≤3 正文/边距),不再固定 6 条留大片空白。
+  // 多出的部分由消息区 overflow:hidden 贴边裁掉(实时态裁顶留最新,回看态裁底)。
+  const VIS = visibleCount(rows, roster.length);
   const browsing = selBack !== null;
   const selIdx = browsing ? histBuf.length - 1 - (selBack as number) : -1;
   const win = browsing ? windowRange(selIdx, histBuf.length, VIS) : { start: 0, end: 0 };
@@ -425,7 +434,10 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
             const selected = browsing && absIdx === selIdx;
             const isLatest = !browsing && absIdx === log.length - 1;
             const expandedHere = browsing && expanded.has(m.id);
-            const { lines, truncated } = formatBody(String(m.body), expandedHere ? 200 : (isLatest ? 40 : 3));
+            const mdLines = renderMarkdown(String(m.body));
+            const cap = expandedHere ? Infinity : (isLatest ? 40 : 3);
+            const shownLines = mdLines.slice(0, cap);
+            const truncated = mdLines.length - shownLines.length;
             return (
               <Box key={i} flexDirection="column" flexShrink={0} marginTop={i === 0 ? 0 : 1}>
                 <Text>
@@ -440,7 +452,11 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
                     return <Text dimColor> {ds === 'queued' ? t().msgQueued : t().msgDelivered}</Text>;
                   })()}
                 </Text>
-                {lines.map((ln, j) => (<Text key={j} wrap="wrap">  {ln}</Text>))}
+                {shownLines.map((segs, j) => (
+                  <Text key={j} wrap="wrap">{'  '}{segs.map((s, k) => (
+                    <Text key={k} bold={s.bold} italic={s.italic} underline={s.underline} strikethrough={s.strikethrough} dimColor={s.dim}>{s.text}</Text>
+                  ))}</Text>
+                ))}
                 {truncated > 0 ? <Text dimColor>  {browsing ? t().expandMore(truncated) : t().moreLines(truncated, m.from)}</Text> : null}
               </Box>
             );

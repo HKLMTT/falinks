@@ -136,4 +136,27 @@ renderE2E('e2e:PageUp 回看翻看更早消息 + Enter 展开折叠正文', asyn
   }
 });
 
+renderE2E('e2e:鼠标滚轮进入回看 + /mouse 开关切换状态', async () => {
+  for (let i = 1; i <= 12; i++) { router.send('boss', 'alice', `MSG-${String(i).padStart(2, '0')}`); router.onIdle('alice'); }
+  const stdout = fakeStdout(140, 60);
+  const stdin = fakeStdin();
+  const inst = render(<App port={bus.port} />, { stdout, stdin, exitOnCtrlC: false, patchConsole: false });
+  const stdinAny = stdin as any;
+  const allText = () => strip((stdout.frames as string[]).join('\n'));
+  const lastContent = () => { const f = (stdout.frames as string[]).map(strip).filter((x) => x.includes('╔')); return f.length ? f[f.length - 1] : ''; };
+  const press = async (seq: string) => { stdinAny.emit('data', Buffer.from(seq)); await new Promise((r) => setTimeout(r, 20)); };
+  try {
+    await waitFor(() => allText().includes('MSG-12'));
+    await press('\x1b[<64;5;5M'); // 滚轮上滚(SGR btn=64)= 进入回看,等价 PageUp
+    await waitFor(() => allText().includes('回看中') && allText().includes('第 12/12'));
+    await press('\x1b[<65;5;5M'); // 滚轮下滚到底 → 退出回看
+    await waitFor(() => !lastContent().includes('回看中'));
+    for (const ch of '/mouse') await press(ch); // /mouse 关闭 → 状态行提示
+    await press('\r');
+    await waitFor(() => allText().includes('鼠标滚轮:关'));
+  } finally {
+    inst.unmount();
+  }
+});
+
 
