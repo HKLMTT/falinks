@@ -1,7 +1,7 @@
 import React from 'react';
 import { render } from 'ink';
 import { App } from './app.js';
-import { KITTY_PUSH, KITTY_POP, MOUSE_POP } from './keys.js';
+import { KITTY_PUSH, KITTY_POP } from './keys.js';
 
 /** 整屏清除 + 清滚动区 + 光标归位。 */
 const CLEAR = '\x1b[2J\x1b[3J\x1b[H';
@@ -26,9 +26,9 @@ export function installResizeClear(
 export function renderConsole(port: number, initialStatus?: string): void {
   process.stdout.write(CLEAR);
   process.stdout.write(KITTY_PUSH); // 开 kitty 键盘协议：让 Shift+Enter 等修饰键可区分
-  // 还原:关 kitty 协议 + 关鼠标上报(App 默认开了鼠标滚轮)。挂到 exit/SIGINT/SIGTERM 多重兜底,
-  // 防崩溃/被 kill 时把终端留在鼠标模式(点哪都怪)。MOUSE_POP 幂等,App 自己关过也无妨。
-  const restore = () => { try { process.stdout.write(KITTY_POP + MOUSE_POP); } catch { /* ignore */ } };
+  // 还原:退出前关 kitty 协议。挂到 exit/SIGINT/SIGTERM 多重兜底,防崩溃/被 kill 时把终端留在 kitty 模式。
+  // 不再开鼠标上报(改用终端原生 scrollback + 拖选),所以也无需 MOUSE_POP。
+  const restore = () => { try { process.stdout.write(KITTY_POP); } catch { /* ignore */ } };
   process.on('exit', restore);
   process.on('SIGINT', () => { restore(); process.exit(0); });
   process.on('SIGTERM', () => { restore(); process.exit(0); });

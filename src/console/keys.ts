@@ -8,13 +8,6 @@
 export const KITTY_PUSH = '\x1b[>1u';
 export const KITTY_POP = '\x1b[<u';
 
-/**
- * 启用鼠标上报(滚轮翻历史用)。`?1000h`=只报按键+滚轮(不报移动/悬停,最克制);`?1006h`=SGR 坐标(支持大坐标)。
- * 代价:窗内原生拖选复制被接管(iTerm 按住 Option 拖仍可选)。退出/关闭时发 MOUSE_POP 还原。
- */
-export const MOUSE_PUSH = '\x1b[?1000h\x1b[?1006h';
-export const MOUSE_POP = '\x1b[?1000l\x1b[?1006l';
-
 export type KeyEvent =
   | { type: 'text'; text: string }
   | { type: 'enter' }
@@ -24,11 +17,8 @@ export type KeyEvent =
   | { type: 'esc' }
   | { type: 'up' }
   | { type: 'down' }
-  | { type: 'pageup' }   // PageUp：回看历史(选更早一条)
-  | { type: 'pagedown' } // PageDown：回看历史(选更新一条 / 退出)
-  | { type: 'wheel-up' }   // 鼠标滚轮上滚 = 回看更早(等价 PageUp)
-  | { type: 'wheel-down' } // 鼠标滚轮下滚 = 往新翻(等价 PageDown)
-  | { type: 'mouse' }      // 其它鼠标事件(点击/释放):吞掉,不当文字插入
+  | { type: 'pageup' }   // PageUp(保留解码;原生 scrollback 接管回看,App 不再特殊处理)
+  | { type: 'pagedown' } // PageDown(同上)
   | { type: 'left' }
   | { type: 'right' }
   | { type: 'home' }
@@ -37,17 +27,8 @@ export type KeyEvent =
   | { type: 'unknown'; raw: string };
 
 const CSI_U = /^\x1b\[(\d+)(?:;(\d+))?u$/;
-const SGR_MOUSE = /^\x1b\[<(\d+);\d+;\d+[Mm]$/; // SGR 鼠标:ESC[<btn;col;row M/m
 
 export function decodeKey(s: string): KeyEvent {
-  // SGR 鼠标:滚轮(btn 含 64 位)→ wheel-up/down(bit0=方向);其余(点击/释放)吞成 mouse,不漏成文字。
-  const mm = SGR_MOUSE.exec(s);
-  if (mm) {
-    const btn = Number(mm[1]);
-    if (btn & 64) return (btn & 1) ? { type: 'wheel-down' } : { type: 'wheel-up' };
-    return { type: 'mouse' };
-  }
-
   // kitty CSI-u: ESC [ code ; mods u   （mods = 1 + 位掩码：1=Shift,2=Alt,4=Ctrl）
   const m = CSI_U.exec(s);
   if (m) {

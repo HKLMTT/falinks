@@ -67,10 +67,7 @@ export const en: typeof zh = {
     if (fastIdle) parts.push(`${fastIdle} suspect early-idle`);
     return `⚠ collab diag: ${parts.join(' · ')} (may stall the team; /clear all to reset)`;
   },
-  mouseEnabled: '🖱 mouse-wheel: on (hold Option to drag-select)',
-  mouseDisabled: '🖱 mouse-wheel: off (native drag-select restored)',
-  browseHint: (pos: number, total: number) => `History ${pos}/${total} · PgUp/PgDn select · Enter expand/collapse · Esc exit`,
-  expandMore: (n: number) => `… +${n} lines · Enter to expand`,
+  pendingDeliver: (targets: string) => `⏳ pending: ${targets}`,
   langAuto: 'Follow system',
   langZh: '中文',
   langEn: 'English',
@@ -82,8 +79,7 @@ export const en: typeof zh = {
   leadFailed: 'lead failed',
   leadAssignedMsg: 'You are now this team\'s lead (coordinator). From now on, coordinate the team per this playbook:',
   leadRevokedMsg: 'You are no longer the lead (coordinator). Stop coordinating the team and just focus on your own tasks.',
-  moreLines: (n: number, from: string) => `… +${n} lines (see ${from} window for the full text)`,
-  inputHint: (target: string) => `Type = reply to @${target} · @all broadcast · @name DM · \\\\+Enter newline · PgUp history · / command`,
+  inputHint: (target: string) => `Type = reply to @${target} · @all broadcast · @name DM · \\\\+Enter newline · scroll to view history · / command`,
   noReplyTargetShort: '(none · @someone first)',
   broadcastAllHint: 'broadcast to everyone',
 
@@ -94,7 +90,6 @@ export const en: typeof zh = {
     clear: "clear a worker's context, no name = everyone (incl. boss history)",
     lang: 'Switch language (zh/en)',
     lead: 'Designate the lead (coordinator): opens a picker',
-    mouse: 'toggle mouse-wheel scrolling',
     help: 'show usage',
   } as Record<string, string>,
 

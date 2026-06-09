@@ -94,7 +94,3 @@ test('[图片N] 开头按回复处理(不被当命令);命令判定基于原始�
 test('empty input -> noop', () => {
   expect(parseConsoleInput('   ').kind).toBe('noop');
 });
-
-test('/mouse -> mouse-toggle', () => {
-  expect(parseConsoleInput('/mouse')).toEqual({ kind: 'mouse-toggle' });
-});

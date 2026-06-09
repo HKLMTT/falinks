@@ -1,13 +1,14 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { readdirSync, readFileSync } from 'node:fs';
-import { Box, Text, useStdin, useStdout } from 'ink';
+import { readFileSync } from 'node:fs';
+import { Box, Static, Text, useStdin, useStdout } from 'ink';
 import { parseConsoleInput, lastReplyTarget } from './parse.js';
 import { mentionState, applyMention } from './mention.js';
 import { commandState, applyCommand } from './commands.js';
 import { CLIS, dirSuggestions, fsListDirs } from './wizard.js';
-import { nameColor, formatTime, NAME_COLORS, statusGlyph, SPINNER_FRAMES, deliveryState, moveSel, scrollWindow, displayWidth, wrapRows, browseRowBudget, visibleCount } from './log-format.js';
+import { nameColor, formatTime, NAME_COLORS, statusGlyph, SPINNER_FRAMES } from './log-format.js';
 import { renderMarkdown } from './markdown.js';
-import { decodeKey, type KeyEvent, MOUSE_PUSH, MOUSE_POP } from './keys.js';
+import { decodeKey, type KeyEvent } from './keys.js';
+import { appendCommitted, pendingTargets } from './scrollback.js';
 import { saveClipboardImage, expandImageTokens } from './clipboard.js';
 import { t, setLocale } from '../i18n/index.js';
 
@@ -37,6 +38,10 @@ type WizardState =
 export function App({ port, initialStatus }: { port: number; initialStatus?: string }) {
   const [roster, setRoster] = useState<any[]>([]);
   const [log, setLog] = useState<any[]>([]);
+  // 已提交进终端原生 scrollback 的消息(只增不改、引用稳定),交给 <Static> 一次性印出、永不重绘。
+  const committedRef = useRef<any[]>([]);
+  const [committed, setCommitted] = useState<any[]>([]);
+  const [pending, setPending] = useState<string[]>([]); // 仍在对方 inbox 排队、尚未投出的目标
   const [diag, setDiag] = useState<any[]>([]); // 协作诊断事件(守卫丢消息/注入失败/可疑过早 idle)
   const [input, setInput] = useState('');
   const [cursor, setCursor] = useState(0);
@@ -52,14 +57,6 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
   const [qSel, setQSel] = useState(0);
   const [skippedQ, setSkippedQ] = useState<string | null>(null);
   const [confirmExit, setConfirmExit] = useState(false);
-  // 回看历史:selBack=选中条距最新多少条(0=最新),null=实时态;histBuf=进入回看时缓存的全量历史;expanded=已展开的消息 id。
-  const [selBack, setSelBack] = useState<number | null>(null);
-  const [histBuf, setHistBuf] = useState<any[]>([]);
-  const winStartRef = useRef(0); // 回看视口顶部锚点(跨帧保持,实现"光标移动而视口不动、撞边才滚")
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  // 鼠标滚轮:默认关——开了会接管终端鼠标上报、破坏原生拖选复制(只能按 Option 拖)。
-  // 想用滚轮翻历史可 /mouse 开(本会话内);PageUp/PageDown 回看始终可用,不受影响。
-  const [mouseOn, setMouseOn] = useState(false);
   const [tagline] = useState(() => t().taglines[Math.floor(Math.random() * t().taglines.length)]);
   const defaultCwd = process.cwd();
 
@@ -74,23 +71,22 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
   // 这样 Shift+Enter（kitty CSI-u）能和回车区分，且不依赖终端配置；中文/方向键/Ctrl 组合也照常。
   const { stdin, setRawMode } = useStdin();
   useEffect(() => { setRawMode?.(true); }, [setRawMode]);
-  // 鼠标上报随 mouseOn 开关(默认开)。退出时由 run.tsx 的还原钩子兜底再发一次 MOUSE_POP(幂等)。
-  useEffect(() => { process.stdout.write(mouseOn ? MOUSE_PUSH : MOUSE_POP); }, [mouseOn]);
-
-  // 终端行数(只读跟踪,用于视口裁剪):根盒高度钉在 rows-1——必须严格小于终端行数,
-  // 等于或超过都会让 Ink 每帧整屏清除(clearTerminal),配合轮询重渲染就是持续闪烁。
   const { stdout } = useStdout();
-  const [rows, setRows] = useState(stdout?.rows ?? 24);
-  const [cols, setCols] = useState(stdout?.columns ?? 80);
-  useEffect(() => {
-    if (!stdout) return;
-    const onResize = () => { setRows(stdout.rows ?? 24); setCols(stdout.columns ?? 80); };
-    stdout.on('resize', onResize);
-    return () => { stdout.off('resize', onResize); };
-  }, [stdout]);
 
-  // 轮询去重:数据没变就不 setState——否则每秒一个新数组引用就重渲染一次,
-  // 内容一高(超过终端行数)Ink 还会整屏清除,空闲时界面也持续闪。
+  // 启动 banner:FALINKS logo + 版本 + tagline 启动时往 scrollback 打印一次(像 shell banner,
+  // 随后续消息自然滚走),不再常驻顶部。Static 模型下顶部不再钉任何东西。
+  useEffect(() => {
+    const banner =
+      '\x1b[1;36m╔═╗╔═╗╦  ╦╔╗╔╦╔═╔═╗\x1b[0m\n' +
+      '\x1b[1;36m╠╣ ╠═╣║  ║║║║╠╩╗╚═╗\x1b[0m\n' +
+      '\x1b[1;36m╚  ╩ ╩╩═╝╩╝╚╝╩ ╩╚═╝\x1b[0m\n' +
+      `\x1b[2mv${VERSION} · ${tagline}\x1b[0m\n\n`;
+    (stdout ?? process.stdout).write(banner);
+    // 仅启动一次。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // 轮询去重:数据没变就不 setState——否则每秒一个新数组引用就重渲染一次(活区无谓重绘)。
   const lastSeen = useRef({ roster: '', log: '', questions: '', diag: '' });
   useEffect(() => {
     const tick = async () => {
@@ -98,10 +94,17 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
         const r = await admin(port, 'GET', '/admin/roster');
         const rs = JSON.stringify(r.roster ?? []);
         if (rs !== lastSeen.current.roster) { lastSeen.current.roster = rs; setRoster(r.roster ?? []); }
-        const l = await admin(port, 'GET', '/admin/log?limit=80');
-        const recent = (l.log ?? []).slice(-10);
-        const ls = JSON.stringify(recent);
-        if (ls !== lastSeen.current.log) { lastSeen.current.log = ls; setLog(recent); }
+        // 拉近 100 条全量:committed 增量提交进 scrollback,pendingTargets 算出"等送达"。
+        const l = await admin(port, 'GET', '/admin/log?limit=100');
+        const fullLog = l.log ?? [];
+        const ls = JSON.stringify(fullLog);
+        if (ls !== lastSeen.current.log) {
+          lastSeen.current.log = ls;
+          setLog(fullLog);
+          const next = appendCommitted(committedRef.current, fullLog);
+          if (next !== committedRef.current) { committedRef.current = next; setCommitted(next); }
+          setPending(pendingTargets(fullLog));
+        }
         const q = await admin(port, 'GET', '/admin/questions');
         const qs = JSON.stringify(q.questions ?? []);
         if (qs !== lastSeen.current.questions) { lastSeen.current.questions = qs; setQuestions(q.questions ?? []); }
@@ -136,7 +139,6 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
       if (a.kind === 'add-start') { setWizard({ name: a.name, step: 'cli', sel: 0 }); return; }
       if (a.kind === 'lang-start') { setLangPick(0); return; }
       if (a.kind === 'lead-start') { setLeadPick(0); return; }
-      if (a.kind === 'mouse-toggle') { const next = !mouseOn; setMouseOn(next); setStatus(next ? t().mouseEnabled : t().mouseDisabled); return; }
       if (a.kind === 'say') { const r = await admin(port, 'POST', '/admin/say', { to: a.to, message: expand(a.message) }); setStatus(r.ok ? t().sayOk(a.to) : '⚠ ' + t().sayUndelivered(a.to, r.error ?? t().guardrailBlocked)); return; }
       if (a.kind === 'broadcast') { await admin(port, 'POST', '/admin/broadcast', { message: expand(a.message) }); setStatus(t().broadcastOk); return; }
       if (a.kind === 'reply') {
@@ -150,6 +152,15 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
       if (a.kind === 'remove') { const r = await admin(port, 'POST', '/admin/remove', { name: a.name }); setStatus(r.ok ? t().removeOk(a.name) : '⚠ ' + (r.error ?? t().removeFailed)); return; }
       if (a.kind === 'clear') {
         const r = await admin(port, 'POST', '/admin/clear', { name: a.name });
+        // /clear 全员(无名)成功:清终端原生 scrollback(否则已"印"进去的旧消息清不掉)+ 重置 committed。
+        // /clear <名字> 只清那个 pane 上下文,不动屏幕/scrollback。
+        if (r.ok && !a.name) {
+          (stdout ?? process.stdout).write('\x1b[3J\x1b[2J\x1b[H');
+          committedRef.current = [];
+          setCommitted([]);
+          lastSeen.current.log = '';
+          setPending([]);
+        }
         setStatus(r.ok ? t().cleared(a.name ?? t().clearAll, (r.cleared ?? []).join(t().clearJoiner) || t().clearNone) : '⚠ ' + (r.error ?? t().clearFailed));
         return;
       }
@@ -211,7 +222,6 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
       return; // 确认中，吞掉其它键
     }
     if (ev.type === 'ctrl' && ev.key === 'c') { setConfirmExit(true); return; }
-    if (ev.type === 'mouse') return; // 鼠标点击/释放:吞掉,不干扰输入与各模式
 
     // 向导模式：优先处理
     if (wizard) {
@@ -279,32 +289,6 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
         return;
       }
       return;
-    }
-
-
-    if (ev.type === 'pageup' || ev.type === 'pagedown' || ev.type === 'wheel-up' || ev.type === 'wheel-down') {
-      const dir = (ev.type === 'pageup' || ev.type === 'wheel-up') ? 'older' : 'newer';
-      if (selBack === null) {
-        if (dir === 'newer') return; // 实时态按 PageDown 无意义
-        void admin(port, 'GET', '/admin/log').then((l) => {
-          const full = l.log ?? [];
-          setHistBuf(full);
-          setSelBack(moveSel(null, full.length, 'older'));
-        });
-        return;
-      }
-      setSelBack((sb) => moveSel(sb, histBuf.length, dir));
-      return;
-    }
-    if (selBack !== null) {
-      const cur = histBuf[histBuf.length - 1 - selBack];
-      if (ev.type === 'enter') {
-        if (cur) setExpanded((s) => { const n = new Set(s); n.has(cur.id) ? n.delete(cur.id) : n.add(cur.id); return n; });
-        return;
-      }
-      if (ev.type === 'esc') { setSelBack(null); return; }
-      if (ev.type !== 'text') { setSelBack(null); return; } // 非打字键:退出回看(打字键则退出后落到下面输入)
-      setSelBack(null);
     }
 
     // Ctrl+V：读系统剪贴板里的截图，存临时文件，输入框只插入短占位 [图片N]（发送时展开成真实路径）
@@ -419,197 +403,139 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
     return () => { stdin.off('data', onData); };
     // 每次渲染重挂，保证闭包里拿到最新 state；依赖列出 handleKey 读到的所有状态。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stdin, input, cursor, wizard, langPick, leadPick, confirmExit, questions, skippedQ, qSel, history, histIdx, attachments, sel, log, roster, selBack, histBuf, expanded, mouseOn]);
+  }, [stdin, input, cursor, wizard, langPick, leadPick, confirmExit, questions, skippedQ, qSel, history, histIdx, attachments, sel, log, roster]);
 
   const color = (s: string) => (s === 'idle' ? 'green' : s === 'busy' ? 'yellow' : s === 'dead' ? 'red' : 'gray');
 
-  // 消息区数据:实时态贴底显示 log 最近 VIS 条;回看态按选中条(selIdx)铺一窗 histBuf。
-  // 实时态:VIS 随高度自适应、贴底裁顶(最新永远可见)。
-  // 回看态:按**真实行高**打包窗口(windowByHeight),保证选中条可见且不溢出被裁底——
-  //   旧的按"条数"取窗会让多行消息溢出、顶对齐把选中条和最新几条裁到屏幕外。
-  const VIS = visibleCount(rows, roster.length);
-  const browsing = selBack !== null;
-  const selIdx = browsing ? histBuf.length - 1 - (selBack as number) : -1;
-  // 回看态某条消息渲染占用的行数:头1 + 正文(≤cap,按列宽折行算)+ 截断提示1;展开则全量。与下方渲染口径一致。
-  const bodyCols = Math.max(1, cols - 2); // 正文行有 2 列缩进
-  const browseMsgHeight = (i: number): number => {
-    const m = histBuf[i];
-    if (!m) return 1;
-    const lines = renderMarkdown(String(m.body));
-    const cap = expanded.has(m.id) ? lines.length : 3;
-    let h = 1; // 头一行
-    for (const ln of lines.slice(0, cap)) {
-      const w = ln.reduce((a: number, s: any) => a + displayWidth(String(s.text)), 0);
-      h += wrapRows(w, bodyCols);
-    }
-    if (lines.length > cap) h += 1; // "+N 行/展开" 提示
-    return h;
-  };
-  // 视口锚点:让光标在视口内移动、撞边才滚动(scrollWindow)。存在 ref 里跨帧保持滚动位置。
-  const win = browsing
-    ? scrollWindow(winStartRef.current, selIdx, histBuf.length, browseRowBudget(rows, roster.length), browseMsgHeight)
-    : { start: 0, end: 0 };
-  if (browsing) winStartRef.current = win.start; // 回看态:记下当前视口顶,供下一帧增量滚动
-  const shownMsgs = browsing ? histBuf.slice(win.start, win.end) : log.slice(-VIS);
-  const baseIdx = browsing ? win.start : Math.max(0, log.length - VIS); // shownMsgs[i] 的绝对下标
+  // 协作诊断警告:有守卫丢消息/注入失败/可疑过早 idle 时顶一行,提醒可能卡死。
+  const drops = diag.filter((e) => e?.kind === 'guard-drop').length;
+  const injFails = diag.filter((e) => e?.kind === 'inject-fail').length;
+  const fastIdle = diag.filter((e) => e?.kind === 'auto-idle').length;
+  const hasDiag = drops || injFails || fastIdle;
 
   return (
-    // 根盒钉在 rows-1(严格 < 终端行数)并裁剪溢出:输出永不触发 Ink 的整屏清除分支,
-    // 一直走增量重绘 → 不闪。固定区(logo/花名册/输入)flexShrink=0 保证可见,
-    // 消息区弹性吸收剩余空间、贴底裁顶(最新消息永远可见,旧的被裁掉)。
-    <Box flexDirection="column" height={Math.max(4, rows - 1)} overflow="hidden">
-      <Box flexDirection="column" flexShrink={0}>
-        <Text color="cyan" bold>╔═╗╔═╗╦  ╦╔╗╔╦╔═╔═╗</Text>
-        <Text color="cyan" bold>╠╣ ╠═╣║  ║║║║╠╩╗╚═╗</Text>
-        <Text color="cyan" bold>╚  ╩ ╩╩═╝╩╝╚╝╩ ╩╚═╝</Text>
-        <Text dimColor>v{VERSION} · {tagline}</Text>
-      </Box>
-      <Box flexDirection="column" marginTop={1} flexShrink={0}>
-        <Text underline>{t().roster}</Text>
-        {roster.map((a) => (
-          <Text key={a.name}>
-            <Text color={color(a.status)}>{statusGlyph(a.status, !!a.virtual, frame)} </Text>
-            <Text color={colorFor(a.name)} bold>{a.name}</Text>
-            {a.lead ? <Text color="cyan" bold> ♔组长</Text> : null}
-            <Text dimColor> {a.role ?? ''} [{t().agentStatus(a.status)}]</Text>
-          </Text>
-        ))}
-      </Box>
-      <Box flexDirection="column" marginTop={1} flexGrow={1} overflow="hidden">
-        <Box flexShrink={0}>
-          <Text underline>{t().messages}</Text>
-          {browsing ? <Text color="cyan"> · {t().browseHint(selIdx + 1, histBuf.length)}</Text> : null}
-        </Box>
-        {(() => {
-          // 协作诊断警告:有守卫丢消息/注入失败/可疑过早 idle 时顶一行,提醒可能卡死(贴底永远可见)。
-          const drops = diag.filter((e) => e?.kind === 'guard-drop').length;
-          const injFails = diag.filter((e) => e?.kind === 'inject-fail').length;
-          const fastIdle = diag.filter((e) => e?.kind === 'auto-idle').length;
-          if (!drops && !injFails && !fastIdle) return null;
-          return <Box flexShrink={0}><Text color="yellow">{t().diagWarn(drops, injFails, fastIdle)}</Text></Box>;
-        })()}
-        {/* 实时态与回看态都贴底渲染:回看态选中条是窗口末条,贴底→紧挨输入框、必然完整可见,溢出裁顶(更早的上下文)。 */}
-        <Box flexDirection="column" flexGrow={1} overflow="hidden" justifyContent="flex-end">
-          {shownMsgs.map((m, i) => {
-            const absIdx = baseIdx + i;
-            const selected = browsing && absIdx === selIdx;
-            const isLatest = !browsing && absIdx === log.length - 1;
-            const expandedHere = browsing && expanded.has(m.id);
-            const mdLines = renderMarkdown(String(m.body));
-            const cap = expandedHere ? Infinity : (isLatest ? 40 : 3);
-            const shownLines = mdLines.slice(0, cap);
-            const truncated = mdLines.length - shownLines.length;
-            return (
-              <Box key={i} flexDirection="column" flexShrink={0} marginTop={i === 0 ? 0 : 1}>
-                <Text>
-                  {selected ? <Text color="cyan" bold>❯ </Text> : null}
-                  {m.ts ? <Text dimColor>{formatTime(m.ts)} </Text> : null}
-                  <Text color={colorFor(m.from)} bold={selected}>{m.from}</Text>
-                  <Text> → </Text>
-                  <Text color={colorFor(m.to)} bold={selected}>{m.to}</Text>
-                  {(() => {
-                    const ds = deliveryState(m.to, !!m.queued, roster);
-                    if (ds === 'none') return null;
-                    return <Text dimColor> {ds === 'queued' ? t().msgQueued : t().msgDelivered}</Text>;
-                  })()}
-                </Text>
-                {shownLines.map((segs, j) => (
-                  <Text key={j} wrap="wrap">{'  '}{segs.map((s, k) => (
-                    <Text key={k} bold={s.bold} italic={s.italic} underline={s.underline} strikethrough={s.strikethrough} dimColor={s.dim}>{s.text}</Text>
-                  ))}</Text>
-                ))}
-                {truncated > 0 ? <Text dimColor>  {browsing ? t().expandMore(truncated) : t().moreLines(truncated, m.from)}</Text> : null}
-              </Box>
-            );
-          })}
-        </Box>
-      </Box>
-
-      <Box flexDirection="column" flexShrink={0}>
-      {confirmExit ? (
-        <Box marginTop={1}>
-          <Text color="yellow">{t().exitConfirmTitle}</Text>
-          <Text bold>{t().exitConfirmKeys}</Text>
-        </Box>
-      ) : null}
-
-      {langPick !== null ? (
-        <Box flexDirection="column" marginTop={1}>
-          <Text color="yellow">{t().langPickTitle}</Text>
-          {LANG_OPTS.map((o, i) => (
-            <Text key={o.v} inverse={i === langPick}>  {o.label}</Text>
-          ))}
-        </Box>
-      ) : leadPick !== null ? (
-        <Box flexDirection="column" marginTop={1}>
-          <Text color="yellow">{t().leadCmdPickTitle}</Text>
-          {leadOpts.length === 0 ? (
-            <Text dimColor>  {t().leadPickEmpty}</Text>
-          ) : leadOpts.map((nm, i) => (
-            <Text key={nm} inverse={i === leadPick}>  <Text color={colorFor(nm)} bold>{nm}</Text></Text>
-          ))}
-        </Box>
-      ) : wizard ? (
-        <Box flexDirection="column" marginTop={1}>
-          {wizard.step === 'cli' ? (
-            <>
-              <Text>{t().wizardAddPrefix}<Text bold>{wizard.name}</Text>{t().wizardCliSuffix}</Text>
-              {CLIS.map((c, i) => (
-                <Text key={c} inverse={i === wizard.sel}>  {c}{c === 'codex' ? t().wizardExperimental : ''}</Text>
-              ))}
-            </>
-          ) : wizard.step === 'role' ? (
-            <>
-              <Text>{t().wizardAddPrefix}<Text bold>{wizard.name}</Text> [{wizard.cli}]{t().wizardRoleSuffix}</Text>
-              <Box><Text color="green">› </Text><Text>{wizard.roleText}</Text><Text inverse> </Text></Box>
-              <Text dimColor>{t().wizardRoleExample}</Text>
-            </>
-          ) : (
-            <>
-              <Text>{t().wizardAddPrefix}<Text bold>{wizard.name}</Text> [{wizard.cli}·{wizard.role}]{t().wizardCwdSuffix}</Text>
-              <Box><Text color="green">› </Text><Text>{wizard.path}</Text><Text inverse> </Text></Box>
-              {dirSuggestions(wizard.path, fsListDirs).map((d, i) => (
-                <Text key={d} inverse={i === wizard.sel}>  {d}</Text>
-              ))}
-              <Text dimColor>{t().wizardCwdDefault}</Text>
-            </>
-          )}
-        </Box>
-      ) : (
-        <>
-          {answering && pendingQ ? (
-            <Box flexDirection="column" marginTop={1}>
-              <Text color="yellow">{t().questionAsk(pendingQ.from, pendingQ.question)}</Text>
-              {pendingQ.options.map((o: string, i: number) => (
-                <Text key={i} inverse={i === qSelClamped}>  {i + 1}. {o}</Text>
-              ))}
-              <Text dimColor>{t().answerKeys}{questions.length > 1 ? t().answerMore(questions.length - 1) : ''}{t().answerOrType}</Text>
-            </Box>
-          ) : null}
-          <Box marginTop={1}>
+    // 顶层不再钉高度/overflow:消息历史进 <Static> 一次性印进终端原生 scrollback、永不重绘
+    // (滚轮滚动/拖选复制都交回终端);底部活区(flexShrink=0)随内容自然占底部、原地小块重绘。
+    <Box flexDirection="column">
+      <Static items={committed}>
+        {(m: any) => (
+          <Box key={m.id} flexDirection="column" marginBottom={1}>
             <Text>
-              {inputDest.mode === 'cmd' ? <Text color="magenta" bold>⌘ </Text>
-               : inputDest.mode === 'broadcast' ? <Text color="yellow" bold>📢 {t().clearAll} </Text>
-               : inputDest.mode === 'to' ? <Text><Text dimColor>→ </Text><Text color={colorFor(inputDest.to!)} bold>{inputDest.to}</Text><Text> </Text></Text>
-               : <Text color="yellow" bold>{t().noReplyTargetShort} </Text>}
-              <Text color="green">› </Text>
-              {input.slice(0, cursor)}
-              <Text inverse>{input[cursor] && input[cursor] !== '\n' ? input[cursor] : ' '}</Text>
-              {input.slice(cursor + 1)}
+              {m.ts ? <Text dimColor>{formatTime(m.ts)} </Text> : null}
+              <Text color={colorFor(m.from)} bold>{m.from}</Text>
+              <Text> → </Text>
+              <Text color={colorFor(m.to)} bold>{m.to}</Text>
             </Text>
+            {renderMarkdown(String(m.body)).map((segs: any[], j: number) => (
+              <Text key={j} wrap="wrap">{'  '}{segs.map((s: any, k: number) => (
+                <Text key={k} bold={s.bold} italic={s.italic} underline={s.underline} strikethrough={s.strikethrough} dimColor={s.dim}>{s.text}</Text>
+              ))}</Text>
+            ))}
           </Box>
-          {active ? (
-            <Box flexDirection="column">
-              {items.map((it, i) => (
-                <Text key={it.label} inverse={i === selClamped}>  {it.label}{it.hint ? '   ' + it.hint : ''}</Text>
-              ))}
+        )}
+      </Static>
+
+      {/* 活区:花名册 statusline + 等送达 + 诊断 + 输入/浮层 + 状态行 */}
+      <Box flexDirection="column" flexShrink={0}>
+        {roster.length ? (
+          <Text>
+            {roster.map((a, i) => (
+              <Text key={a.name}>
+                {i ? <Text dimColor> · </Text> : null}
+                <Text color={color(a.status)}>{statusGlyph(a.status, !!a.virtual, frame)}</Text>
+                <Text color={colorFor(a.name)} bold>{a.name}</Text>
+                {a.lead ? <Text color="cyan" bold>♔</Text> : null}
+              </Text>
+            ))}
+          </Text>
+        ) : null}
+        {pending.length ? (
+          <Text color="yellow">{t().pendingDeliver(pending.map((n) => '→ ' + n).join(' · '))}</Text>
+        ) : null}
+        {hasDiag ? <Text color="yellow">{t().diagWarn(drops, injFails, fastIdle)}</Text> : null}
+
+        {confirmExit ? (
+          <Box marginTop={1}>
+            <Text color="yellow">{t().exitConfirmTitle}</Text>
+            <Text bold>{t().exitConfirmKeys}</Text>
+          </Box>
+        ) : langPick !== null ? (
+          <Box flexDirection="column" marginTop={1}>
+            <Text color="yellow">{t().langPickTitle}</Text>
+            {LANG_OPTS.map((o, i) => (
+              <Text key={o.v} inverse={i === langPick}>  {o.label}</Text>
+            ))}
+          </Box>
+        ) : leadPick !== null ? (
+          <Box flexDirection="column" marginTop={1}>
+            <Text color="yellow">{t().leadCmdPickTitle}</Text>
+            {leadOpts.length === 0 ? (
+              <Text dimColor>  {t().leadPickEmpty}</Text>
+            ) : leadOpts.map((nm, i) => (
+              <Text key={nm} inverse={i === leadPick}>  <Text color={colorFor(nm)} bold>{nm}</Text></Text>
+            ))}
+          </Box>
+        ) : wizard ? (
+          <Box flexDirection="column" marginTop={1}>
+            {wizard.step === 'cli' ? (
+              <>
+                <Text>{t().wizardAddPrefix}<Text bold>{wizard.name}</Text>{t().wizardCliSuffix}</Text>
+                {CLIS.map((c, i) => (
+                  <Text key={c} inverse={i === wizard.sel}>  {c}{c === 'codex' ? t().wizardExperimental : ''}</Text>
+                ))}
+              </>
+            ) : wizard.step === 'role' ? (
+              <>
+                <Text>{t().wizardAddPrefix}<Text bold>{wizard.name}</Text> [{wizard.cli}]{t().wizardRoleSuffix}</Text>
+                <Box><Text color="green">› </Text><Text>{wizard.roleText}</Text><Text inverse> </Text></Box>
+                <Text dimColor>{t().wizardRoleExample}</Text>
+              </>
+            ) : (
+              <>
+                <Text>{t().wizardAddPrefix}<Text bold>{wizard.name}</Text> [{wizard.cli}·{wizard.role}]{t().wizardCwdSuffix}</Text>
+                <Box><Text color="green">› </Text><Text>{wizard.path}</Text><Text inverse> </Text></Box>
+                {dirSuggestions(wizard.path, fsListDirs).map((d, i) => (
+                  <Text key={d} inverse={i === wizard.sel}>  {d}</Text>
+                ))}
+                <Text dimColor>{t().wizardCwdDefault}</Text>
+              </>
+            )}
+          </Box>
+        ) : (
+          <>
+            {answering && pendingQ ? (
+              <Box flexDirection="column" marginTop={1}>
+                <Text color="yellow">{t().questionAsk(pendingQ.from, pendingQ.question)}</Text>
+                {pendingQ.options.map((o: string, i: number) => (
+                  <Text key={i} inverse={i === qSelClamped}>  {i + 1}. {o}</Text>
+                ))}
+                <Text dimColor>{t().answerKeys}{questions.length > 1 ? t().answerMore(questions.length - 1) : ''}{t().answerOrType}</Text>
+              </Box>
+            ) : null}
+            <Box marginTop={1}>
+              <Text>
+                {inputDest.mode === 'cmd' ? <Text color="magenta" bold>⌘ </Text>
+                 : inputDest.mode === 'broadcast' ? <Text color="yellow" bold>📢 {t().clearAll} </Text>
+                 : inputDest.mode === 'to' ? <Text><Text dimColor>→ </Text><Text color={colorFor(inputDest.to!)} bold>{inputDest.to}</Text><Text> </Text></Text>
+                 : <Text color="yellow" bold>{t().noReplyTargetShort} </Text>}
+                <Text color="green">› </Text>
+                {input.slice(0, cursor)}
+                <Text inverse>{input[cursor] && input[cursor] !== '\n' ? input[cursor] : ' '}</Text>
+                {input.slice(cursor + 1)}
+              </Text>
             </Box>
-          ) : (
-            <Text dimColor>{t().inputHint(replyTarget ?? t().noReplyTargetShort)}</Text>
-          )}
-        </>
-      )}
-      {status ? <Text dimColor>{status}</Text> : null}
+            {active ? (
+              <Box flexDirection="column">
+                {items.map((it, i) => (
+                  <Text key={it.label} inverse={i === selClamped}>  {it.label}{it.hint ? '   ' + it.hint : ''}</Text>
+                ))}
+              </Box>
+            ) : (
+              <Text dimColor>{t().inputHint(replyTarget ?? t().noReplyTargetShort)}</Text>
+            )}
+          </>
+        )}
+        {status ? <Text dimColor>{status}</Text> : null}
       </Box>
     </Box>
   );

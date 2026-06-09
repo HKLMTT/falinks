@@ -67,10 +67,8 @@ export const zh = {
     if (fastIdle) parts.push(`${fastIdle} 次可疑过早空闲`);
     return `⚠ 协作诊断:${parts.join(' · ')}(可能致卡死;/clear 全员可清空)`;
   },
-  mouseEnabled: '🖱 鼠标滚轮:开（拖选复制请按住 Option 拖）',
-  mouseDisabled: '🖱 鼠标滚轮:关（恢复原生拖选复制）',
-  browseHint: (pos: number, total: number) => `回看中 第 ${pos}/${total} · PgUp/PgDn 选择 · Enter 展开/收起 · Esc 退出`,
-  expandMore: (n: number) => `… +${n} 行 · Enter 展开`,
+  /** 底部活区"等送达"行:仍在对方 inbox 排队、尚未投出的目标聚合(targets 形如 `→ qa · → backend`)。空则不显示。 */
+  pendingDeliver: (targets: string) => `⏳ 等送达: ${targets}`,
   langAuto: '跟随系统',
   langZh: '中文',
   langEn: 'English',
@@ -82,8 +80,7 @@ export const zh = {
   leadFailed: 'lead 失败',
   leadAssignedMsg: '你已被指定为本团队组长(协调者)。即日起按以下工作法统筹团队:',
   leadRevokedMsg: '你不再是组长(协调者),无需再做团队协调统筹,专注自己的任务即可。',
-  moreLines: (n: number, from: string) => `… +${n} 行（完整见 ${from} 窗口）`,
-  inputHint: (target: string) => `直接打字=回复 @${target} · @all 群发 · @名字 私聊 · \\\\+回车 换行 · PgUp 回看 · / 命令`,
+  inputHint: (target: string) => `直接打字=回复 @${target} · @all 群发 · @名字 私聊 · \\\\+回车 换行 · 滚轮回看 · / 命令`,
   noReplyTargetShort: '(无·先 @某人)',
   broadcastAllHint: '群发全员',
 
@@ -94,7 +91,6 @@ export const zh = {
     clear: '清空某员工上下文,不带名=全员(含 boss 历史)',
     lang: '切换语言(中/英)',
     lead: '指定组长(协调者):弹出选择器选一个员工',
-    mouse: '开关鼠标滚轮滚动',
     help: '显示用法',
   } as Record<string, string>,
 
