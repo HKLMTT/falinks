@@ -44,8 +44,14 @@ export class Router {
 
   constructor(private deliverer: Deliverer, private deps: RouterDeps) {}
 
-  addAgent(name: AgentName, role?: string): void {
-    this.agents.set(name, { name, role, status: 'launching', inbox: [] });
+  addAgent(name: AgentName, role?: string, lead?: boolean): void {
+    this.agents.set(name, { name, role, status: 'launching', inbox: [], lead: !!lead });
+  }
+
+  /** 指定组长(协调者):该 agent lead=true、其余全部清零(强制全队唯一)。未知名抛错。 */
+  setLead(name: AgentName): void {
+    this.must(name); // 未知名抛错
+    for (const a of this.agents.values()) a.lead = a.name === name;
   }
 
   register(name: AgentName, sessionId: string): void {

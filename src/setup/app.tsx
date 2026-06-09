@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { allTemplates, configFromMembers, saveTemplate, type TeamMember } from '../templates.js';
+import { dirSuggestions, fsListDirs } from '../console/wizard.js';
 import { upgradeCommand } from '../update.js';
 import { t } from '../i18n/index.js';
 
-type Mode = 'update' | 'pick' | 'cname' | 'ccli' | 'crole' | 'teamname';
+type Mode = 'update' | 'pick' | 'cname' | 'ccli' | 'crole' | 'ccwd' | 'teamname';
 
 const CLIS = ['claude', 'codex'] as const;
 
@@ -53,7 +54,10 @@ export function SetupApp({
   const [text, setText] = useState('');
   const [pendingName, setPendingName] = useState('');
   const [pendingCli, setPendingCli] = useState<string>('claude');
+  const [pendingRole, setPendingRole] = useState('');
   const [cliSel, setCliSel] = useState(0);
+  const [cwdPath, setCwdPath] = useState(cwd);
+  const [cwdSel, setCwdSel] = useState(0);
 
   useInput((char, key) => {
     if (mode === 'update') {
@@ -82,6 +86,20 @@ export function SetupApp({
       if (key.return) { setPendingCli(CLIS[cliSel]); setMode('crole'); }
       return;
     }
+    if (mode === 'ccwd') {
+      // 工作目录选择(带目录补全,仿 /add 向导):↑↓ 选建议 · Tab 补全 · Enter 确认 · 退格删 · 打字编辑
+      const sugs = dirSuggestions(cwdPath, fsListDirs);
+      if (key.upArrow) { setCwdSel((s) => Math.max(0, s - 1)); return; }
+      if (key.downArrow) { setCwdSel((s) => Math.min(Math.max(0, sugs.length - 1), s + 1)); return; }
+      if (key.tab) { if (sugs.length) { setCwdPath(sugs[Math.min(cwdSel, sugs.length - 1)] + '/'); setCwdSel(0); } return; }
+      if (key.return) {
+        setMembers((ms) => [...ms, { name: pendingName, cli: pendingCli, role: pendingRole, cwd: cwdPath.trim() || cwd }]);
+        setMode('cname'); return;
+      }
+      if (key.backspace || key.delete) { setCwdPath((p) => p.slice(0, -1)); setCwdSel(0); return; }
+      if (char && !key.ctrl && !key.meta && !key.escape) { setCwdPath((p) => p + char); setCwdSel(0); return; }
+      return;
+    }
     if (key.return) {
       const val = text.trim();
       setText('');
@@ -90,8 +108,7 @@ export function SetupApp({
         setPendingName(val); setCliSel(0); setMode('ccli'); return;
       }
       if (mode === 'crole') {
-        setMembers((ms) => [...ms, { name: pendingName, cli: pendingCli, role: val || t().setupDefaultRole }]);
-        setMode('cname'); return;
+        setPendingRole(val || t().setupDefaultRole); setCwdPath(cwd); setCwdSel(0); setMode('ccwd'); return;
       }
       if (mode === 'teamname') {
         const id = (val || 'myteam').replace(/\s+/g, '-');
@@ -151,6 +168,14 @@ export function SetupApp({
       )}
       {mode === 'crole' && (
         <Text>{t().setupRolePrompt(pendingName, pendingCli)}<Text color="green">{text}</Text><Text inverse> </Text></Text>
+      )}
+      {mode === 'ccwd' && (
+        <Box flexDirection="column">
+          <Text>{t().setupCwdPrompt(pendingName)}<Text color="green">{cwdPath}</Text><Text inverse> </Text></Text>
+          {dirSuggestions(cwdPath, fsListDirs).map((d, i) => (
+            <Text key={d} inverse={i === cwdSel} dimColor={i !== cwdSel}>  {d}</Text>
+          ))}
+        </Box>
       )}
       {mode === 'teamname' && (
         <Text>{t().setupSaveTeamName}<Text color="green">{text}</Text><Text inverse> </Text></Text>

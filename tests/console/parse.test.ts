@@ -74,6 +74,23 @@ test('/lang with arg -> error (no args accepted)', () => {
   expect(parseConsoleInput('/lang xx').kind).toBe('error');
 });
 
+test('/lead (no args) -> lead-start', () => {
+  expect(parseConsoleInput('/lead')).toEqual({ kind: 'lead-start' });
+});
+
+test('/lead with arg -> error (no args accepted)', () => {
+  expect(parseConsoleInput('/lead bob').kind).toBe('error');
+});
+
+// 回归:图片占位 [图片N] 开头的输入是"回复",不是命令。
+// (修 bug:粘贴图片展开成 /var/...png 后若先展开再解析,会被当成命令。现在用原始输入判命令。)
+test('[图片N] 开头按回复处理(不被当命令);命令判定基于原始输入而非展开后的 /路径', () => {
+  expect(parseConsoleInput('[图片1]')).toEqual({ kind: 'reply', message: '[图片1]' });
+  expect(parseConsoleInput('[图片1] 看这个')).toEqual({ kind: 'reply', message: '[图片1] 看这个' });
+  // 反例:若误把展开后的路径拿去解析,就会被当成(未知)命令
+  expect(parseConsoleInput('/var/folders/x/clip.png 看这个').kind).toBe('error');
+});
+
 test('empty input -> noop', () => {
   expect(parseConsoleInput('   ').kind).toBe('noop');
 });

@@ -43,6 +43,7 @@ export interface BusDeps {
   onClear?(name?: string): Promise<{ ok: boolean; cleared?: string[]; error?: string }>;
   onShutdown?(closePanes: boolean): Promise<{ ok: boolean }>;
   onLang?(locale: 'zh' | 'en' | 'auto'): Promise<'zh' | 'en'>;
+  onSetLead?(name: string): Promise<{ ok: boolean; error?: string }>;
   /** 返回最近的诊断事件(守卫丢消息/注入失败/可疑自动 idle)；缺省视为无诊断。 */
   getDiag?(): unknown[];
 }
@@ -146,7 +147,7 @@ export async function startBus(deps: BusDeps, port: number, opts?: BusOptions): 
         return sendJson(identity);
       }
       if (req.method === 'GET' && url.pathname === '/admin/roster') {
-        return sendJson({ roster: router.roster().map((a) => ({ name: a.name, role: a.role, status: a.status, virtual: !!a.virtual })) });
+        return sendJson({ roster: router.roster().map((a) => ({ name: a.name, role: a.role, status: a.status, virtual: !!a.virtual, lead: !!a.lead })) });
       }
       if (req.method === 'GET' && url.pathname === '/admin/log') {
         const queued = router.queuedMessageIds();
@@ -230,6 +231,15 @@ export async function startBus(deps: BusDeps, port: number, opts?: BusOptions): 
         try {
           const eff = await deps.onLang(abody.locale);
           return sendJson({ ok: true, locale: eff });
+        } catch (e: any) {
+          return sendJson({ ok: false, error: String(e?.message ?? e) });
+        }
+      }
+      if (req.method === 'POST' && url.pathname === '/admin/lead') {
+        if (!deps.onSetLead) return sendJson({ ok: false, error: 'lead not supported' });
+        try {
+          const r = await deps.onSetLead(String(abody.name));
+          return sendJson(r);
         } catch (e: any) {
           return sendJson({ ok: false, error: String(e?.message ?? e) });
         }

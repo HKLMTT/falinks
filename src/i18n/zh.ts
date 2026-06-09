@@ -76,6 +76,12 @@ export const zh = {
   langEn: 'English',
   langPickTitle: '选择语言（↑↓ 选 · Enter 确认 · Esc 取消）',
   langSwitched: (l: string) => `已切换语言：${l}`,
+  leadCmdPickTitle: '选组长(协调者，全队唯一，换则取消旧的)（↑↓ 选 · Enter 确认 · Esc 取消）',
+  leadPickEmpty: '（暂无可选员工）',
+  leadSwitched: (name: string) => `♔ 已指定 ${name} 为组长`,
+  leadFailed: 'lead 失败',
+  leadAssignedMsg: '你已被指定为本团队组长(协调者)。即日起按以下工作法统筹团队:',
+  leadRevokedMsg: '你不再是组长(协调者),无需再做团队协调统筹,专注自己的任务即可。',
   moreLines: (n: number, from: string) => `… +${n} 行（完整见 ${from} 窗口）`,
   inputHint: (target: string) => `直接打字=回复 @${target} · @all 群发 · @名字 私聊 · \\\\+回车 换行 · PgUp 回看 · / 命令`,
   noReplyTargetShort: '(无·先 @某人)',
@@ -87,6 +93,7 @@ export const zh = {
     remove: '删一个员工',
     clear: '清空某员工上下文,不带名=全员(含 boss 历史)',
     lang: '切换语言(中/英)',
+    lead: '指定组长(协调者):弹出选择器选一个员工',
     mouse: '开关鼠标滚轮滚动',
     help: '显示用法',
   } as Record<string, string>,
@@ -95,6 +102,7 @@ export const zh = {
   usageRemove: '用法: /remove <name>',
   usageAdd: '用法: /add <名字>（按向导选 cli 和目录），或 /add <名字> <cli> <目录>',
   usageLang: '用法: /lang（按提示选语言）',
+  usageLead: '用法: /lead（按提示选组长）',
   unknownCommand: (cmd: string) => `未知命令: /${cmd}`,
   usageMention: '用法: @<name> <message> 或 @all <message>',
   unknownError: '未知错误',
@@ -135,6 +143,7 @@ export const zh = {
   setupNewMemberName: '新成员名字: ',
   setupWhichCli: (name: string) => `${name} 用哪个 CLI?（↑↓ 选 · Enter 确认）`,
   setupRolePrompt: (name: string, cli: string) => `${name}（${cli}） 的角色/职责: `,
+  setupCwdPrompt: (name: string) => `${name} 的工作目录(↑↓ 选建议 · Tab 补全 · Enter 确认): `,
   setupSaveTeamName: '保存为团队模板，起个名: ',
   setupDefaultRole: '员工',
 
@@ -152,6 +161,13 @@ export const zh = {
     '⑤ 转达/汇报要一次说完，不要来回确认。' +
     '⑥ 只要对方让你「给选项 / 做个选择题 / 二选一 / 列出可选项 / 给我N个…让我挑」，就必须调用 ask(to, question, options=[...]) ——把候选项放进 options 数组，绝不要把选项写进 sendmsg 的文本里。面向老板用 ask(to="boss", …)，老板端会渲染成可点选项。需要别人在有限选项里做决定时同理用 ask。',
   identityLine: (name: string, role?: string) => `你的身份：${name}${role ? `（${role}）` : ''}。`,
+  /** 组长(协调者)专属工作法,仅注入给 lead:true 的员工——先对齐需求→完整设计→定稿→才拆解分派。 */
+  coordinatorRules:
+    '【组长(协调者)工作法】你是这个团队的组长,像真实研发团队的 tech lead。务必按顺序来,不要一上来就派活、更不要在方案没定稿前让任何人写代码:' +
+    '① 先和老板(boss)把需求与细节聊清楚——用 ask(to="boss", …) 对关键决策做选择题、用 sendmsg(to="boss", …) 追问不明确处,确认目标、范围、约束、验收标准。' +
+    '② 用 superpowers 技能做设计:先用 brainstorming 技能探讨方案与取舍,再用 writing-plans 技能写出明确的设计/实现计划。设计阶段可以调度其他员工协助你(让他们调研代码、找资料、对方案提建议),但此阶段严禁让任何人开始编码。' +
+    '③ 方案敲定后,再把它拆解成具体任务,用 sendmsg 逐一分派给对应员工(前端/后端/测试…),然后持续管理:跟进进度、协调依赖、汇总结果、必要时复盘。' +
+    '一句话:对齐需求 → 完整设计(可调度协助) → 方案定稿 → 才拆解、分派、管理。',
   preparingWorkers: (n: number, names: string) => `⏳ falinks 正在准备 ${n} 名员工（${names}）…`,
   preparingHint: '首次启动每个员工要等 CLI 就绪，可能十几秒，请稍候。',
   launchingWorker: (name: string, cli: string) => `[falinks] 启动员工 ${name} (${cli})…`,
@@ -180,11 +196,12 @@ export const zh = {
   tplPairName: '结对编程（开发者+审查者）',
   tplPairDev: '开发者，负责写代码实现需求',
   tplPairReviewer: '审查者，负责审查 dev 的代码、挑问题提改进',
-  tplFullstackName: '全栈小组（组长+前端+后端+测试）',
-  tplFullstackLead: '组长，统筹任务并分配给前端/后端/测试',
+  tplFullstackName: '全栈小组（组长+前端+后端+测试+UI/UX）',
+  tplFullstackLead: '组长，统筹任务并分配给前端/后端/测试/UIUX',
   tplFullstackFrontend: '前端开发',
   tplFullstackBackend: '后端开发',
   tplFullstackQa: '测试与质量',
+  tplFullstackUx: 'UI/UX 设计走查，把控统一风格、杜绝新功能风格跑偏',
   tplResearchName: '调研组（调研员+撰写+审校）',
   tplResearchResearcher: '调研员，负责查证与资料收集',
   tplResearchWriter: '撰写，把调研整理成文',

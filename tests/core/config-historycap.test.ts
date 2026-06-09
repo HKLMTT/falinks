@@ -29,3 +29,12 @@ test('paneTheme:布尔值被保留', () => {
 test('paneTheme:非布尔报错', () => {
   expect(() => parseConfig({ ...base, paneTheme: 'yes' })).toThrow();
 });
+
+test('lead:缺省为 false', () => {
+  expect(parseConfig(base).agents[0].lead).toBe(false);
+});
+
+test('lead:true 被保留', () => {
+  const c = parseConfig({ ...base, agents: [{ name: 'lead', cli: 'claude', cwd: '/p', role: '组长', bootstrap: 'b', lead: true }] });
+  expect(c.agents[0].lead).toBe(true);
+});

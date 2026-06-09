@@ -50,6 +50,17 @@ test('clearLog 清空消息流水(boss 历史)', () => {
   expect(router.messages()).toEqual([]);
 });
 
+test('setLead 设一个为 lead、其余清零;再设别人则前者取消(全队唯一)', () => {
+  const { router } = setup();
+  router.addAgent('bob');
+  router.setLead('alice');
+  expect(router.get('alice')!.lead).toBe(true);
+  expect(router.get('bob')!.lead).toBeFalsy();
+  router.setLead('bob');
+  expect(router.get('bob')!.lead).toBe(true);
+  expect(router.get('alice')!.lead).toBeFalsy(); // 旧 lead 被取消
+});
+
 test('sending to a real member still delivers (regression)', () => {
   const { router, delivered } = setup();
   router.send('boss', 'alice', 'hi');

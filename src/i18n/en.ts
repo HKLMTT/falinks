@@ -76,6 +76,12 @@ export const en: typeof zh = {
   langEn: 'English',
   langPickTitle: 'Select language (↑↓ · Enter · Esc)',
   langSwitched: (l: string) => `Language switched: ${l}`,
+  leadCmdPickTitle: 'Pick the lead (coordinator; one per team, switching cancels the old) (↑↓ · Enter · Esc)',
+  leadPickEmpty: '(no workers to pick)',
+  leadSwitched: (name: string) => `♔ ${name} is now the lead`,
+  leadFailed: 'lead failed',
+  leadAssignedMsg: 'You are now this team\'s lead (coordinator). From now on, coordinate the team per this playbook:',
+  leadRevokedMsg: 'You are no longer the lead (coordinator). Stop coordinating the team and just focus on your own tasks.',
   moreLines: (n: number, from: string) => `… +${n} lines (see ${from} window for the full text)`,
   inputHint: (target: string) => `Type = reply to @${target} · @all broadcast · @name DM · \\\\+Enter newline · PgUp history · / command`,
   noReplyTargetShort: '(none · @someone first)',
@@ -87,6 +93,7 @@ export const en: typeof zh = {
     remove: 'remove a worker',
     clear: "clear a worker's context, no name = everyone (incl. boss history)",
     lang: 'Switch language (zh/en)',
+    lead: 'Designate the lead (coordinator): opens a picker',
     mouse: 'toggle mouse-wheel scrolling',
     help: 'show usage',
   } as Record<string, string>,
@@ -95,6 +102,7 @@ export const en: typeof zh = {
   usageRemove: 'usage: /remove <name>',
   usageAdd: 'usage: /add <name> (pick cli and dir via wizard), or /add <name> <cli> <dir>',
   usageLang: 'Usage: /lang (pick from the menu)',
+  usageLead: 'Usage: /lead (pick from the menu)',
   unknownCommand: (cmd: string) => `unknown command: /${cmd}`,
   usageMention: 'usage: @<name> <message> or @all <message>',
   unknownError: 'unknown error',
@@ -135,6 +143,7 @@ export const en: typeof zh = {
   setupNewMemberName: 'New member name: ',
   setupWhichCli: (name: string) => `Which CLI for ${name}? (↑↓ select · Enter confirm)`,
   setupRolePrompt: (name: string, cli: string) => `Role/duties for ${name} (${cli}): `,
+  setupCwdPrompt: (name: string) => `Working dir for ${name} (↑↓ suggestions · Tab complete · Enter confirm): `,
   setupSaveTeamName: 'Save as a team template, give it a name: ',
   setupDefaultRole: 'worker',
 
@@ -152,6 +161,13 @@ export const en: typeof zh = {
     '⑤ Relay/report everything in one go, do not go back and forth confirming. ' +
     '⑥ Whenever someone asks you to "give options / make it multiple-choice / pick one of two / list the choices / give me N… and let me choose", you must call ask(to, question, options=[...]) — put the candidates into the options array, and never write the options into the sendmsg text. For the boss use ask(to="boss", …), and the boss side will render clickable options. Use ask the same way whenever someone needs to decide among a limited set of options.',
   identityLine: (name: string, role?: string) => `Your identity: ${name}${role ? ` (${role})` : ''}. `,
+  /** Coordinator/lead-only protocol, injected only for lead:true workers — align → design fully → finalize → then decompose & dispatch. */
+  coordinatorRules:
+    '[Lead (coordinator) playbook] You are the team lead, like a real engineering tech lead. Follow this order; do NOT start handing out work, and never let anyone write code, before the plan is finalized: ' +
+    '① First align requirements & details with the boss — use ask(to="boss", …) for key decisions and sendmsg(to="boss", …) to clarify anything unclear: confirm goals, scope, constraints, acceptance criteria. ' +
+    '② Design using superpowers skills: first the brainstorming skill to explore approaches & trade-offs, then the writing-plans skill to write a concrete design/implementation plan. During design you MAY dispatch other workers to assist you (have them investigate code, gather info, critique the approach), but no one writes code in this phase. ' +
+    '③ Once the plan is finalized, decompose it into concrete tasks and dispatch them one by one via sendmsg to the right workers (frontend/backend/qa…), then keep managing: track progress, coordinate dependencies, aggregate results. ' +
+    'In short: align requirements → design fully (may dispatch helpers) → finalize the plan → only then decompose, dispatch, and manage.',
   preparingWorkers: (n: number, names: string) => `⏳ falinks is preparing ${n} workers (${names})…`,
   preparingHint: 'On first launch each worker waits for its CLI to be ready, which may take a dozen seconds — please hold on.',
   launchingWorker: (name: string, cli: string) => `[falinks] launching worker ${name} (${cli})…`,
@@ -180,11 +196,12 @@ export const en: typeof zh = {
   tplPairName: 'Pair programming (developer + reviewer)',
   tplPairDev: 'Developer, responsible for writing code to implement requirements',
   tplPairReviewer: "Reviewer, responsible for reviewing dev's code, spotting issues and suggesting improvements",
-  tplFullstackName: 'Full-stack squad (lead + frontend + backend + QA)',
-  tplFullstackLead: 'Lead, coordinates tasks and assigns them to frontend/backend/QA',
+  tplFullstackName: 'Full-stack squad (lead + frontend + backend + QA + UI/UX)',
+  tplFullstackLead: 'Lead, coordinates tasks and assigns them to frontend/backend/QA/UX',
   tplFullstackFrontend: 'Frontend development',
   tplFullstackBackend: 'Backend development',
   tplFullstackQa: 'Testing and quality',
+  tplFullstackUx: 'UI/UX design review, keeps the style consistent and prevents drift in new features',
   tplResearchName: 'Research group (researcher + writer + editor)',
   tplResearchResearcher: 'Researcher, responsible for fact-checking and gathering material',
   tplResearchWriter: 'Writer, turns the research into prose',

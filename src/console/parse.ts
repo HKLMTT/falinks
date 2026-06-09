@@ -9,6 +9,7 @@ export type ConsoleAction =
   | { kind: 'remove'; name: string }
   | { kind: 'clear'; name?: string }
   | { kind: 'lang-start' }
+  | { kind: 'lead-start' }
   | { kind: 'mouse-toggle' }
   | { kind: 'help' }
   | { kind: 'noop' }
@@ -26,6 +27,10 @@ export function parseConsoleInput(line: string): ConsoleAction {
     if (cmd === 'lang') {
       if (args.length > 0) return { kind: 'error', message: t().usageLang };
       return { kind: 'lang-start' };
+    }
+    if (cmd === 'lead') {
+      if (args.length > 0) return { kind: 'error', message: t().usageLead };
+      return { kind: 'lead-start' };
     }
     if (cmd === 'remove') {
       if (!args[0]) return { kind: 'error', message: t().usageRemove };

@@ -7,6 +7,8 @@ export interface TeamMember {
   name: string;
   cli: string; // claude | codex
   role: string; // 职责描述（用于花名册标签 + 派生 bootstrap）
+  cwd?: string; // 该成员工作目录;缺省用团队启动目录(configFromMembers 的 cwd 参数)
+  lead?: boolean; // 组长/协调者:注入"协调者工作法"(先对齐需求→完整设计→定稿→才拆解分派)
 }
 
 export interface TeamTemplate {
@@ -37,10 +39,11 @@ export function presetTeams(): TeamTemplate[] {
       id: 'fullstack',
       name: t().tplFullstackName,
       members: [
-        { name: 'lead', cli: 'claude', role: t().tplFullstackLead },
+        { name: 'lead', cli: 'claude', role: t().tplFullstackLead, lead: true },
         { name: 'frontend', cli: 'claude', role: t().tplFullstackFrontend },
         { name: 'backend', cli: 'claude', role: t().tplFullstackBackend },
         { name: 'qa', cli: 'claude', role: t().tplFullstackQa },
+        { name: 'ux', cli: 'claude', role: t().tplFullstackUx },
       ],
     },
     {
@@ -58,7 +61,7 @@ export function presetTeams(): TeamTemplate[] {
 /** 由一组成员生成 falinks 配置(所有员工工作目录=cwd)。busPort 不写:缺省自动分配,多实例不冲突。 */
 export function configFromMembers(members: TeamMember[], cwd: string) {
   return {
-    agents: members.map((m) => ({ name: m.name, cli: m.cli, cwd, role: m.role, bootstrap: bootstrapForRole(m.role) })),
+    agents: members.map((m) => ({ name: m.name, cli: m.cli, cwd: m.cwd || cwd, role: m.role, ...(m.lead ? { lead: true } : {}), bootstrap: bootstrapForRole(m.role) })),
     routes: {},
   };
 }

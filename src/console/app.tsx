@@ -4,7 +4,7 @@ import { Box, Text, useStdin, useStdout } from 'ink';
 import { parseConsoleInput, lastReplyTarget } from './parse.js';
 import { mentionState, applyMention } from './mention.js';
 import { commandState, applyCommand } from './commands.js';
-import { CLIS, dirSuggestions } from './wizard.js';
+import { CLIS, dirSuggestions, fsListDirs } from './wizard.js';
 import { nameColor, formatTime, NAME_COLORS, statusGlyph, SPINNER_FRAMES, deliveryState, moveSel, scrollWindow, displayWidth, wrapRows, browseRowBudget, visibleCount } from './log-format.js';
 import { renderMarkdown } from './markdown.js';
 import { decodeKey, type KeyEvent, MOUSE_PUSH, MOUSE_POP } from './keys.js';
@@ -29,14 +29,6 @@ async function admin(port: number, method: string, path: string, body?: unknown)
   return res.json();
 }
 
-function fsListDirs(base: string): string[] {
-  try {
-    return readdirSync(base, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name);
-  } catch {
-    return [];
-  }
-}
-
 type WizardState =
   | { name: string; step: 'cli'; sel: number }
   | { name: string; step: 'role'; cli: string; roleText: string }
@@ -55,6 +47,7 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
   const [status, setStatus] = useState(initialStatus ?? '');
   const [wizard, setWizard] = useState<WizardState | null>(null);
   const [langPick, setLangPick] = useState<number | null>(null); // null=未激活,否则=高亮项 index
+  const [leadPick, setLeadPick] = useState<number | null>(null); // /lead 选组长选择器:null=未激活
   const [questions, setQuestions] = useState<any[]>([]);
   const [qSel, setQSel] = useState(0);
   const [skippedQ, setSkippedQ] = useState<string | null>(null);
@@ -64,8 +57,9 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
   const [histBuf, setHistBuf] = useState<any[]>([]);
   const winStartRef = useRef(0); // 回看视口顶部锚点(跨帧保持,实现"光标移动而视口不动、撞边才滚")
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  // 鼠标滚轮:默认开(像 Claude Code)。开=接管终端鼠标上报,滚轮翻历史;关=恢复原生拖选复制。
-  const [mouseOn, setMouseOn] = useState(true);
+  // 鼠标滚轮:默认关——开了会接管终端鼠标上报、破坏原生拖选复制(只能按 Option 拖)。
+  // 想用滚轮翻历史可 /mouse 开(本会话内);PageUp/PageDown 回看始终可用,不受影响。
+  const [mouseOn, setMouseOn] = useState(false);
   const [tagline] = useState(() => t().taglines[Math.floor(Math.random() * t().taglines.length)]);
   const defaultCwd = process.cwd();
 
@@ -74,6 +68,7 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
     { v: 'zh', label: t().langZh },
     { v: 'en', label: t().langEn },
   ] as const;
+  const leadOpts: string[] = roster.filter((a) => !a.virtual).map((a) => a.name); // /lead 候选=非虚拟员工
 
   // 自研键盘输入：开 kitty 协议后，自己读 stdin + decodeKey，规范化成按键事件交给 handleKey。
   // 这样 Shift+Enter（kitty CSI-u）能和回车区分，且不依赖终端配置；中文/方向键/Ctrl 组合也照常。
@@ -131,21 +126,23 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
     return () => clearInterval(h);
   }, [anyActive]);
 
-  const dispatch = async (line: string) => {
-    const a = parseConsoleInput(line);
+  const dispatch = async (line: string, atts: string[] = []) => {
+    const a = parseConsoleInput(line); // 用原始输入(含 [图片N])判命令——避免展开后的 /路径 被误判成命令
+    const expand = (msg: string) => expandImageTokens(msg, atts); // 仅消息体展开成真实路径
     try {
       if (a.kind === 'noop') return;
       if (a.kind === 'help') { setStatus(t().helpStatus); return; }
       if (a.kind === 'error') { setStatus('⚠ ' + a.message); return; }
       if (a.kind === 'add-start') { setWizard({ name: a.name, step: 'cli', sel: 0 }); return; }
       if (a.kind === 'lang-start') { setLangPick(0); return; }
+      if (a.kind === 'lead-start') { setLeadPick(0); return; }
       if (a.kind === 'mouse-toggle') { const next = !mouseOn; setMouseOn(next); setStatus(next ? t().mouseEnabled : t().mouseDisabled); return; }
-      if (a.kind === 'say') { const r = await admin(port, 'POST', '/admin/say', { to: a.to, message: a.message }); setStatus(r.ok ? t().sayOk(a.to) : '⚠ ' + t().sayUndelivered(a.to, r.error ?? t().guardrailBlocked)); return; }
-      if (a.kind === 'broadcast') { await admin(port, 'POST', '/admin/broadcast', { message: a.message }); setStatus(t().broadcastOk); return; }
+      if (a.kind === 'say') { const r = await admin(port, 'POST', '/admin/say', { to: a.to, message: expand(a.message) }); setStatus(r.ok ? t().sayOk(a.to) : '⚠ ' + t().sayUndelivered(a.to, r.error ?? t().guardrailBlocked)); return; }
+      if (a.kind === 'broadcast') { await admin(port, 'POST', '/admin/broadcast', { message: expand(a.message) }); setStatus(t().broadcastOk); return; }
       if (a.kind === 'reply') {
         const target = lastReplyTarget(log);
         if (!target) { setStatus(t().noReplyTarget); return; }
-        const r = await admin(port, 'POST', '/admin/say', { to: target, message: a.message });
+        const r = await admin(port, 'POST', '/admin/say', { to: target, message: expand(a.message) });
         setStatus(r.ok ? t().replyOk(target) : '⚠ ' + t().sayUndelivered(target, r.error ?? t().guardrailBlocked));
         return;
       }
@@ -267,8 +264,24 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
       return;
     }
 
-    // 回看历史:PageUp/PageDown 或鼠标滚轮在消息条目间选择(实时态下往上=进入,拉全量缓存);
-    // 回看态下 Enter 展开/收起选中条、Esc 退出、打字也退出并落到输入框。
+    // 选组长态:↑↓ 选 · Enter 确认 · Esc 取消(选项=实时花名册非虚拟员工)
+    if (leadPick !== null) {
+      if (ev.type === 'esc') { setLeadPick(null); return; }
+      if (ev.type === 'up') { setLeadPick((s) => Math.max(0, (s ?? 0) - 1)); return; }
+      if (ev.type === 'down') { setLeadPick((s) => Math.min(Math.max(0, leadOpts.length - 1), (s ?? 0) + 1)); return; }
+      if (ev.type === 'enter') {
+        const chosen = leadOpts[leadPick];
+        setLeadPick(null);
+        if (chosen) void (async () => {
+          const r = await admin(port, 'POST', '/admin/lead', { name: chosen });
+          setStatus(r.ok ? t().leadSwitched(chosen) : '⚠ ' + (r.error ?? t().leadFailed));
+        })();
+        return;
+      }
+      return;
+    }
+
+
     if (ev.type === 'pageup' || ev.type === 'pagedown' || ev.type === 'wheel-up' || ev.type === 'wheel-down') {
       const dir = (ev.type === 'pageup' || ev.type === 'wheel-up') ? 'older' : 'newer';
       if (selBack === null) {
@@ -373,11 +386,11 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
         setInput((v) => v.slice(0, cursor - 1) + '\n' + v.slice(cursor)); // 删 \ 插 \n，光标不变
         return;
       }
-      const line = expandImageTokens(input, attachments); // [图片N] → 真实路径
-      const shown = input;
+      const raw = input;            // 原始输入(含 [图片N]):判命令用它,/ 开头才是命令
+      const atts = attachments;     // 附件快照(下面即清空,dispatch 异步展开消息体要用)
       setInput(''); setCursor(0); setSel(0); setHistIdx(null); setAttachments([]);
-      if (shown.trim()) setHistory((h) => [...h, shown]);
-      void dispatch(line);
+      if (raw.trim()) setHistory((h) => [...h, raw]);
+      void dispatch(raw, atts);
       return;
     }
     if (ev.type === 'backspace') {
@@ -406,7 +419,7 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
     return () => { stdin.off('data', onData); };
     // 每次渲染重挂，保证闭包里拿到最新 state；依赖列出 handleKey 读到的所有状态。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stdin, input, cursor, wizard, langPick, confirmExit, questions, skippedQ, qSel, history, histIdx, attachments, sel, log, roster, selBack, histBuf, expanded, mouseOn]);
+  }, [stdin, input, cursor, wizard, langPick, leadPick, confirmExit, questions, skippedQ, qSel, history, histIdx, attachments, sel, log, roster, selBack, histBuf, expanded, mouseOn]);
 
   const color = (s: string) => (s === 'idle' ? 'green' : s === 'busy' ? 'yellow' : s === 'dead' ? 'red' : 'gray');
 
@@ -457,6 +470,7 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
           <Text key={a.name}>
             <Text color={color(a.status)}>{statusGlyph(a.status, !!a.virtual, frame)} </Text>
             <Text color={colorFor(a.name)} bold>{a.name}</Text>
+            {a.lead ? <Text color="cyan" bold> ♔组长</Text> : null}
             <Text dimColor> {a.role ?? ''} [{t().agentStatus(a.status)}]</Text>
           </Text>
         ))}
@@ -524,6 +538,15 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
           <Text color="yellow">{t().langPickTitle}</Text>
           {LANG_OPTS.map((o, i) => (
             <Text key={o.v} inverse={i === langPick}>  {o.label}</Text>
+          ))}
+        </Box>
+      ) : leadPick !== null ? (
+        <Box flexDirection="column" marginTop={1}>
+          <Text color="yellow">{t().leadCmdPickTitle}</Text>
+          {leadOpts.length === 0 ? (
+            <Text dimColor>  {t().leadPickEmpty}</Text>
+          ) : leadOpts.map((nm, i) => (
+            <Text key={nm} inverse={i === leadPick}>  <Text color={colorFor(nm)} bold>{nm}</Text></Text>
           ))}
         </Box>
       ) : wizard ? (

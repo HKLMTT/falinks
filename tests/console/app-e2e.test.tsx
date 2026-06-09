@@ -151,9 +151,9 @@ renderE2E('e2e:鼠标滚轮进入回看 + /mouse 开关切换状态', async () =
     await waitFor(() => allText().includes('回看中') && allText().includes('第 12/12'));
     await press('\x1b[<65;5;5M'); // 滚轮下滚到底 → 退出回看
     await waitFor(() => !lastContent().includes('回看中'));
-    for (const ch of '/mouse') await press(ch); // /mouse 关闭 → 状态行提示
+    for (const ch of '/mouse') await press(ch); // /mouse 切换(默认关→开)→ 状态行提示
     await press('\r');
-    await waitFor(() => allText().includes('鼠标滚轮:关'));
+    await waitFor(() => allText().includes('鼠标滚轮:开'));
   } finally {
     inst.unmount();
   }

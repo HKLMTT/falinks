@@ -5,7 +5,7 @@ test('presets include solo/pair/fullstack/research with members', () => {
   const ids = presetTeams().map((t) => t.id);
   expect(ids).toEqual(['solo', 'pair', 'fullstack', 'research']);
   expect(presetTeams().find((t) => t.id === 'solo')!.members).toHaveLength(1);
-  expect(presetTeams().find((t) => t.id === 'fullstack')!.members).toHaveLength(4);
+  expect(presetTeams().find((t) => t.id === 'fullstack')!.members).toHaveLength(5);
 });
 
 test('every preset member has name/cli/role', () => {
@@ -29,4 +29,29 @@ test('configFromMembers maps members to agents at the given cwd with derived boo
     { name: 'bob', cli: 'codex', cwd: '/proj', role: '后端', bootstrap: bootstrapForRole('后端') },
   ]);
   expect(cfg.routes).toEqual({});
+});
+
+test('fullstack 预设的 lead 成员标记 lead:true,其余不标', () => {
+  const fs = presetTeams().find((t) => t.id === 'fullstack')!;
+  const lead = fs.members.find((m) => m.name === 'lead')!;
+  expect(lead.lead).toBe(true);
+  expect(fs.members.filter((m) => m.lead).length).toBe(1);
+});
+
+test('configFromMembers 仅给 lead 成员透传 lead:true', () => {
+  const cfg = configFromMembers([
+    { name: 'lead', cli: 'claude', role: '组长', lead: true },
+    { name: 'dev', cli: 'claude', role: '开发' },
+  ], '/proj');
+  expect((cfg.agents[0] as any).lead).toBe(true);
+  expect('lead' in cfg.agents[1]).toBe(false);
+});
+
+test('configFromMembers:成员有 cwd 用自己的,没有则回退团队 cwd', () => {
+  const cfg = configFromMembers([
+    { name: 'a', cli: 'claude', role: 'x', cwd: '/proj/web' },
+    { name: 'b', cli: 'claude', role: 'y' },
+  ], '/proj');
+  expect(cfg.agents[0].cwd).toBe('/proj/web');
+  expect(cfg.agents[1].cwd).toBe('/proj');
 });

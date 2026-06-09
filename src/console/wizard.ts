@@ -1,6 +1,17 @@
+import { readdirSync } from 'node:fs';
+
 /** 可选的 CLI 类型（向导里枚举给用户选）。 */
 export const CLIS = ['claude', 'codex'] as const;
 export type Cli = (typeof CLIS)[number];
+
+/** 列出 base 目录下的子目录名（用于路径补全;读失败返回空)。 */
+export function fsListDirs(base: string): string[] {
+  try {
+    return readdirSync(base, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name);
+  } catch {
+    return [];
+  }
+}
 
 /**
  * 给一个（可能不完整的）路径，返回匹配的目录建议（完整路径）。

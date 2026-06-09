@@ -65,16 +65,21 @@ export async function up(configPath: string) {
   let lastRight = '';      // 上次新建的右侧 pane,作为下次分屏的首选锚点
   let consoleSid = '';     // 控制台 pane(左侧):整个会话期间一定活着,作为锚点的永久兜底
 
+  // 组装员工完整 bootstrap:协作规则 + 身份 + 职责;组长额外追加"协调者工作法"(设计优先)。
+  // launchInto 与运行时 /lead(onSetLead)共用,保证 /clear 重注入、换 lead 后内容一致。
+  const composeBootstrap = (a: { name: string; role?: string; lead?: boolean; bootstrap?: string }): string =>
+    `${t().houseRules}\n${t().identityLine(a.name, a.role)}${a.bootstrap ?? ''}` +
+    (a.lead ? `\n${t().coordinatorRules}` : '');
+
   async function launchInto(
     anchor: string,
     dir: 'vertical' | 'horizontal',
-    a: { name: string; cli: string; cwd: string; role?: string; bootstrap?: string },
+    a: { name: string; cli: string; cwd: string; role?: string; lead?: boolean; bootstrap?: string },
   ): Promise<string> {
     const cfgPath = join(tmp, `${a.name}-mcp.json`);
     writeFileSync(cfgPath, JSON.stringify(mcpConfigFor(a.name, bus.port)));
 
-    const fullBootstrap =
-      `${t().houseRules}\n${t().identityLine(a.name, a.role)}${a.bootstrap ?? ''}`;
+    const fullBootstrap = composeBootstrap(a);
     bootstraps.set(a.name, fullBootstrap); // 供 /clear 后重注入
 
     // 决定 fresh / resume，并据此选注入文本与命令参数。
@@ -107,7 +112,7 @@ export async function up(configPath: string) {
 
     const sid = await driver.splitFrom(anchor, dir, { cwd: a.cwd, command });
     sessions.set(a.name, sid);
-    router.addAgent(a.name, a.role);
+    router.addAgent(a.name, a.role, a.lead);
     await driver.setName(sid, a.name).catch(() => {}); // pane 标题=员工名
     if (themed) await driver.setBackgroundColor(sid, paneBgColor(paneIdx)).catch(() => {}); // 角色底色(CLI 改不掉,建 pane 时设一次即可)
 
@@ -250,6 +255,30 @@ export async function up(configPath: string) {
       setLocale(eff);
       saveSettings({ locale: l }); // 存用户选择(含 auto)，下次启动 initLocale 再解析
       return eff;
+    },
+    onSetLead: async (name) => {
+      if (!sessions.has(name)) return { ok: false, error: `unknown agent: ${name}` };
+      const cur = cfg.agents.find((a) => a.lead)?.name;
+      if (cur === name) return { ok: true }; // 已是组长,幂等
+      // 翻标记(全队唯一)+ 同步 router(花名册显示)
+      for (const ag of cfg.agents) ag.lead = ag.name === name;
+      router.setLead(name);
+      // 写回 config(重启保留)
+      try {
+        const raw = JSON.parse(readFileSync(configPath, 'utf8'));
+        if (Array.isArray(raw.agents)) {
+          for (const ra of raw.agents) ra.lead = ra.name === name;
+          writeFileSync(configPath, JSON.stringify(raw, null, 2));
+        }
+      } catch { /* 写回失败不致命,本次运行仍按内存标记生效 */ }
+      // 重建受影响 agent 的 bootstrap(供 /clear 重注入保留)
+      for (const ag of cfg.agents) {
+        if (ag.name === name || ag.name === cur) bootstraps.set(ag.name, composeBootstrap(ag));
+      }
+      // 当场生效(不必 /clear):新 lead 收到工作法、旧 lead 收到卸任(走正常投递,忙则排队)
+      router.send('boss', name, `${t().leadAssignedMsg}\n${t().coordinatorRules}`);
+      if (cur && cur !== name) router.send('boss', cur, t().leadRevokedMsg);
+      return { ok: true };
     },
     getDiag: () => { try { return loadDiag(launchCwd); } catch { return []; } },
   }, cfg.busPort ?? 0, {
