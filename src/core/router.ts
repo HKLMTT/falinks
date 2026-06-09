@@ -89,13 +89,14 @@ export class Router {
       }
     }
 
-    const msg: Message = { id: this.deps.genId(), from, to: target, body, ts: this.deps.now(), thread };
+    const priority = !!this.agents.get(from)?.virtual; // boss 等虚拟成员发出的消息插队
+    const msg: Message = { id: this.deps.genId(), from, to: target, body, ts: this.deps.now(), thread, priority };
     this.messageLog.push(msg);
     const cap = this.deps.logCap ?? 300;
     if (this.messageLog.length > cap) this.messageLog.shift();
     this.deps.onLog?.(msg);
     if (a.virtual) return msg;       // 虚拟成员：只记日志，不注入、不置 busy
-    a.inbox.push(msg);
+    this.enqueue(a, msg);
     this.pump(a);
     return msg;
   }
@@ -150,6 +151,21 @@ export class Router {
       for (const m of a.inbox) ids.add(m.id);
     }
     return ids;
+  }
+
+  /**
+   * 入队：普通消息排到队尾；优先消息(boss 等虚拟成员)插到队首优先区的末尾——
+   * 排在所有普通排队消息之前，但保持多条优先消息彼此的 FIFO 顺序。
+   * 不打断正在处理的消息，员工干完手头这条后即取走 boss 的。
+   */
+  private enqueue(a: AgentRuntime, msg: Message): void {
+    if (!msg.priority) {
+      a.inbox.push(msg);
+      return;
+    }
+    let i = 0;
+    while (i < a.inbox.length && a.inbox[i].priority) i++;
+    a.inbox.splice(i, 0, msg);
   }
 
   /** 若 agent 空闲且 inbox 非空，取出一条投递并标 busy。 */
