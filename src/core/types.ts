@@ -14,6 +14,7 @@ export interface Message {
   body: string;
   ts: number;
   thread?: string; // 服务端派生的会话线程 id（仅在配置了 Guards 时设置）
+  priority?: boolean; // 优先消息（boss 等虚拟成员发出）：入队时插到队首，排在普通排队消息之前
 }
 
 export interface AgentRuntime {
