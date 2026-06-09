@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { readdirSync, readFileSync } from 'node:fs';
 import { Box, Text, useStdin, useStdout } from 'ink';
-import { parseConsoleInput, lastReplyTarget } from './parse.js';
+import { parseConsoleInput, lastReplyTarget, matchesFilter, type MessageFilter } from './parse.js';
 import { mentionState, applyMention } from './mention.js';
 import { commandState, applyCommand } from './commands.js';
 import { CLIS, dirSuggestions } from './wizard.js';
@@ -64,6 +64,7 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
   const [histBuf, setHistBuf] = useState<any[]>([]);
   const winStartRef = useRef(0); // 回看视口顶部锚点(跨帧保持,实现"光标移动而视口不动、撞边才滚")
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [filter, setFilter] = useState<MessageFilter | null>(null); // 消息过滤:只看与某人相关的(from/to/任一);实时态与回看态都生效
   // 鼠标滚轮:默认开(像 Claude Code)。开=接管终端鼠标上报,滚轮翻历史;关=恢复原生拖选复制。
   const [mouseOn, setMouseOn] = useState(true);
   const [tagline] = useState(() => t().taglines[Math.floor(Math.random() * t().taglines.length)]);
@@ -156,6 +157,8 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
         setStatus(r.ok ? t().cleared(a.name ?? t().clearAll, (r.cleared ?? []).join(t().clearJoiner) || t().clearNone) : '⚠ ' + (r.error ?? t().clearFailed));
         return;
       }
+      if (a.kind === 'filter') { setFilter(a.filter); setSelBack(null); setStatus(t().filterOn(t().filterLabel(a.filter.dir, a.filter.name))); return; }
+      if (a.kind === 'filter-clear') { setFilter(null); setSelBack(null); setStatus(t().filterCleared); return; }
     } catch (e: any) {
       setStatus('⚠ ' + (e?.message ?? t().unknownError));
     }
@@ -274,7 +277,8 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
       if (selBack === null) {
         if (dir === 'newer') return; // 实时态按 PageDown 无意义
         void admin(port, 'GET', '/admin/log').then((l) => {
-          const full = l.log ?? [];
+          // 回看缓存按当前过滤器筛过再铺(过滤态与实时态口径一致;改/清过滤会 setSelBack(null) 重入,故此处恒用最新 filter)。
+          const full = (l.log ?? []).filter((m: any) => matchesFilter(m, filter));
           setHistBuf(full);
           setSelBack(moveSel(null, full.length, 'older'));
         });
@@ -293,6 +297,9 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
       if (ev.type !== 'text') { setSelBack(null); return; } // 非打字键:退出回看(打字键则退出后落到下面输入)
       setSelBack(null);
     }
+
+    // 非回看态下按 Esc:若有激活的消息过滤,先清除过滤(回到全量)。
+    if (ev.type === 'esc' && filter) { setFilter(null); setStatus(t().filterCleared); return; }
 
     // Ctrl+V：读系统剪贴板里的截图，存临时文件，输入框只插入短占位 [图片N]（发送时展开成真实路径）
     if (ev.type === 'ctrl' && ev.key === 'v') {
@@ -406,7 +413,7 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
     return () => { stdin.off('data', onData); };
     // 每次渲染重挂，保证闭包里拿到最新 state；依赖列出 handleKey 读到的所有状态。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stdin, input, cursor, wizard, langPick, confirmExit, questions, skippedQ, qSel, history, histIdx, attachments, sel, log, roster, selBack, histBuf, expanded, mouseOn]);
+  }, [stdin, input, cursor, wizard, langPick, confirmExit, questions, skippedQ, qSel, history, histIdx, attachments, sel, log, roster, selBack, histBuf, expanded, mouseOn, filter]);
 
   const color = (s: string) => (s === 'idle' ? 'green' : s === 'busy' ? 'yellow' : s === 'dead' ? 'red' : 'gray');
 
@@ -416,6 +423,8 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
   //   旧的按"条数"取窗会让多行消息溢出、顶对齐把选中条和最新几条裁到屏幕外。
   const VIS = visibleCount(rows, roster.length);
   const browsing = selBack !== null;
+  // 实时态消息按当前过滤器筛(过滤态只显示与某人相关的);回看态的 histBuf 已在 fetch 时筛过。
+  const liveLog = filter ? log.filter((m) => matchesFilter(m, filter)) : log;
   const selIdx = browsing ? histBuf.length - 1 - (selBack as number) : -1;
   // 回看态某条消息渲染占用的行数:头1 + 正文(≤cap,按列宽折行算)+ 截断提示1;展开则全量。与下方渲染口径一致。
   const bodyCols = Math.max(1, cols - 2); // 正文行有 2 列缩进
@@ -437,8 +446,8 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
     ? scrollWindow(winStartRef.current, selIdx, histBuf.length, browseRowBudget(rows, roster.length), browseMsgHeight)
     : { start: 0, end: 0 };
   if (browsing) winStartRef.current = win.start; // 回看态:记下当前视口顶,供下一帧增量滚动
-  const shownMsgs = browsing ? histBuf.slice(win.start, win.end) : log.slice(-VIS);
-  const baseIdx = browsing ? win.start : Math.max(0, log.length - VIS); // shownMsgs[i] 的绝对下标
+  const shownMsgs = browsing ? histBuf.slice(win.start, win.end) : liveLog.slice(-VIS);
+  const baseIdx = browsing ? win.start : Math.max(0, liveLog.length - VIS); // shownMsgs[i] 的绝对下标
 
   return (
     // 根盒钉在 rows-1(严格 < 终端行数)并裁剪溢出:输出永不触发 Ink 的整屏清除分支,
@@ -464,6 +473,7 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
       <Box flexDirection="column" marginTop={1} flexGrow={1} overflow="hidden">
         <Box flexShrink={0}>
           <Text underline>{t().messages}</Text>
+          {filter ? <Text color="magenta"> · {t().filterOn(t().filterLabel(filter.dir, filter.name))}</Text> : null}
           {browsing ? <Text color="cyan"> · {t().browseHint(selIdx + 1, histBuf.length)}</Text> : null}
         </Box>
         {(() => {
@@ -479,7 +489,7 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
           {shownMsgs.map((m, i) => {
             const absIdx = baseIdx + i;
             const selected = browsing && absIdx === selIdx;
-            const isLatest = !browsing && absIdx === log.length - 1;
+            const isLatest = !browsing && absIdx === liveLog.length - 1;
             const expandedHere = browsing && expanded.has(m.id);
             const mdLines = renderMarkdown(String(m.body));
             const cap = expandedHere ? Infinity : (isLatest ? 40 : 3);

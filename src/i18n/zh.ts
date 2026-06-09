@@ -70,6 +70,10 @@ export const zh = {
   mouseEnabled: '🖱 鼠标滚轮:开（拖选复制请按住 Option 拖）',
   mouseDisabled: '🖱 鼠标滚轮:关（恢复原生拖选复制）',
   browseHint: (pos: number, total: number) => `回看中 第 ${pos}/${total} · PgUp/PgDn 选择 · Enter 展开/收起 · Esc 退出`,
+  filterLabel: (dir: 'from' | 'to' | 'any', name: string) =>
+    dir === 'from' ? `来自 ${name}` : dir === 'to' ? `发给 ${name}` : `关于 ${name}`,
+  filterOn: (label: string) => `🔎 已过滤: ${label} · Esc 清除`,
+  filterCleared: '已清除过滤,显示全部消息',
   expandMore: (n: number) => `… +${n} 行 · Enter 展开`,
   langAuto: '跟随系统',
   langZh: '中文',
@@ -86,6 +90,7 @@ export const zh = {
     add: '加一个员工',
     remove: '删一个员工',
     clear: '清空某员工上下文,不带名=全员(含 boss 历史)',
+    filter: '只看与某人相关的消息([from|to] 选方向,不带名=清除)',
     lang: '切换语言(中/英)',
     mouse: '开关鼠标滚轮滚动',
     help: '显示用法',
@@ -97,6 +102,7 @@ export const zh = {
   usageLang: '用法: /lang（按提示选语言）',
   unknownCommand: (cmd: string) => `未知命令: /${cmd}`,
   usageMention: '用法: @<name> <message> 或 @all <message>',
+  usageFilter: '用法: /filter [from|to] <name>（不带名=清除过滤）',
   unknownError: '未知错误',
   langFailed: 'lang 失败',
 

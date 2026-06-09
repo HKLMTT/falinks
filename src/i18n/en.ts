@@ -70,6 +70,10 @@ export const en: typeof zh = {
   mouseEnabled: '🖱 mouse-wheel: on (hold Option to drag-select)',
   mouseDisabled: '🖱 mouse-wheel: off (native drag-select restored)',
   browseHint: (pos: number, total: number) => `History ${pos}/${total} · PgUp/PgDn select · Enter expand/collapse · Esc exit`,
+  filterLabel: (dir: 'from' | 'to' | 'any', name: string) =>
+    dir === 'from' ? `from ${name}` : dir === 'to' ? `to ${name}` : `involving ${name}`,
+  filterOn: (label: string) => `🔎 Filtering: ${label} · Esc to clear`,
+  filterCleared: 'Filter cleared, showing all messages',
   expandMore: (n: number) => `… +${n} lines · Enter to expand`,
   langAuto: 'Follow system',
   langZh: '中文',
@@ -86,6 +90,7 @@ export const en: typeof zh = {
     add: 'add a worker',
     remove: 'remove a worker',
     clear: "clear a worker's context, no name = everyone (incl. boss history)",
+    filter: 'show only messages involving someone ([from|to] picks direction, no name = clear)',
     lang: 'Switch language (zh/en)',
     mouse: 'toggle mouse-wheel scrolling',
     help: 'show usage',
@@ -97,6 +102,7 @@ export const en: typeof zh = {
   usageLang: 'Usage: /lang (pick from the menu)',
   unknownCommand: (cmd: string) => `unknown command: /${cmd}`,
   usageMention: 'usage: @<name> <message> or @all <message>',
+  usageFilter: 'usage: /filter [from|to] <name> (no name = clear filter)',
   unknownError: 'unknown error',
   langFailed: 'lang switch failed',
 
