@@ -168,6 +168,18 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
   roster.forEach((a, i) => colorMap.set(a.name, NAME_COLORS[i % NAME_COLORS.length]));
   const colorFor = (n: string) => colorMap.get(n) ?? nameColor(n);
   const replyTarget = lastReplyTarget(log);
+  // 输入目标(随输入实时变,做成提示符前的彩色 chip,让"这条会发给谁"一眼可见):
+  // / 命令 → 无目标;@all → 全员群发;@名字 → 私聊该人;否则纯文本=回复上次目标(没有则提示先 @ 某人)。
+  const inputDest: { mode: 'cmd' | 'broadcast' | 'to' | 'none'; to?: string } = (() => {
+    const s = input.replace(/^\s+/, '');
+    if (s.startsWith('/')) return { mode: 'cmd' };
+    if (s.startsWith('@')) {
+      const name = s.slice(1).split(/\s/)[0];
+      if (name === 'all') return { mode: 'broadcast' };
+      if (name) return { mode: 'to', to: name };
+    }
+    return replyTarget ? { mode: 'to', to: replyTarget } : { mode: 'none' };
+  })();
   const cmd = commandState(input);
   const mention = mentionState(input, names);
   let items: { label: string; hint: string }[] = [];
@@ -553,6 +565,10 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
           ) : null}
           <Box marginTop={1}>
             <Text>
+              {inputDest.mode === 'cmd' ? <Text color="magenta" bold>⌘ </Text>
+               : inputDest.mode === 'broadcast' ? <Text color="yellow" bold>📢 {t().clearAll} </Text>
+               : inputDest.mode === 'to' ? <Text><Text dimColor>→ </Text><Text color={colorFor(inputDest.to!)} bold>{inputDest.to}</Text><Text> </Text></Text>
+               : <Text color="yellow" bold>{t().noReplyTargetShort} </Text>}
               <Text color="green">› </Text>
               {input.slice(0, cursor)}
               <Text inverse>{input[cursor] && input[cursor] !== '\n' ? input[cursor] : ' '}</Text>

@@ -24,6 +24,32 @@ export function nameColor(name: string): string {
   return NAME_COLORS[h % NAME_COLORS.length];
 }
 
+/**
+ * pane 背景染色调色板:与 NAME_COLORS **逐位对齐**的深色低饱和 hex(暗色主题下不压正文)。
+ * 同一 roster 下标 → 控制台名字用 NAME_COLORS[i]、对应 pane 底色用 PANE_BG_COLORS[i] → 同色相,
+ * 做到"花名册里 lead 是绿色 ↔ lead 的 pane 是深绿底"。
+ */
+export const PANE_BG_COLORS = [
+  '#0a2424', '#0a2410', '#262207', '#260a22', '#0a1430', '#280c0c',
+  '#0c2e2e', '#0c2e14', '#2e2a08', '#2e0c2a', '#0c193c', '#300e0e',
+  '#301c08', '#082a24', '#1e1830', '#2e1228', '#0e2230', '#222e10',
+  '#2e2210', '#0e2e20',
+];
+
+/** 按 roster 下标取 pane 底色(越界回绕)。 */
+export function paneBgColor(index: number): string {
+  return PANE_BG_COLORS[((index % PANE_BG_COLORS.length) + PANE_BG_COLORS.length) % PANE_BG_COLORS.length];
+}
+
+/** `#rrggbb`(或无 # 前缀)→ AppleScript 色值三通道 0..65535(各通道 *257)。 */
+export function hexToAppleRGB(hex: string): [number, number, number] {
+  const h = hex.replace(/^#/, '');
+  const r = parseInt(h.slice(0, 2), 16);
+  const g = parseInt(h.slice(2, 4), 16);
+  const b = parseInt(h.slice(4, 6), 16);
+  return [r * 257, g * 257, b * 257];
+}
+
 /** epoch 毫秒 → 本地 HH:MM:SS。 */
 export function formatTime(ts: number): string {
   const d = new Date(ts);

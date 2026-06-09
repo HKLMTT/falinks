@@ -52,3 +52,32 @@ test('codex resume: uses resume <id> with no prompt (恢复静默,不重放任�
   expect(r.command).toContain('--no-alt-screen');
   expect(r.needsBootstrapInject).toBe(false);
 });
+
+// 徽章:启动命令前缀 printf OSC SetBadgeFormat(base64),CLI 接管前由 shell 打到终端输出。
+const b64 = (s: string) => Buffer.from(s).toString('base64');
+
+test('badge: claude 命令加 printf SetBadgeFormat 前缀(base64),原命令保留在其后', () => {
+  const r = buildAgentLaunch('claude', { ...spec, badge: 'lead·组长' });
+  expect(r.command).toContain(`SetBadgeFormat=${b64('lead·组长')}`);
+  expect(r.command.startsWith('printf ')).toBe(true);
+  expect(r.command).toContain('claude --mcp-config /tmp/alice-mcp.json --dangerously-skip-permissions');
+  expect(r.needsBootstrapInject).toBe(true);
+});
+
+test('badge: codex 命令同样加前缀,且不影响 MCP/bootstrap', () => {
+  const r = buildAgentLaunch('codex', { ...spec, badge: 'qa·测试' });
+  expect(r.command).toContain(`SetBadgeFormat=${b64('qa·测试')}`);
+  expect(r.command).toContain('codex');
+  expect(r.command).toContain('mcp_servers.falinks.url="http://127.0.0.1:7878/agent/alice/mcp"');
+  expect(r.needsBootstrapInject).toBe(false);
+});
+
+test('badge: 含 OSC 转义字节(\\033 / \\007),供 shell printf 解析', () => {
+  const r = buildAgentLaunch('claude', { ...spec, badge: 'lead' });
+  expect(r.command).toContain('\\033]1337;SetBadgeFormat=');
+  expect(r.command).toContain('\\007');
+});
+
+test('badge: 不传 badge 时命令逐字不变(回归,关开关/无需求零影响)', () => {
+  expect(buildAgentLaunch('claude', spec).command).toBe('claude --mcp-config /tmp/alice-mcp.json --dangerously-skip-permissions');
+});

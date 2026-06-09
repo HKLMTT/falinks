@@ -17,6 +17,7 @@ export interface GuardConfig {
 export interface FalinksConfig {
   busPort?: number; // 缺省 = 启动时自动分配(listen 0)
   historyCap?: number; // 消息流水保留上限(内存+磁盘),缺省由调用方回退默认(MESSAGE_LOG_CAP)
+  paneTheme?: boolean; // 给每个员工 pane 按角色染背景色 + 加徽章;缺省视为开,设 false 整体关闭(尊重自定义配色)
   agents: AgentConfig[];
   routes: Record<string, AgentName>;
   guards: GuardConfig;
@@ -29,6 +30,8 @@ export function parseConfig(raw: any): FalinksConfig {
     throw new Error('config.busPort must be a number');
   if (raw.historyCap !== undefined && (typeof raw.historyCap !== 'number' || !Number.isInteger(raw.historyCap) || raw.historyCap <= 0))
     throw new Error('config.historyCap must be a positive integer');
+  if (raw.paneTheme !== undefined && typeof raw.paneTheme !== 'boolean')
+    throw new Error('config.paneTheme must be a boolean');
   if (!Array.isArray(raw.agents) || raw.agents.length === 0)
     throw new Error('config.agents must have at least one agent');
 
@@ -56,5 +59,5 @@ export function parseConfig(raw: any): FalinksConfig {
     loopWindow: typeof gd.loopWindow === 'number' ? gd.loopWindow : 3,
   };
 
-  return { busPort: raw.busPort, historyCap: raw.historyCap, agents, routes, guards };
+  return { busPort: raw.busPort, historyCap: raw.historyCap, paneTheme: raw.paneTheme, agents, routes, guards };
 }

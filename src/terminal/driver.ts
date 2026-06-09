@@ -20,6 +20,10 @@ export interface TerminalDriver {
   paneExists(sessionId: string): Promise<boolean>;
   /** 设置 pane 的名字（标题）。 */
   setName(sessionId: string, name: string): Promise<void>;
+  /** 设置 pane 背景色（hex `#rrggbb`）——按角色染色,CLI 改不掉(直接作用于 session)。 */
+  setBackgroundColor(sessionId: string, hex: string): Promise<void>;
+  /** pane 是否“正在处理”——iTerm2 原生信号:最近约 2 秒内收到过输出(干活的 CLI 持续刷 spinner=持续有输出)。 */
+  isProcessing(sessionId: string): Promise<boolean>;
 }
 
 /** 测试替身：记录所有 inject、可设定 readScreen 返回值。 */
@@ -28,6 +32,8 @@ export class FakeDriver implements TerminalDriver {
   injections: { sessionId: string; text: string; submit: boolean }[] = [];
   splits: { anchor: string; direction: 'vertical' | 'horizontal'; sessionId: string }[] = [];
   names = new Map<string, string>();
+  backgrounds = new Map<string, string>();
+  processing = new Map<string, boolean>();
   private screens = new Map<string, string>();
   private counter = 0;
 
@@ -69,6 +75,18 @@ export class FakeDriver implements TerminalDriver {
 
   async setName(sessionId: string, name: string): Promise<void> {
     this.names.set(sessionId, name);
+  }
+
+  async setBackgroundColor(sessionId: string, hex: string): Promise<void> {
+    this.backgrounds.set(sessionId, hex);
+  }
+
+  async isProcessing(sessionId: string): Promise<boolean> {
+    return this.processing.get(sessionId) ?? false;
+  }
+
+  setProcessing(sessionId: string, v: boolean): void {
+    this.processing.set(sessionId, v);
   }
 
   setScreen(sessionId: string, content: string): void {

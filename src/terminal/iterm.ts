@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
 import { escapeAppleScript } from './applescript.js';
+import { hexToAppleRGB } from '../console/log-format.js';
 import type { LaunchOpts, TerminalDriver } from './driver.js';
 
 /** POSIX 单引号转义：把字符串安全地用于 shell 命令中的一个参数。 */
@@ -132,5 +133,17 @@ end tell`;
     const action = `tell s to set name to "${escapeAppleScript(name)}"
           return "OK"`;
     await osascript(onSession(sessionId, action));
+  }
+
+  async setBackgroundColor(sessionId: string, hex: string): Promise<void> {
+    const [r, g, b] = hexToAppleRGB(hex);
+    const action = `tell s to set background color to {${r}, ${g}, ${b}}
+          return "OK"`;
+    await osascript(onSession(sessionId, action));
+  }
+
+  async isProcessing(sessionId: string): Promise<boolean> {
+    const r = await osascript(onSession(sessionId, 'return (is processing of s) as string'));
+    return r.trim() === 'true';
   }
 }

@@ -21,12 +21,23 @@ export interface LaunchSpec {
   bootstrap: string;     // 首启=完整 bootstrap；恢复时此字段被忽略（claude 不注入、codex 不传 prompt）
   sessionId?: string;    // claude 首启：--session-id（确定性 id）
   resumeId?: string;     // 恢复：claude --resume / codex resume <id>
+  badge?: string;        // iTerm2 徽章文本（如 "lead·组长"）；设置时给命令加 printf OSC 前缀
 }
 
 export interface AgentLaunch {
   command: string;
   /** claude: true（启动就绪后由 falinks 注入 bootstrap）；codex: false（bootstrap 已作为初始 prompt 传入命令）。 */
   needsBootstrapInject: boolean;
+}
+
+/**
+ * 给命令加 iTerm2 徽章前缀:shell 在 CLI 接管前 printf 一段 OSC `SetBadgeFormat`(base64),
+ * 设上"名·角色"大水印,sticky 且 CLI 改不掉。八进制 \033/\007 经 escapeAppleScript 两层转义后由 shell printf 解析。
+ */
+function withBadge(command: string, badge?: string): string {
+  if (!badge) return command;
+  const b64 = Buffer.from(badge).toString('base64');
+  return `printf '\\033]1337;SetBadgeFormat=${b64}\\007'; ${command}`;
 }
 
 /** 按 CLI 构造启动命令 + 是否需要在就绪后注入 bootstrap。 */
@@ -39,7 +50,7 @@ export function buildAgentLaunch(cli: string, spec: LaunchSpec): AgentLaunch {
           ? ` --session-id ${spec.sessionId}`
           : '';
       return {
-        command: `claude --mcp-config ${spec.mcpConfigPath} --dangerously-skip-permissions${tail}`,
+        command: withBadge(`claude --mcp-config ${spec.mcpConfigPath} --dangerously-skip-permissions${tail}`, spec.badge),
         needsBootstrapInject: true,
       };
     }
@@ -54,7 +65,7 @@ export function buildAgentLaunch(cli: string, spec: LaunchSpec): AgentLaunch {
       const command = spec.resumeId
         ? `${base} resume ${spec.resumeId}`
         : `${base} ${shQuote(spec.bootstrap)}`;
-      return { command, needsBootstrapInject: false };
+      return { command: withBadge(command, spec.badge), needsBootstrapInject: false };
     }
     default:
       throw new Error(`unsupported cli: ${cli}`);

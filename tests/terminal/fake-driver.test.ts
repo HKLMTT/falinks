@@ -30,3 +30,20 @@ test('inject to unknown session throws', async () => {
   const d = new FakeDriver();
   await expect(d.inject('nope', 'x', true)).rejects.toThrow(/unknown session/);
 });
+
+test('setName / setBackgroundColor 记录到对应 map', async () => {
+  const d = new FakeDriver();
+  const sid = await d.launch({ cwd: '/tmp', command: 'cat' });
+  await d.setName(sid, 'lead');
+  await d.setBackgroundColor(sid, '#0a2410');
+  expect(d.names.get(sid)).toBe('lead');
+  expect(d.backgrounds.get(sid)).toBe('#0a2410');
+});
+
+test('isProcessing 默认 false,setProcessing 可设', async () => {
+  const d = new FakeDriver();
+  const sid = await d.launch({ cwd: '/tmp', command: 'cat' });
+  expect(await d.isProcessing(sid)).toBe(false);
+  d.setProcessing(sid, true);
+  expect(await d.isProcessing(sid)).toBe(true);
+});

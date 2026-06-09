@@ -13,6 +13,7 @@ import { mcpConfigFor, buildAgentLaunch } from './agent/mcp-config.js';
 import { runtimeDir, runtimePath, consoleLaunchCommand, writeInstance, readInstance, removeInstanceIfOwner, removeInstanceFile, instancePath } from './runtime.js';
 import { probeBus } from './discovery.js';
 import { renderConsole } from './console/run.js';
+import { paneBgColor } from './console/log-format.js';
 import { chooseAnchor } from './terminal/anchor.js';
 import { loadStore, saveStore, pruneToAgents, type SessionStore } from './session/store.js';
 import { decideClaudeSession, decideCodexSession } from './session/decide.js';
@@ -93,15 +94,22 @@ export async function up(configPath: string) {
       if (d.mode === 'resume') { resuming = true; resumeId = d.sessionId; sessionId = d.sessionId; }
     }
 
+    // pane 视觉身份(默认开,config.paneTheme:false 关):按角色染背景色 + 员工名徽章。
+    // paneIdx 在 addAgent 之前取 = 新员工将占的 roster 下标(boss=0);与控制台花名册配色同下标对应。
+    const themed = cfg.paneTheme !== false;
+    const paneIdx = router.roster().length;
+    const badge = themed ? a.name : undefined;
+
     const { command, needsBootstrapInject } = buildAgentLaunch(a.cli, {
       name: a.name, busPort: bus.port, mcpConfigPath: cfgPath,
-      bootstrap: fullBootstrap, sessionId: claudeSessionId, resumeId,
+      bootstrap: fullBootstrap, sessionId: claudeSessionId, resumeId, badge,
     });
 
     const sid = await driver.splitFrom(anchor, dir, { cwd: a.cwd, command });
     sessions.set(a.name, sid);
     router.addAgent(a.name, a.role);
     await driver.setName(sid, a.name).catch(() => {}); // pane 标题=员工名
+    if (themed) await driver.setBackgroundColor(sid, paneBgColor(paneIdx)).catch(() => {}); // 角色底色(CLI 改不掉,建 pane 时设一次即可)
 
     // 慢活（就绪检测/注入 bootstrap/抓 codex id/落盘）放后台，不阻塞控制台渲染——
     // 员工就绪后自己 register，花名册会从 [launching] 自动变 [idle]。pane 已建好，sid 立即可返回。
@@ -305,8 +313,10 @@ export async function up(configPath: string) {
 
   // 健康轮询(1.5s)：员工 pane 被关 → 自动下线；以及按 pane 实况校准花名册 busy/idle。
   const IDLE_GRACE_MS = 3000; // 刚投递后这段时间内不判空闲（避开"已提交但还没开始生成"的空窗）
-  const IDLE_STREAK = 3;      // 连续这么多次采到 pane 不忙才降 idle（去抖，对齐 pane 下线判定）
+  const IDLE_STREAK = 2;      // 连续 2 次采到 pane 不忙才降 idle。iTerm `is processing`(准)已够,留 1 次冗余骑过工具调用里偶发的 >2s 输出空窗:
+                              // 2 次(≈3s)+ is processing 自带 2s 衰减 ≈ 真正停手后约 5s 降闲。
   const SUSPECT_FAST_IDLE_MS = 8000; // 投递后这么快就被自动降 idle 视为"可疑(可能没回完)",落盘诊断
+  const DEBUG_BUSY = !!process.env.FALINKS_DEBUG_BUSY; // 开则逐轮询把判忙信号+决策落盘(排查闪烁)
   const missStreak = new Map<string, number>(); // 连续探测不到 pane 的次数（去抖：osascript 高并发会瞬时误报，连续多次才下线）
   const idleStreak = new Map<string, number>(); // 连续采到 pane"不忙"的次数（自动空闲去抖）
   setInterval(() => {
@@ -334,19 +344,40 @@ export async function up(configPath: string) {
 
           // 按 pane 实况校准花名册：pane 在生成却显示 idle → 升 busy（修"干活却显示空闲"）；
           // busy 但 pane 已空闲、过宽限、连续 IDLE_STREAK 次不忙 → 降 idle 并 pump 排队消息。
-          // 读屏失败按"忙"处理（保守）。单次瞬时空窗（工具间隙/滚屏）不再误降。
+          // 判忙主信号 = iTerm2 `is processing`(最近~2s 有输出;干活的 CLI 持续刷 spinner=持续有输出),
+          // 远比截屏正则可靠(新版 Claude 底部常驻 `bypass permissions on` 会让旧截屏永远判不忙→工作中被误降)。
+          // 截屏 isPaneBusy 作廉价兜底(给非 Claude/缓冲输出的 CLI);proc 为真时短路、不读屏。读失败保守判忙。
           const a = router.get(name);
           if (a && (a.status === 'busy' || a.status === 'idle')) {
-            const paneBusy = isPaneBusy(await driver.readScreen(sid).catch(() => 'esc to interrupt'));
+            let proc = false;
+            let scrapeBusy = false;
+            let paneBusy: boolean;
+            let bottom = '';
+            try {
+              proc = await driver.isProcessing(sid);
+              if (!proc || DEBUG_BUSY) {
+                const screen = await driver.readScreen(sid);
+                scrapeBusy = isPaneBusy(screen);
+                if (DEBUG_BUSY) bottom = screen.split('\n').map((l) => l.replace(/\s+$/, '')).filter(Boolean).slice(-2).join(' ⏎ ');
+              }
+              paneBusy = proc || scrapeBusy;
+            } catch {
+              paneBusy = true; // 探测失败按"忙"处理,别误降 idle
+            }
+            const grace = Date.now() - (lastDeliverAt.get(name) ?? 0) > IDLE_GRACE_MS;
             const streak = paneBusy ? 0 : (idleStreak.get(name) ?? 0) + 1;
             idleStreak.set(name, streak);
             const action = reconcilePaneStatus({
               status: a.status,
               paneBusy,
-              gracePassed: Date.now() - (lastDeliverAt.get(name) ?? 0) > IDLE_GRACE_MS,
+              gracePassed: grace,
               idleStreak: streak,
               idleThreshold: IDLE_STREAK,
             });
+            // 逐轮询调试(FALINKS_DEBUG_BUSY=1 开):落盘每次的信号与决策,定位"工作中一瞬切空闲又切回"。
+            if (DEBUG_BUSY) {
+              try { appendDiag(launchCwd, { kind: 'poll', name, status: a.status, proc, scrape: scrapeBusy, paneBusy, grace, streak, action, bottom, ts: Date.now() }); } catch { /* ignore */ }
+            }
             if (action === 'mark-idle') {
               // 只记"投递后异常快就被降 idle"的可疑情形(接近宽限下限):正常长任务结束的 since 很大、不记,避免刷屏。
               // 若反复卡死时这里频繁出现,佐证"还没回完就被降 idle、下条排队消息叠注入打断上一轮"。
