@@ -1,5 +1,8 @@
 import { t } from '../i18n/index.js';
 
+/** 消息过滤器：按方向(发自/发给/任一)圈定某个成员相关的消息。 */
+export type MessageFilter = { dir: 'from' | 'to' | 'any'; name: string };
+
 export type ConsoleAction =
   | { kind: 'say'; to: string; message: string }
   | { kind: 'broadcast'; message: string }
@@ -8,6 +11,8 @@ export type ConsoleAction =
   | { kind: 'add-start'; name: string }
   | { kind: 'remove'; name: string }
   | { kind: 'clear'; name?: string }
+  | { kind: 'filter'; filter: MessageFilter }
+  | { kind: 'filter-clear' }
   | { kind: 'lang-start' }
   | { kind: 'mouse-toggle' }
   | { kind: 'help' }
@@ -33,6 +38,19 @@ export function parseConsoleInput(line: string): ConsoleAction {
     }
     if (cmd === 'clear') {
       return { kind: 'clear', name: args[0] ? args[0].replace(/^@/, '') : undefined };
+    }
+    if (cmd === 'filter') {
+      // /filter            → 清除过滤
+      // /filter <name>     → 任一方向(关于某人)
+      // /filter from <name>→ 只看该人发出的
+      // /filter to <name>  → 只看发给该人的
+      if (args.length === 0) return { kind: 'filter-clear' };
+      let dir: MessageFilter['dir'] = 'any';
+      let rest = args;
+      if (args[0] === 'from' || args[0] === 'to') { dir = args[0]; rest = args.slice(1); }
+      const name = (rest[0] ?? '').replace(/^@/, '');
+      if (!name) return { kind: 'error', message: t().usageFilter };
+      return { kind: 'filter', filter: { dir, name } };
     }
     if (cmd === 'add') {
       if (args.length === 1) return { kind: 'add-start', name: args[0] };
@@ -64,4 +82,12 @@ export function lastReplyTarget(log: { from: string; to: string }[], self = 'bos
     if (m.from === self && m.to !== self) return m.to;
   }
   return null;
+}
+
+/** 一条消息是否命中过滤器。filter 为 null（未过滤）时恒为 true。 */
+export function matchesFilter(m: { from: string; to: string }, filter: MessageFilter | null): boolean {
+  if (!filter) return true;
+  if (filter.dir === 'from') return m.from === filter.name;
+  if (filter.dir === 'to') return m.to === filter.name;
+  return m.from === filter.name || m.to === filter.name;
 }
