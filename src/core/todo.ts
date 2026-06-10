@@ -64,7 +64,11 @@ export class TodoEngine {
       this.lastDispatchId = undefined;
       // 若移除后已无 pending/current → 退回 idle(无需 resume,直接可重新 start)
       if (!this.st.tasks.some((x) => x.status === 'pending' || x.status === 'current')) {
-        this.st.state = 'idle';
+        // 没任务可跑了:本轮终结,出汇总(与 resume 收尾路径一致)。转 finished 才能让后续 add 正确清旧账。
+        this.st.state = 'finished';
+        this.cb.persist(this.st);
+        this.cb.announceSummary(this.st.tasks);
+        return { ok: true };
       }
       this.cb.persist(this.st);
       return { ok: true };

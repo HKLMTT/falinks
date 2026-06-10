@@ -180,3 +180,15 @@ test('paused 态 rm current 与 clear 都撤掉仍在排队的旧下发', () => 
   e.clear();
   expect(calls.cancel).toEqual(['msg1', 'msg2']);
 });
+
+test('paused 态 rm 掉最后的 current → finished+汇总;随后 add 清旧账', () => {
+  const { e, calls } = mk();
+  e.add('a'); e.add('b'); e.start(undefined, true);
+  e.taskdone(1, 'done', 'x');
+  e.stop();
+  e.rm(2); // 脱困:标 failed,无剩余 → 终结本轮
+  expect(e.state().state).toBe('finished');
+  expect(calls.summary).toBe(1);
+  e.add('c'); // finished+add → 清旧账转 idle
+  expect(e.state().tasks.map((t) => t.body)).toEqual(['c']);
+});

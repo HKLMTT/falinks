@@ -237,7 +237,7 @@ export const en: typeof zh = {
   todoSuspendedMsg: '[todolist suspended] No lead assigned — task dispatch paused. Assign a lead with /lead and it will resume automatically.',
   todoSendFailingMsg: '[todolist warning] Message delivery has failed repeatedly (guardrail or lead unreachable) — the list may be stalled, please investigate.',
   todoProgressLine: (k: number, total: number, body: string, paused: boolean) =>
-    `📋 ${k}/${total} current: ${body}${paused ? ' [⏸ suspended]' : ''}`,
+    `📋 ${k}/${total} current: ${body}${paused ? ' [⏸ paused]' : ''}`,
   todoResumeHint: (left: number, total: number) => `Unfinished todolist detected (${left}/${total} tasks remaining) — /todo resume to continue`,
   todoListTitle: 'Task list (Esc to close)',
   todoListEmpty: '(empty) — /todo add <content> to add tasks',
