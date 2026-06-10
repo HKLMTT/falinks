@@ -38,7 +38,7 @@ export class QuestionStore {
 export interface BusDeps {
   router: Router;
   getSessionId(name: string): string | undefined;
-  onAddAgent?(spec: { name: string; cli: string; cwd: string; role?: string; bootstrap?: string }): Promise<{ ok: boolean; error?: string }>;
+  onAddAgent?(spec: { name: string; cli: string; cwd: string; role?: string; bootstrap?: string; model?: string }): Promise<{ ok: boolean; error?: string }>;
   onRemoveAgent?(name: string): Promise<{ ok: boolean; error?: string }>;
   onClear?(name?: string): Promise<{ ok: boolean; cleared?: string[]; error?: string }>;
   onShutdown?(closePanes: boolean): Promise<{ ok: boolean }>;
@@ -211,7 +211,7 @@ export async function startBus(deps: BusDeps, port: number, opts?: BusOptions): 
       if (req.method === 'POST' && url.pathname === '/admin/add') {
         if (!deps.onAddAgent) return sendJson({ ok: false, error: 'add not supported' });
         try {
-          const r = await deps.onAddAgent({ name: String(abody.name), cli: String(abody.cli), cwd: String(abody.cwd), role: abody.role, bootstrap: abody.bootstrap });
+          const r = await deps.onAddAgent({ name: String(abody.name), cli: String(abody.cli), cwd: String(abody.cwd), role: abody.role, bootstrap: abody.bootstrap, model: typeof abody.model === 'string' && abody.model ? abody.model : undefined });
           return sendJson(r);
         } catch (e: any) {
           return sendJson({ ok: false, error: String(e?.message ?? e) });

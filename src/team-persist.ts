@@ -9,6 +9,7 @@ export interface PersistAgent {
   cwd: string;
   role?: string;
   bootstrap?: string;
+  model?: string; // 模型名;缺省不写键,保持配置文件干净
 }
 
 /**
@@ -26,6 +27,7 @@ export function addAgentToConfigFile(configPath: string, agent: PersistAgent): v
     cwd: agent.cwd,
     role: agent.role,
     bootstrap: agent.bootstrap && agent.bootstrap.length ? agent.bootstrap : bootstrapForRole(agent.role ?? t().wizardDefaultRole),
+    ...(agent.model ? { model: agent.model } : {}),
   });
   writeFileSync(configPath, JSON.stringify(raw, null, 2));
 }

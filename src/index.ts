@@ -19,6 +19,7 @@ import { loadStore, saveStore, pruneToAgents, type SessionStore } from './sessio
 import { decideClaudeSession, decideCodexSession } from './session/decide.js';
 import { parseStatusSessionId } from './session/capture.js';
 import { addAgentToConfigFile, removeAgentFromConfigFile } from './team-persist.js';
+import { bootstrapForRole } from './templates.js';
 import { loadMessageLog, appendMessageLog, clearMessageLog, MESSAGE_LOG_CAP } from './message-log.js';
 import { appendDiag, clearDiag, loadDiag } from './diag.js';
 import { t, setLocale, detectLocale } from './i18n/index.js';
@@ -102,7 +103,7 @@ export async function up(configPath: string) {
   async function launchInto(
     anchor: string,
     dir: 'vertical' | 'horizontal',
-    a: { name: string; cli: string; cwd: string; role?: string; lead?: boolean; bootstrap?: string },
+    a: { name: string; cli: string; cwd: string; role?: string; lead?: boolean; bootstrap?: string; model?: string },
   ): Promise<string> {
     const cfgPath = join(tmp, `${a.name}-mcp.json`);
     writeFileSync(cfgPath, JSON.stringify(mcpConfigFor(a.name, bus.port)));
@@ -141,7 +142,7 @@ export async function up(configPath: string) {
 
     const { command, needsBootstrapInject } = buildAgentLaunch(a.cli, {
       name: a.name, busPort: bus.port, mcpConfigPath: cfgPath,
-      bootstrap: fullBootstrap, bootstrapFile, sessionId: claudeSessionId, resumeId, badge,
+      bootstrap: fullBootstrap, bootstrapFile, sessionId: claudeSessionId, resumeId, badge, model: a.model,
     });
 
     const sid = await driver.splitFrom(anchor, dir, { cwd: a.cwd, command });
@@ -232,6 +233,12 @@ export async function up(configPath: string) {
       } catch (e: any) {
         return { ok: false, error: t().addFailedDetail(e?.message ?? e) };
       }
+      // 修复既有缺口:不进内存 cfg.agents 的话,本会话内对该员工 /restart 报 unknown、/lead 重组也漏掉它。
+      cfg.agents.push({
+        name: spec.name, cli: spec.cli, cwd: spec.cwd, role: spec.role, lead: false,
+        bootstrap: spec.bootstrap && spec.bootstrap.length ? spec.bootstrap : bootstrapForRole(spec.role ?? t().wizardDefaultRole),
+        model: spec.model,
+      });
       try { addAgentToConfigFile(configPath, spec); } catch { /* 配置写回失败不致命 */ }
       return { ok: true };
     },

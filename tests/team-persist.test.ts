@@ -45,6 +45,26 @@ test('addAgentToConfigFile keeps explicit bootstrap when provided', () => {
   expect(bob.bootstrap).toBe('自定义');
 });
 
+test('addAgentToConfigFile 写回 model 字段', () => {
+  const p = tmpConfig();
+  addAgentToConfigFile(p, { name: 'm1', cli: 'claude', cwd: '/x', role: 'r', model: 'claude-opus-4-8' });
+  const raw = JSON.parse(readFileSync(p, 'utf8'));
+  const m1 = raw.agents.find((a: { name: string }) => a.name === 'm1');
+  expect(m1.model).toBe('claude-opus-4-8');
+  // 写回后仍能被 parseConfig 接受（model 是合法字符串字段）。
+  expect(() => parseConfig(raw)).not.toThrow();
+});
+
+test('addAgentToConfigFile 不带 model 时不写 model 键', () => {
+  const p = tmpConfig();
+  addAgentToConfigFile(p, { name: 'm2', cli: 'claude', cwd: '/x', role: 'r' });
+  const raw = JSON.parse(readFileSync(p, 'utf8'));
+  const m2 = raw.agents.find((a: { name: string }) => a.name === 'm2');
+  expect('model' in m2).toBe(false);
+  // 配置文件保持干净：序列化文本里不出现 "model" 键。
+  expect(JSON.stringify(raw)).not.toContain('"model"');
+});
+
 test('removeAgentFromConfigFile drops by name', () => {
   const p = tmpConfig();
   addAgentToConfigFile(p, { name: 'bob', cli: 'claude', cwd: '/p', role: 'r' });

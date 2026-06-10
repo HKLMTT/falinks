@@ -9,6 +9,7 @@ export interface TeamMember {
   role: string; // 职责描述（用于花名册标签 + 派生 bootstrap）
   cwd?: string; // 该成员工作目录;缺省用团队启动目录(configFromMembers 的 cwd 参数)
   lead?: boolean; // 组长/协调者:注入"协调者工作法"(先对齐需求→完整设计→定稿→才拆解分派)
+  model?: string; // 模型名,透传给 CLI;缺省=CLI 全局默认(预设模板不设值,自定义模板可带)
 }
 
 export interface TeamTemplate {
@@ -61,7 +62,7 @@ export function presetTeams(): TeamTemplate[] {
 /** 由一组成员生成 falinks 配置(所有员工工作目录=cwd)。busPort 不写:缺省自动分配,多实例不冲突。 */
 export function configFromMembers(members: TeamMember[], cwd: string) {
   return {
-    agents: members.map((m) => ({ name: m.name, cli: m.cli, cwd: m.cwd || cwd, role: m.role, ...(m.lead ? { lead: true } : {}), bootstrap: bootstrapForRole(m.role) })),
+    agents: members.map((m) => ({ name: m.name, cli: m.cli, cwd: m.cwd || cwd, role: m.role, ...(m.lead ? { lead: true } : {}), ...(m.model ? { model: m.model } : {}), bootstrap: bootstrapForRole(m.role) })),
     routes: {},
   };
 }
