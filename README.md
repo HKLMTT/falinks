@@ -28,6 +28,10 @@ The name comes from the Pokémon **Falinks** (a six-in-a-row formation): one lea
 - **Persistent message history**: the feed is stored in `~/.falinks/messages/` (rolling cap); history survives restarts. The console message panel is multi-line, per-speaker colored, and timestamped.
 - **No accidental broadcasts**: plain text only replies to "the last party you talked to"; `@all` broadcasts.
 - **Add/remove workers at runtime** (console `/add` wizard), **`/clear` a worker's context** (identity auto-restored after), **auto-offline on window close**, **runaway guards** (turn cap / loop detection / throttle), and a **token-saving collaboration rule** (no pleasantries).
+- **Per-agent model**: each worker can pin its own model (`model` in the config, or the `/add` wizard's model step — leave blank for the CLI default); passed as `claude --model` / `codex -m` and kept across restart/resume.
+- **`/restart <name> [fresh]`**: relaunch a worker's CLI with the correct MCP config (`fresh` = brand-new session) — the right way to restart, instead of manually rerunning a CLI in the pane.
+- **Unresponsive detection**: a worker that never registers (90s timeout) or goes silent (2× the auto-idle window) gets a red ⚠ badge in the roster plus a console warning, and self-heals on its next MCP call.
+- **`/todo` unattended task list**: queue tasks (`add` / `list` / `rm` / `clear`), then `start [N]` to let the office grind through them while you're away — the lead reports each task via the `taskdone` tool, an idle nudge fires every N minutes (default 10, never gives up), failures don't stop the list, and a summary lands at the end. The list is persisted: after a restart it's paused until `/todo resume`.
 - **Run multiple projects at once**: ports are auto-assigned; each project keeps its own runtime record (`~/.falinks/runtime/<hash>.json`); `falinks say/roster/log` find the matching instance by current directory; same-directory double-start is blocked.
 - **Bilingual UI (i18n)**: UI text, CLI prompts, the startup wizard, and worker collaboration rules are fully bilingual. Defaults to your system language (locale starting with `zh` = Chinese, otherwise English); switch anytime with `/lang` in the console or `falinks lang`, persisted globally (`~/.falinks/settings.json`).
 
@@ -83,8 +87,10 @@ The console input box on the left (with autocomplete for both `@` and `/`):
 | `@all sync up everyone` | broadcast to all (**only `@all` broadcasts**, to avoid mistakes) |
 | `Shift+Enter` or `\` + Enter | newline in the input box (multi-line) |
 | `Ctrl+V` | paste a clipboard screenshot (inserts `[Image N]`, expanded to a path for the worker to read on send) |
-| `/add` | add a worker via wizard: **name → cli → role → working directory** |
+| `/add` | add a worker via wizard: **name → cli → model → role → working directory** (model blank = CLI default) |
 | `/clear [name]` | clear a worker's context (no name = all); identity is re-injected and the worker stands by again |
+| `/restart <name> [fresh]` | relaunch a worker's CLI with the correct MCP config (`fresh` = brand-new session) |
+| `/todo …` | unattended task list: `add <content>` / `list` / `rm <seq>` / `clear` / `start [nudge-minutes]` / `stop` / `resume` |
 | `/remove bob` | remove a worker (closes its pane) |
 | `/help` | usage |
 | `/lang` | switch UI language (中文 / English), takes effect immediately |
@@ -109,7 +115,7 @@ falinks lang                    # switch UI language (set before launch)
 ```jsonc
 {
   "agents": [
-    { "name": "alice", "cli": "claude", "cwd": ".", "role": "lead",    "bootstrap": "You coordinate and delegate." },
+    { "name": "alice", "cli": "claude", "cwd": ".", "role": "lead",    "bootstrap": "You coordinate and delegate.", "model": "claude-opus-4-8" },
     { "name": "bob",   "cli": "codex",  "cwd": ".", "role": "backend", "bootstrap": "You write the backend." }
   ],
   "routes": { "manager": "alice" },
@@ -119,6 +125,7 @@ falinks lang                    # switch UI language (set before launch)
 
 - `cwd`: the worker's working directory (defaults to where you ran falinks; usually everyone shares it).
 - `role` / `bootstrap`: the worker's role and opening setup.
+- `model`: pin this worker's model (optional; omit for the CLI default). Passed as `claude --model` / `codex -m` and kept across restart/resume.
 - `routes`: map a role alias to a specific worker (optional).
 - `guards`: runaway protection (turn cap / messages-per-minute cap / repeat-loop breaker).
 - `busPort` is optional; omit it and the OS assigns a free port (lets multiple projects run at once).

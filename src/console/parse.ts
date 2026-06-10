@@ -34,7 +34,7 @@ export function parseConsoleInput(line: string): ConsoleAction {
     }
     if (cmd === 'remove') {
       if (!args[0]) return { kind: 'error', message: t().usageRemove };
-      return { kind: 'remove', name: args[0] };
+      return { kind: 'remove', name: args[0].replace(/^@/, '') };
     }
     if (cmd === 'restart') {
       if (!args[0]) return { kind: 'error', message: t().usageRestart };

@@ -44,6 +44,9 @@ export function parseConfig(raw: any): FalinksConfig {
         throw new Error(`config.agents[${i}].${f} must be a non-empty string`);
     }
     if (names.has(a.name)) throw new Error(`duplicate agent name: ${a.name}`);
+    // boss 是虚拟老板、falinks 是 todolist 汇总的系统发件人;配置里撞名会遮蔽两者。
+    if (a.name === 'boss' || a.name === 'falinks')
+      throw new Error(`config.agents[${i}].name "${a.name}" is reserved`);
     names.add(a.name);
     if (a.model !== undefined && typeof a.model !== 'string')
       throw new Error(`config.agents[${i}].model must be a string`);

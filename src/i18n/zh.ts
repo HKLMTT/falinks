@@ -18,7 +18,7 @@ export const zh = {
     '7×24 AI 牛马，永不摸鱼（大概）',
     '老板一句话，牛马忙到趴',
   ] as string[],
-  helpStatus: '@名字 私聊 · @all 群发 · 纯文本=回复上次对话目标 · /add 加员工 · /remove 删员工 · /clear [名字] 清空上下文',
+  helpStatus: '@名字 私聊 · @all 群发 · 纯文本=回复上次对话目标 · /add 加员工 · /remove 删员工 · /clear [名字] 清空上下文 · /restart 重启员工 · /todo 任务清单 · /lead 选组长',
   guardrailBlocked: '被护栏拦截',
   sayUndelivered: (to: string, err: string) => `未送达 ${to}：${err}`,
   sayOk: (to: string) => `→ ${to}`,

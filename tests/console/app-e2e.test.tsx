@@ -120,7 +120,8 @@ renderE2E('e2e:滚轮 burst 进回看(底部活区仍在),Esc 回到最新', asy
 });
 
 
-renderE2E('e2e:Esc 开取消排队浮层,Enter 取消选中条 → 等送达计数缩、历史标已取消', async () => {
+// 全套并发跑时偶发超默认 5s(单跑 <1s),提时限消 flaky。
+renderE2E('e2e:Esc 开取消排队浮层,Enter 取消选中条 → 等送达计数缩、历史标已取消', { timeout: 15000 }, async () => {
   router.send('boss', 'alice', '占住-alice');   // 即时投递 → alice busy
   router.send('boss', 'alice', '排队-甲');      // 排队
   router.send('boss', 'alice', '排队-乙');      // 排队

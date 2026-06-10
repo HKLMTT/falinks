@@ -32,6 +32,14 @@ test('parseConfig rejects duplicate agent names', () => {
   ).toThrow(/duplicate agent name/);
 });
 
+test('parseConfig rejects reserved agent names (boss / falinks)', () => {
+  for (const name of ['boss', 'falinks']) {
+    expect(() =>
+      parseConfig({ busPort: 1, agents: [{ name, cli: 'claude', cwd: '/a', bootstrap: 'b' }] }),
+    ).toThrow(/reserved/);
+  }
+});
+
 test('parseConfig rejects empty agents', () => {
   expect(() => parseConfig({ busPort: 1, agents: [] })).toThrow(/at least one agent/);
 });

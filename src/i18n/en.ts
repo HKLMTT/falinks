@@ -20,7 +20,7 @@ export const en: typeof zh = {
     '24/7 AI workhorses, never slacking (probably)',
     'One word from the boss, the horses run themselves ragged',
   ] as string[],
-  helpStatus: '@name = DM · @all = broadcast · plain text = reply to last target · /add a worker · /remove a worker · /clear [name] wipe context',
+  helpStatus: '@name = DM · @all = broadcast · plain text = reply to last target · /add a worker · /remove a worker · /clear [name] wipe context · /restart relaunch agent · /todo task list · /lead pick lead',
   guardrailBlocked: 'blocked by guardrail',
   sayUndelivered: (to: string, err: string) => `not delivered to ${to}: ${err}`,
   sayOk: (to: string) => `→ ${to}`,

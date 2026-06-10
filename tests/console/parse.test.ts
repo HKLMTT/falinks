@@ -52,6 +52,7 @@ test('/add name cli cwd -> add', () => {
 
 test('/remove name -> remove', () => {
   expect(parseConsoleInput('/remove bob')).toEqual({ kind: 'remove', name: 'bob' });
+  expect(parseConsoleInput('/remove @bob')).toEqual({ kind: 'remove', name: 'bob' });
 });
 
 test('/help -> help', () => {
