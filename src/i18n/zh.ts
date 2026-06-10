@@ -114,6 +114,7 @@ export const zh = {
     lead: '指定组长(协调者):弹出选择器选一个员工',
     help: '显示用法',
     restart: '重启某员工的 CLI(带 falinks 配置;加 fresh=全新会话)',
+    todo: '任务清单:add/list/rm/clear/start/stop/resume,无人值守按序执行',
   } as Record<string, string>,
 
   // —— console/parse.ts ——
@@ -126,6 +127,10 @@ export const zh = {
   usageMention: '用法: @<name> <message> 或 @all <message>',
   unknownError: '未知错误',
   langFailed: 'lang 失败',
+  usageTodo: '用法: /todo add <内容> | list | rm <序号> | clear | start [巡查分钟] | stop | resume',
+  usageTodoAdd: '用法: /todo add <任务内容>(可多行)',
+  usageTodoRm: '用法: /todo rm <序号>',
+  usageTodoStart: '用法: /todo start [巡查间隔分钟,正整数,默认10]',
 
   // —— discovery.ts:按 cwd 寻址运行中的总线 ——
   busNotFound: '找不到运行中的 falinks —— `falinks` 在运行吗？',
@@ -226,4 +231,21 @@ export const zh = {
   tplResearchResearcher: '调研员，负责查证与资料收集',
   tplResearchWriter: '撰写，把调研整理成文',
   tplResearchEditor: '审校，审查并润色 writer 的产出',
+
+  // —— todolist 消息模板(下发/巡查以 boss 名义、自包含;汇总以 falinks 名义入流水)——
+  todoDispatchMsg: (seq: number, total: number, body: string, isResend: boolean) =>
+    `【任务 ${seq}/${total}】${isResend ? '(重发)' : ''}${body}\n完成后调用 taskdone(seq:${seq}, status:"done"|"failed", result:"…")上报,系统才会下发下一条;勿用 sendmsg 回复本条,过程中可照常与团队/boss 沟通。`,
+  todoNudgeMsg: (seq: number, total: number, body: string, n: number) =>
+    `【任务 ${seq}/${total} 进度巡查】全员已空闲 ${n} 分钟仍未收到上报。任务内容:${body}\n已完成请调 taskdone(seq:${seq}, status:"done"|"failed", result:"…");仍在推进则继续即可,本提醒每 ${n} 分钟一次。`,
+  todoSummaryTitle: (done: number, failed: number, total: number) => `【todolist 跑完】共 ${total} 条:✅ ${done} 成 · ❌ ${failed} 败`,
+  todoSummaryLine: (seq: number, ok: boolean, body: string, result: string) => `${ok ? '✅' : '❌'} #${seq} ${body} — ${result}`,
+  todoSuspendedMsg: '【todolist 挂起】当前没有组长,任务暂停下发;/lead 指定组长后自动继续。',
+  todoSendFailingMsg: '【todolist 告警】连续多次消息发送失败(守卫拦截或组长不可达),清单可能停滞,请检查。',
+  todoProgressLine: (k: number, total: number, body: string, paused: boolean) =>
+    `📋 ${k}/${total} 当前:${body}${paused ? ' [⏸ 已暂停]' : ''}`,
+  todoResumeHint: (left: number, total: number) => `检测到未完成的 todolist(剩 ${left}/${total} 条),/todo resume 继续`,
+  todoListTitle: '任务清单(Esc 关闭)',
+  todoListEmpty: '(空)— /todo add <内容> 添加',
+  todoOpOk: (op: string) => `todo ${op} 完成`,
+  todoAddOk: (seq: number) => `已加入任务 #${seq}`,
 };

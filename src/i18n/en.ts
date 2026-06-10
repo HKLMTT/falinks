@@ -109,6 +109,7 @@ export const en: typeof zh = {
     lead: 'Designate the lead (coordinator): opens a picker',
     help: 'show usage',
     restart: "restart an agent's CLI (with falinks config; add fresh = brand-new session)",
+    todo: 'task list: add/list/rm/clear/start/stop/resume — runs tasks in order, unattended',
   } as Record<string, string>,
 
   // —— console/parse.ts ——
@@ -121,6 +122,10 @@ export const en: typeof zh = {
   usageMention: 'usage: @<name> <message> or @all <message>',
   unknownError: 'unknown error',
   langFailed: 'lang switch failed',
+  usageTodo: 'usage: /todo add <content> | list | rm <seq> | clear | start [nudge-minutes] | stop | resume',
+  usageTodoAdd: 'usage: /todo add <task content> (may be multiline)',
+  usageTodoRm: 'usage: /todo rm <seq>',
+  usageTodoStart: 'usage: /todo start [progress check interval in minutes, positive integer, default 10]',
 
   // —— discovery.ts ——
   busNotFound: 'No running falinks found — is `falinks` running?',
@@ -221,4 +226,21 @@ export const en: typeof zh = {
   tplResearchResearcher: 'Researcher, responsible for fact-checking and gathering material',
   tplResearchWriter: 'Writer, turns the research into prose',
   tplResearchEditor: "Editor, reviews and polishes the writer's output",
+
+  // —— todolist message templates (dispatch/nudge sent as boss; summary sent as falinks) ——
+  todoDispatchMsg: (seq: number, total: number, body: string, isResend: boolean) =>
+    `[Task ${seq}/${total}]${isResend ? ' (resend)' : ''} ${body}\nWhen done, call taskdone(seq:${seq}, status:"done"|"failed", result:"…") to report — the system won't dispatch the next task until you do. Don't reply to this message via sendmsg; you can still communicate with the team/boss as usual.`,
+  todoNudgeMsg: (seq: number, total: number, body: string, n: number) =>
+    `[Task ${seq}/${total} progress check] Everyone has been idle for ${n} minutes with no taskdone report. Task: ${body}\nIf done, call taskdone(seq:${seq}, status:"done"|"failed", result:"…"); if still in progress just continue — this reminder repeats every ${n} minutes.`,
+  todoSummaryTitle: (done: number, failed: number, total: number) => `[todolist finished] ${total} tasks: ✅ ${done} succeeded · ❌ ${failed} failed`,
+  todoSummaryLine: (seq: number, ok: boolean, body: string, result: string) => `${ok ? '✅' : '❌'} #${seq} ${body} — ${result}`,
+  todoSuspendedMsg: '[todolist suspended] No lead assigned — task dispatch paused. Assign a lead with /lead and it will resume automatically.',
+  todoSendFailingMsg: '[todolist warning] Message delivery has failed repeatedly (guardrail or lead unreachable) — the list may be stalled, please investigate.',
+  todoProgressLine: (k: number, total: number, body: string, paused: boolean) =>
+    `📋 ${k}/${total} current: ${body}${paused ? ' [⏸ suspended]' : ''}`,
+  todoResumeHint: (left: number, total: number) => `Unfinished todolist detected (${left}/${total} tasks remaining) — /todo resume to continue`,
+  todoListTitle: 'Task list (Esc to close)',
+  todoListEmpty: '(empty) — /todo add <content> to add tasks',
+  todoOpOk: (op: string) => `todo ${op} done`,
+  todoAddOk: (seq: number) => `Task #${seq} added`,
 };
