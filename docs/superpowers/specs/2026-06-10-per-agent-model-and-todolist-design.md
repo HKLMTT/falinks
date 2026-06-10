@@ -19,6 +19,7 @@
   - claude:命令追加 `--model <m>`——**fresh 与 `--resume` 两种命令都加**(否则重启恢复的会话漂回全局默认,正是 pasg-dev 事故里模型漂移的路径);
   - codex:追加模型参数,**具体 flag 实现前 spike 验证**(疑似 `-m <m>`,与现有 `-c` 内联配置共存;**`codex resume <id>` 是否吃同一 flag 也一并验证**);验证不通过则 codex 暂不支持 model 字段并在启动时控制台报错提示,绝不静默忽略。
 - 传递链全程透传 model:`/add` 向导(见下)→ `/admin/add` body → `BusDeps.onAddAgent(spec)` → `launchInto(a)` → `buildAgentLaunch`。
+- **修复既有缺口**:`onAddAgent` 目前只 launchInto + 写回配置文件,**不把新员工 push 进内存 `cfg.agents`**——导致本会话内对 /add 创建的员工 `/restart` 报 unknown agent(它查 cfg.agents)、`/lead` 切换的 bootstrap 重组也漏掉它。本期一并修:onAddAgent 成功后把 spec(含 model)push 进 `cfg.agents`。否则"model 贯穿 /restart"的承诺对主入口(/add 向导)不成立。
 - `/add` 向导(console)在选完 cli 后加一步「模型(留空=CLI 默认)」,自由文本,不做名单校验——**填错的自然兜底**:CLI 启动失败 → 员工永不报到 → A-1 失联检测 90s 内亮 ⚠(v0.10.x 已交付的机制)。
 - 持久化口同步:`src/team-persist.ts` 的 `addAgentToConfigFile` 写回 model;`src/templates.ts` 模板 agent 支持可选 model。
 - `/restart` 走 launchInto 同链路,自动沿用配置 model,无需额外改动。
@@ -56,8 +57,8 @@ interface TodoState {
 不碰 iTerm/HTTP/文件;依赖注入:`now()`、`dispatch(task, isResend)`(下发回调)、`nudge(task)`(巡查询问回调)、`announce(text)`(汇总/告警回调)、`persist(state)`。全部逻辑可纯单测。
 
 接口(供 index.ts 与 admin 端点调用):
-- `add(body)`:任何状态可加(running 时往队尾追加);
-- `rm(seq)`:仅 pending 可删,current/done/failed 拒绝;
+- `add(body)`:任何状态可加(running 时往队尾追加);**finished 态 add 自动转 idle 并清除已完结条目**(汇总已发进消息流不丢信息)——否则「跑完→直接加明晚任务→start 报错→被迫 clear 连新任务一起删」;
+- `rm(seq)`:pending 可删;**paused 态额外允许 rm current**(标 failed、result="boss 移除",resume 后从下一条继续)——lead 永不上报且巡查无效时 boss 的脱困正路;running 态的 current 与 done/failed 拒绝;
 - `clear()`:仅非 running 可清空整单;
 - `start(nMinutes?)`:校验 ①list 非空 ②state 为 idle/finished(finished 需先 clear,start 报错提示) ③**有 lead**(无则报错「先 /lead 指定组长」);置 running,下发第一条;
 - `stop()`:running→paused;不再下发与巡查;**迟到的 taskdone 仍记录结果但不下发下一条**;
@@ -76,13 +77,17 @@ interface TodoState {
 - 工具 description 写明「仅 todolist 运行中由组长调用」;
 - 调用本身经 bus handler 打点 touchMcp → 顺带自愈 lead 的 ⚠(与失联检测天然衔接)。
 
-### 下发与巡查消息(身份设计)
+### 下发与巡查消息(身份设计与送达保障)
 
-- **下发/巡查均以 boss 名义** `router.send('boss', lead, …)`:lead 按 houseRules 回 boss 无害;若用非成员名,lead `sendmsg(to=该名)` 会 unknown target 报错。
+- **下发/巡查均以 boss 名义** `router.send('boss', lead, …)`:lead 按 houseRules 回 boss 无害;若用非成员名,lead `sendmsg(to=该名)` 会 unknown target 报错。boss 虚拟、从不 handling → 每条都是新 thread,夜跑不累积回合数(已对照 guards 代码核实)。
+- **send 返回值必须检查**(undefined = 被守卫丢弃:限流/lead dead):
+  - 下发失败:引擎不标"已派发",由下一轮巡查兜底重试——**巡查机制同时就是下发失败的重试机制**,这是设计依赖,不是巧合;
+  - 巡查失败:**不重置巡查计时**(否则每次失败白等 N 分钟),下一 tick 重试;
+  - 连续失败(≥3)→ announce 告警一条(边沿)。
 - 下发模板:「【任务 k/n】<body>↵完成后调用 taskdone(seq:k, status:"done"|"failed", result:"…")上报,系统才会下发下一条;勿用 sendmsg 回复本条,过程中可照常与团队/boss 沟通。」
 - 巡查模板**自包含**(lead 被 /clear 或换人后也能接上):「【任务 k/n 进度巡查】全员已空闲 N 分钟仍未收到上报。任务内容:<body>。已完成请调 taskdone(seq:k,…);仍在推进则继续即可,本提醒每 N 分钟一次。」
+- **重发防叠**:引擎记录最近一次下发的消息 id;重发(resume/换 lead)前先 `router.cancelQueued(id)` 撤掉可能仍在 inbox 排队的旧下发——否则 lead 忙时 stop→resume 会顺序收到同一任务两份,副作用型任务有重复执行风险。
 - **汇总**:`router.send('falinks', 'boss', 汇总)`——**不注册** `falinks` 为虚拟成员(`send()` 不校验发件人,只解析收件人;注册反而会让它出现在花名册里污染 roster)。to=boss 虚拟 → 纯入消息流,控制台可见,不投递任何 pane;未知发件人在消息渲染里走默认色。`/add` 拒绝保留名 `falinks`(`boss` 已被 name-exists 天然拒绝)。
-- guards 兼容:boss 虚拟、从不 handling → 每条巡查/下发都是新 thread,不撞回合上限;频率低不触发限流。
 
 ### 空闲巡查计时(tick 内)
 
@@ -101,8 +106,8 @@ interface TodoState {
 
 - console:`/todo add <内容(可多行)>`、`/todo list`、`/todo rm <seq>`、`/todo clear`、`/todo start [N分钟]`、`/todo stop`、`/todo resume`;`/todo` 带子命令补全;**add 的内容取命令关键字之后的原始余文**(保留换行与空格,不能走现有的 `split(/\s+/)` 整行拆词);`start` 的 N 校验正整数;
 - bus:`POST /admin/todo` `{op: 'add'|'rm'|'clear'|'start'|'stop'|'resume', …}` 统一分发 + `GET /admin/todo` 返回完整状态(列表/进度);
-- 控制台呈现:① running/paused 时活区常驻一行进度「📋 k/n 当前:<body 截断> [⏸ 已暂停]」(并入现有 roster/diag 轮询,GET /admin/todo);② `/todo list` 输出复用 /help 的本地呈现机制(多行,不入消息流);
-- 启动恢复提示:index.ts 启动载入 todo 文件,发现未跑完(paused 且有未完成条目)→ 控制台 status 提示「检测到未完成的 todolist(k/n 完成),/todo resume 继续」。
+- 控制台呈现:① running/paused 时活区常驻一行进度「📋 k/n 当前:<body 截断> [⏸ 已暂停]」(并入现有 roster/diag 轮询,GET /admin/todo);② `/todo list` 用**底部浮层**展示(同 langPick//lead 选择器的模式:多行渲染、Esc 关闭)——控制台没有"本地多行输出"通道(/help 只是单行 status,历史区完全由服务端消息流派生),不要往那条路走;
+- 启动恢复提示:**由控制台自己从 GET /admin/todo 推导**(paused 且有未完成条目 → status 行提示「检测到未完成的 todolist(k/n 完成),/todo resume 继续」)——单窗口与分离控制台两种模式统一(分离模式拿不到 up 进程的启动期 status)。
 
 ### 边界与有意不做
 
@@ -118,8 +123,8 @@ interface TodoState {
 | `src/agent/mcp-config.ts` | LaunchSpec.model;claude `--model`(fresh+resume);codex spike 后定 |
 | `src/core/todo.ts`(新) | TodoEngine 纯类:状态机/巡查计时/挂起/汇总 |
 | `src/todo-store.ts`(新) | todos 落盘/载入(running→paused 降级) |
-| `src/bus/server.ts` | taskdone 工具(lead+seq 校验);`/admin/todo` GET/POST;onAddAgent spec.model 透传 |
-| `src/index.ts` | TodoEngine 接线:tick 进健康轮询、dispatch/nudge/announce 回调、启动恢复提示;launchInto/composeBootstrap model 透传 |
+| `src/bus/server.ts` | taskdone 工具(lead+seq 校验);`/admin/todo` GET/POST;**BusDeps 加 `todo` 依赖钩子**(taskdone/op/state 三口,触达 index.ts 里的引擎);onAddAgent spec.model 透传 |
+| `src/index.ts` | TodoEngine 接线:tick 进健康轮询、dispatch/nudge/announce/persist 回调(dispatch/nudge 检查 send 返回值);launchInto model 透传;**onAddAgent push 进 cfg.agents** |
 | `src/console/parse.ts` `commands.ts` `app.tsx` | /todo 子命令解析与补全;进度常驻行;向导加模型步 |
 | `src/team-persist.ts` | model 写回配置 |
 | `src/templates.ts` | 模板 agent 可选 model |
@@ -127,10 +132,11 @@ interface TodoState {
 
 ### 测试要点
 
-- TodoEngine 纯单测:线性下发→taskdone 推进;failed 继续;最后一条→finished+汇总;seq 错位拒绝;重复 taskdone 拒绝;stop 后迟到 taskdone 只记录;resume 重发 current;巡查计时四种重置事件;空闲满 N 触发 nudge 且永不放弃;lead 缺失挂起(边沿一次告警)与恢复重发;running 时 add 追加/rm 仅 pending/clear 仅非 running;start 校验(空单/已 running/无 lead)。
+- TodoEngine 纯单测:线性下发→taskdone 推进;failed 继续;最后一条→finished+汇总;seq 错位拒绝;重复 taskdone 拒绝;stop 后迟到 taskdone 只记录;resume 重发 current(且先 cancelQueued 旧下发);巡查计时四种重置事件;**巡查/下发 send 失败不重置计时、连续失败边沿告警**;空闲满 N 触发 nudge 且永不放弃;lead 缺失挂起(边沿一次告警)与恢复重发;running 时 add 追加/rm 仅 pending/clear 仅非 running;**finished 态 add 转 idle 清旧条目**;**paused 态 rm current 标 failed**;start 校验(空单/已 running/无 lead)。
 - todo-store:载入 running→paused;round-trip。
 - bus:taskdone 非 lead 拒绝、无任务拒绝、seq 校验;/admin/todo op 分发。
-- model:buildAgentLaunch 各 CLI/各模式(fresh/resume)命令含 model 参数;不填不含;config 解析;team-persist 写回。
+- console:**/todo add 多行原始余文解析**(防 split 拆碎回归);**/todo 子命令补全**(现 commandState 正则打出空格即失活,子命令补全是新逻辑);浮层渲染。
+- model:buildAgentLaunch 各 CLI/各模式(fresh/resume)命令含 model 参数;不填不含;config 解析;team-persist 写回;**onAddAgent 后 cfg.agents 含新员工(/restart 可用)**。
 - 实机验收:3 条任务清单(lead 真 claude):正常推进两条(taskdone 驱动)→ 故意让 lead 不上报,等 N(用 1 分钟配置)触发巡查 → lead 补报 → 第三条标 failed → 汇总出现在消息流;/todo stop+resume 重发;重启后提示 resume。
 
 ### 验收标准(对照需求原文)
@@ -155,3 +161,13 @@ interface TodoState {
 9. `/todo add` 多行内容会被现有 `split(/\s+/)` 拆碎 → 解析取关键字后原始余文。
 10. resume 不校验 lead 会"恢复即挂起"造成困惑 → resume 与 start 同校验。
 11. codex 的 resume 命令是否吃模型 flag 未知 → 并入 spike 验证项。
+
+第三轮对抗性审查(独立复核,对照实码)追加修正:
+
+12. 「复用 /help 多行呈现」机制不存在(/help 仅单行 status)→ /todo list 改底部浮层(langPick 模式)。
+13. /add 创建的员工不进内存 cfg.agents → 本会话 /restart 报 unknown、/lead 重组漏掉 → onAddAgent 补 push(既有缺口,功能 1 的 model 承诺依赖它)。
+14. send() 被守卫丢弃返回 undefined 全程未处理(3am 静默丢的残余路径)→ 下发失败靠巡查重试(写明设计依赖)、巡查失败不重置计时、连续失败边沿告警。
+15. finished 态 add 后被迫 clear 连新任务一起删 → finished 态 add 自动转 idle 清旧条目。
+16. stop→resume 重发与 inbox 排队旧下发叠成两份(副作用任务重复执行风险)→ 重发前 cancelQueued。
+17. current 卡死无脱困正路 → paused 态允许 rm current(标 failed 跳过)。
+18. 启动恢复提示只在单窗口模式可达 → 改由控制台从 GET /admin/todo 推导,两模式统一。
