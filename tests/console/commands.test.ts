@@ -1,10 +1,10 @@
 import { expect, test } from 'vitest';
-import { commandState, applyCommand, COMMANDS } from '../../src/console/commands.js';
+import { commandState, applyCommand, COMMANDS, todoSubState } from '../../src/console/commands.js';
 
 test('bare / activates with all commands', () => {
   const s = commandState('/');
   expect(s.active).toBe(true);
-  expect(s.matches.map((c) => c.name)).toEqual(['add', 'remove', 'restart', 'clear', 'lang', 'lead', 'help']);
+  expect(s.matches.map((c) => c.name)).toEqual(['add', 'remove', 'restart', 'todo', 'clear', 'lang', 'lead', 'help']);
 });
 
 test('/a matches add', () => {
@@ -56,4 +56,17 @@ test('/res completes to restart', () => {
   const s = commandState('/res');
   expect(s.active).toBe(true);
   expect(s.matches.map((c) => c.name)).toContain('restart');
+});
+
+test('/tod completes to todo', () => {
+  const s = commandState('/tod');
+  expect(s.matches.map((c) => c.name)).toContain('todo');
+});
+
+test('todoSubState 在 "/todo " 之后给子命令补全', () => {
+  const s = todoSubState('/todo st');
+  expect(s.active).toBe(true);
+  expect(s.matches).toEqual(['start', 'stop']);
+  expect(todoSubState('/todo ').matches.length).toBe(7);
+  expect(todoSubState('/clear x').active).toBe(false);
 });

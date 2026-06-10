@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { Box, Text, measureElement, useStdin, useStdout } from 'ink';
 import { parseConsoleInput, lastReplyTarget } from './parse.js';
 import { mentionState, applyMention } from './mention.js';
-import { commandState, applyCommand } from './commands.js';
+import { commandState, applyCommand, todoSubState } from './commands.js';
 import { CLIS, dirSuggestions, fsListDirs } from './wizard.js';
 import { nameColor, formatTime, NAME_COLORS, statusGlyph, SPINNER_FRAMES } from './log-format.js';
 import { renderMarkdown } from './markdown.js';
@@ -53,6 +53,8 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
   const [status, setStatus] = useState(initialStatus ?? '');
   const [wizard, setWizard] = useState<WizardState | null>(null);
   const [langPick, setLangPick] = useState<number | null>(null); // null=未激活,否则=高亮项 index
+  const [todoState, setTodoState] = useState<any>(null); // GET /admin/todo 轮询结果(进度行+列表浮层共用)
+  const [todoView, setTodoView] = useState(false);        // /todo list 浮层开关
   const [leadPick, setLeadPick] = useState<number | null>(null); // /lead 选组长选择器:null=未激活
   const [qCancel, setQCancel] = useState<number | null>(null); // 取消排队浮层:null=未激活,否则=高亮项 index
   const [questions, setQuestions] = useState<any[]>([]);
@@ -108,7 +110,8 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
   });
 
   // 轮询去重:数据没变就不 setState——否则每秒一个新数组引用就重渲染一次(活区无谓重绘)。
-  const lastSeen = useRef({ roster: '', log: '', questions: '', diag: '' });
+  const lastSeen = useRef({ roster: '', log: '', questions: '', diag: '', todo: '' });
+  const todoHinted = useRef(false); // 恢复提示只弹一次(首次轮询发现 paused 残档时)
   useEffect(() => {
     const tick = async () => {
       try {
@@ -132,6 +135,14 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
         const d = await admin(port, 'GET', '/admin/diag?limit=200');
         const ds = JSON.stringify(d.diag ?? []);
         if (ds !== lastSeen.current.diag) { lastSeen.current.diag = ds; setDiag(d.diag ?? []); }
+        const td = await admin(port, 'GET', '/admin/todo');
+        const tds = JSON.stringify(td.todo ?? null);
+        if (tds !== lastSeen.current.todo) { lastSeen.current.todo = tds; setTodoState(td.todo ?? null); }
+        // 恢复提示:首次拿到 paused 且还有未完任务的清单(如重启办公室后)提示 /todo resume,只弹一次。
+        if (!todoHinted.current && td.todo && td.todo.state === 'paused') {
+          const left = td.todo.tasks.filter((x: any) => x.status === 'pending' || x.status === 'current').length;
+          if (left > 0) { todoHinted.current = true; setStatus(t().todoResumeHint(left, td.todo.tasks.length)); }
+        }
       } catch {
         /* up 还没起或断开，忽略 */
       }
@@ -172,6 +183,12 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
       if (a.kind === 'add') { const r = await admin(port, 'POST', '/admin/add', a.spec); setStatus(r.ok ? t().addOk(a.spec.name) : '⚠ ' + (r.error ?? t().addFailed)); return; }
       if (a.kind === 'remove') { const r = await admin(port, 'POST', '/admin/remove', { name: a.name }); setStatus(r.ok ? t().removeOk(a.name) : '⚠ ' + (r.error ?? t().removeFailed)); return; }
       if (a.kind === 'restart') { const r = await admin(port, 'POST', '/admin/restart', { name: a.name, fresh: a.fresh }); setStatus(r.ok ? t().restartOk(a.name) : '⚠ ' + (r.error ?? t().restartFailed)); return; }
+      if (a.kind === 'todo') {
+        if (a.op === 'list') { setTodoView(true); return; }
+        const r = await admin(port, 'POST', '/admin/todo', { op: a.op, body: a.body, seq: a.seq, n: a.n });
+        setStatus(r.ok ? (a.op === 'add' && typeof r.seq === 'number' ? t().todoAddOk(r.seq) : t().todoOpOk(a.op)) : '⚠ ' + (r.error ?? t().unknownError));
+        return;
+      }
       if (a.kind === 'clear') {
         const r = await admin(port, 'POST', '/admin/clear', { name: a.name });
         // /clear 全员(无名)成功:重置 committed——视口自绘,数据清了屏就清了(alt screen 无 scrollback 残留)。
@@ -211,12 +228,16 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
     return replyTarget ? { mode: 'to', to: replyTarget } : { mode: 'none' };
   })();
   const cmd = commandState(input);
+  const todoSub = todoSubState(input); // "/todo <部分子命令>":commandState 出现空格即失活,子命令补全单独接
   const mention = mentionState(input, names);
   let items: { label: string; hint: string }[] = [];
   let complete: ((i: number) => string) | null = null;
   if (cmd.active) {
     items = cmd.matches.map((c) => ({ label: c.usage, hint: c.hint }));
     complete = (i) => applyCommand(cmd.matches[i].name);
+  } else if (todoSub.active) {
+    items = todoSub.matches.map((s) => ({ label: '/todo ' + s, hint: '' }));
+    complete = (i) => '/todo ' + todoSub.matches[i] + ' ';
   } else if (mention.active) {
     items = mention.matches.map((n) => ({ label: '@' + n, hint: n === 'all' ? t().broadcastAllHint : '' }));
     complete = (i) => applyMention(input, mention.matches[i]);
@@ -293,13 +314,19 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
     const totalLines = flatLines.length;
     const page = Math.max(1, viewHRef.current - 1);
     if (ev.type === 'scroll') {
-      const menuActive = wizard || langPick !== null || leadPick !== null || qCancel !== null || active || (answering && !!pendingQ && scrollOff === 0);
+      const menuActive = wizard || langPick !== null || leadPick !== null || qCancel !== null || todoView || active || (answering && !!pendingQ && scrollOff === 0);
       if (menuActive) { handleKey({ type: ev.dir }); return; }
       setScrollOff((o) => clampOffset(o + (ev.dir === 'up' ? ev.n : -ev.n), totalLines, viewHRef.current));
       return;
     }
     if (ev.type === 'pageup') { setScrollOff((o) => clampOffset(o + page, totalLines, viewHRef.current)); return; }
     if (ev.type === 'pagedown') { setScrollOff((o) => clampOffset(o - page, totalLines, viewHRef.current)); return; }
+
+    // 任务清单浮层:Esc/Enter 关闭,其它键吞掉(只读列表,无选中态)。
+    if (todoView) {
+      if (ev.type === 'esc' || ev.type === 'enter') { setTodoView(false); return; }
+      return;
+    }
 
     // 向导模式：优先处理
     if (wizard) {
@@ -601,6 +628,12 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
         ) : null}
         {unresp.length ? <Text color="red">{t().unresponsiveWarn(unresp)}</Text> : null}
         {hasDiag ? <Text color="yellow">{t().diagWarn(drops, injFails, fastIdle)}</Text> : null}
+        {/* todolist 进度常驻行:running/paused 时显示 已完成+当前/总数 与当前任务首行 */}
+        {todoState && (todoState.state === 'running' || todoState.state === 'paused') ? (() => {
+          const cur = todoState.tasks.find((x: any) => x.status === 'current');
+          const k = todoState.tasks.filter((x: any) => x.status === 'done' || x.status === 'failed').length + (cur ? 1 : 0);
+          return <Text color="cyan">{t().todoProgressLine(k, todoState.tasks.length, cur ? String(cur.body).split('\n')[0].slice(0, 60) : '-', todoState.state === 'paused')}</Text>;
+        })() : null}
 
         {confirmExit ? (
           <Box marginTop={1}>
@@ -630,6 +663,15 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
               <Text key={m.id} inverse={i === Math.min(qCancel, Math.max(0, queuedMsgs.length - 1))} wrap="truncate-end">
                 {'  → '}<Text color={colorFor(m.to)} bold>{m.to}</Text>{'  '}{String(m.body).replace(/\s+/g, ' ').slice(0, 60)}
               </Text>
+            ))}
+          </Box>
+        ) : todoView ? (
+          <Box flexDirection="column" marginTop={1}>
+            <Text color="yellow">{t().todoListTitle}</Text>
+            {!todoState || todoState.tasks.length === 0 ? (
+              <Text dimColor>  {t().todoListEmpty}</Text>
+            ) : todoState.tasks.map((x: any) => (
+              <Text key={x.seq}>  {x.status === 'done' ? '✅' : x.status === 'failed' ? '❌' : x.status === 'current' ? '▶' : '·'} #{x.seq} {String(x.body).split('\n')[0].slice(0, 70)}{x.result ? ` — ${String(x.result).slice(0, 40)}` : ''}</Text>
             ))}
           </Box>
         ) : wizard ? (

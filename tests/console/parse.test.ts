@@ -95,6 +95,30 @@ test('empty input -> noop', () => {
   expect(parseConsoleInput('   ').kind).toBe('noop');
 });
 
+test('/todo add 取原始余文(多行与空格保留)', () => {
+  expect(parseConsoleInput('/todo add 跑全量回归\n再出报告')).toEqual({ kind: 'todo', op: 'add', body: '跑全量回归\n再出报告' });
+});
+
+test('/todo 各子命令', () => {
+  expect(parseConsoleInput('/todo list')).toEqual({ kind: 'todo', op: 'list' });
+  expect(parseConsoleInput('/todo rm 3')).toEqual({ kind: 'todo', op: 'rm', seq: 3 });
+  expect(parseConsoleInput('/todo clear')).toEqual({ kind: 'todo', op: 'clear' });
+  expect(parseConsoleInput('/todo start')).toEqual({ kind: 'todo', op: 'start' });
+  expect(parseConsoleInput('/todo start 5')).toEqual({ kind: 'todo', op: 'start', n: 5 });
+  expect(parseConsoleInput('/todo stop')).toEqual({ kind: 'todo', op: 'stop' });
+  expect(parseConsoleInput('/todo resume')).toEqual({ kind: 'todo', op: 'resume' });
+});
+
+test('/todo 参数校验错误', () => {
+  expect(parseConsoleInput('/todo')).toMatchObject({ kind: 'error' });
+  expect(parseConsoleInput('/todo add')).toMatchObject({ kind: 'error' });
+  expect(parseConsoleInput('/todo add   ')).toMatchObject({ kind: 'error' });
+  expect(parseConsoleInput('/todo rm x')).toMatchObject({ kind: 'error' });
+  expect(parseConsoleInput('/todo start 0')).toMatchObject({ kind: 'error' });
+  expect(parseConsoleInput('/todo start 2.5')).toMatchObject({ kind: 'error' });
+  expect(parseConsoleInput('/todo bogus')).toMatchObject({ kind: 'error' });
+});
+
 test('parses /restart with optional fresh flag', () => {
   expect(parseConsoleInput('/restart lead')).toEqual({ kind: 'restart', name: 'lead', fresh: false });
   expect(parseConsoleInput('/restart @lead fresh')).toEqual({ kind: 'restart', name: 'lead', fresh: true });

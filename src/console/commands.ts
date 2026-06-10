@@ -12,6 +12,7 @@ export const COMMANDS: CommandDef[] = [
   { name: 'add', usage: '/add <name> <cli> <cwd>', get hint() { return t().cmdHint.add; } },
   { name: 'remove', usage: '/remove <name>', get hint() { return t().cmdHint.remove; } },
   { name: 'restart', usage: '/restart <name> [fresh]', get hint() { return t().cmdHint.restart; } },
+  { name: 'todo', usage: '/todo add|list|rm|clear|start|stop|resume', get hint() { return t().cmdHint.todo; } },
   { name: 'clear', usage: '/clear [name]', get hint() { return t().cmdHint.clear; } },
   { name: 'lang', usage: '/lang', noArgs: true, get hint() { return t().cmdHint.lang; } },
   { name: 'lead', usage: '/lead', noArgs: true, get hint() { return t().cmdHint.lead; } },
@@ -36,4 +37,17 @@ export function commandState(value: string): CommandState {
 /** 把输入补全成 `/<name> `（后跟空格，便于继续打参数）。 */
 export function applyCommand(name: string): string {
   return `/${name} `;
+}
+
+export const TODO_SUBS = ['add', 'list', 'rm', 'clear', 'start', 'stop', 'resume'] as const;
+
+export interface TodoSubState { active: boolean; query: string; matches: string[]; }
+
+/** "/todo <部分子命令>" 的补全状态(commandState 的正则在出现空格后失活,这里单独接)。 */
+export function todoSubState(value: string): TodoSubState {
+  const m = value.match(/^\/todo\s+(\S*)$/);
+  if (!m) return { active: false, query: '', matches: [] };
+  const query = m[1].toLowerCase();
+  const matches = TODO_SUBS.filter((s) => s.startsWith(query));
+  return { active: matches.length > 0, query, matches };
 }
