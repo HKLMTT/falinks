@@ -7,8 +7,8 @@ function mk(initial?: TodoState) {
   let now = 0;
   let nextId = 0;
   const calls = {
-    dispatch: [] as { seq: number; isResend: boolean }[],
-    nudge: [] as number[],
+    dispatch: [] as { seq: number; pos: number; isResend: boolean }[],
+    nudge: [] as { seq: number; pos: number }[],
     cancel: [] as string[],
     summary: 0, suspended: 0, sendFailing: 0,
     persist: 0,
@@ -16,8 +16,8 @@ function mk(initial?: TodoState) {
   let sendOk = true; // false 模拟守卫丢弃
   const e = new TodoEngine({
     now: () => now,
-    dispatch: (t, _total, isResend) => { calls.dispatch.push({ seq: t.seq, isResend }); return sendOk ? `msg${++nextId}` : undefined; },
-    nudge: (t) => { calls.nudge.push(t.seq); return sendOk; },
+    dispatch: (t, pos, _total, isResend) => { calls.dispatch.push({ seq: t.seq, pos, isResend }); return sendOk ? `msg${++nextId}` : undefined; },
+    nudge: (t, pos) => { calls.nudge.push({ seq: t.seq, pos }); return sendOk; },
     cancelQueued: (id) => { calls.cancel.push(id); },
     announceSummary: () => { calls.summary++; },
     announceSuspended: () => { calls.suspended++; },
@@ -77,7 +77,7 @@ test('stop→resume 时 current 未完结:撤旧排队再重发(防叠两份)', 
   e.stop();
   e.resume(true);
   expect(calls.cancel).toEqual(['msg1']);
-  expect(calls.dispatch).toEqual([{ seq: 1, isResend: false }, { seq: 1, isResend: true }]);
+  expect(calls.dispatch).toEqual([{ seq: 1, pos: 1, isResend: false }, { seq: 1, pos: 1, isResend: true }]);
 });
 
 test('巡查:无人忙满 N 触发 nudge 并重置;有人忙/下发/巡查后计时重置;永不放弃', () => {
@@ -86,19 +86,19 @@ test('巡查:无人忙满 N 触发 nudge 并重置;有人忙/下发/巡查后计
   setNow(5 * MIN); e.tick(false, true);
   expect(calls.nudge.length).toBe(0); // 未满 N(下发时刻重置过)
   setNow(10 * MIN + 1); e.tick(false, true);
-  expect(calls.nudge).toEqual([1]);   // 满 N 巡查
+  expect(calls.nudge).toEqual([{ seq: 1, pos: 1 }]);   // 满 N 巡查
   setNow(15 * MIN); e.tick(true, true);   // 有人忙 → 重置
   setNow(24 * MIN); e.tick(false, true);  // 距重置 9 分钟,未满
   expect(calls.nudge.length).toBe(1);
   setNow(25 * MIN + 1); e.tick(false, true);
-  expect(calls.nudge).toEqual([1, 1]); // 永不放弃,再问
+  expect(calls.nudge).toEqual([{ seq: 1, pos: 1 }, { seq: 1, pos: 1 }]); // 永不放弃,再问
 });
 
 test('start 可指定 N', () => {
   const { e, calls, setNow } = mk();
   e.add('a'); e.start(2, true);
   setNow(2 * MIN + 1); e.tick(false, true);
-  expect(calls.nudge).toEqual([1]);
+  expect(calls.nudge).toEqual([{ seq: 1, pos: 1 }]);
 });
 
 test('send 失败:下发失败靠巡查兜底;巡查失败不重置计时下一 tick 重试;连续失败≥3 边沿公告一次', () => {
@@ -126,7 +126,7 @@ test('lead 缺失挂起(边沿公告一次),恢复后撤旧排队重发 current'
   expect(calls.nudge.length).toBe(0); // 挂起期间不巡查
   e.tick(false, true); // lead 回归
   expect(calls.cancel).toEqual(['msg1']);
-  expect(calls.dispatch).toEqual([{ seq: 1, isResend: false }, { seq: 1, isResend: true }]);
+  expect(calls.dispatch).toEqual([{ seq: 1, pos: 1, isResend: false }, { seq: 1, pos: 1, isResend: true }]);
 });
 
 test('add:running 追加队尾;finished 后 add 自动转 idle 清旧账', () => {
@@ -191,4 +191,17 @@ test('paused 态 rm 掉最后的 current → finished+汇总;随后 add 清旧�
   expect(calls.summary).toBe(1);
   e.add('c'); // finished+add → 清旧账转 idle
   expect(e.state().tasks.map((t) => t.body)).toEqual(['c']);
+});
+
+test('finished+add 清旧账后再 start:dispatch 收到 pos=1(seq 已是更大值)', () => {
+  const { e, calls } = mk();
+  // 跑完第一批(seq 1)
+  e.add('a'); e.start(undefined, true); e.taskdone(1, 'done', 'x');
+  expect(e.state().state).toBe('finished');
+  // 清旧账加新任务(seq 2),start 后 dispatch 应 pos=1、seq=2
+  e.add('new-task');
+  e.start(undefined, true);
+  const last = calls.dispatch[calls.dispatch.length - 1];
+  expect(last.pos).toBe(1);   // 显示用位置:第 1 条(新清单)
+  expect(last.seq).toBe(2);   // id 不归零:seq=2
 });

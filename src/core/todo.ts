@@ -3,10 +3,16 @@ import type { TodoState, TodoTask } from '../todo-store.js';
 /** 引擎对外副作用全部经回调注入(index.ts 拼模板/落盘),引擎本体纯逻辑可单测。 */
 export interface TodoCallbacks {
   now(): number;
-  /** 把任务下发给当前 lead;返回消息 id,被守卫丢弃/无法送达时 undefined(引擎靠巡查兜底重试)。 */
-  dispatch(task: TodoTask, total: number, isResend: boolean): string | undefined;
-  /** 巡查询问(模板自包含任务内容,同时就是下发失败的重试);返回是否发送成功。 */
-  nudge(task: TodoTask, total: number): boolean;
+  /**
+   * 把任务下发给当前 lead;返回消息 id,被守卫丢弃/无法送达时 undefined(引擎靠巡查兜底重试)。
+   * pos: 显示用位置(1-based,用于「第 pos/total 条」);seq: taskdone 指令用 id,不归零。
+   */
+  dispatch(task: TodoTask, pos: number, total: number, isResend: boolean): string | undefined;
+  /**
+   * 巡查询问(模板自包含任务内容,同时就是下发失败的重试);返回是否发送成功。
+   * pos: 显示用位置(1-based);seq: taskdone 指令用 id。
+   */
+  nudge(task: TodoTask, pos: number, total: number): boolean;
   /** 撤掉仍在 inbox 排队的旧下发(重发防叠两份)。 */
   cancelQueued(msgId: string): void;
   announceSummary(tasks: TodoTask[]): void;
@@ -146,7 +152,8 @@ export class TodoEngine {
     if (anyBusy) { this.idleSince = now; return; } // 有人在干活,计时重置(锚定在本次事件时刻)
     if (this.idleSince === undefined) { this.idleSince = now; return; }
     if (now - this.idleSince >= this.st.nudgeMinutes * MIN_MS) {
-      if (this.cb.nudge(cur, this.st.tasks.length)) { this.noteSendOk(); this.idleSince = now; } // 发出即重置(每满 N 一问)
+      const pos = this.st.tasks.indexOf(cur) + 1; // 显示用位置(1-based);cur 必在列表中
+      if (this.cb.nudge(cur, pos, this.st.tasks.length)) { this.noteSendOk(); this.idleSince = now; } // 发出即重置(每满 N 一问)
       else this.noteSendFail(); // 失败不重置:下一 tick 立刻重试
     }
   }
@@ -164,7 +171,7 @@ export class TodoEngine {
       }
       task.status = 'current';
     }
-    const id = this.cb.dispatch(task, this.st.tasks.length, isResend);
+    const id = this.cb.dispatch(task, this.st.tasks.indexOf(task) + 1, this.st.tasks.length, isResend);
     if (id) { this.lastDispatchId = id; this.noteSendOk(); }
     else this.noteSendFail(); // 下发被丢:不标已派发,巡查模板自包含,满 N 自然兜底重试
     this.idleSince = this.cb.now(); // 下发(含尝试)即重置巡查计时(锚定在下发时刻)

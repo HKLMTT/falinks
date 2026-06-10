@@ -228,10 +228,10 @@ export const en: typeof zh = {
   tplResearchEditor: "Editor, reviews and polishes the writer's output",
 
   // —— todolist message templates (dispatch/nudge sent as boss; summary sent as falinks) ——
-  todoDispatchMsg: (seq: number, total: number, body: string, isResend: boolean) =>
-    `[Task ${seq}/${total}]${isResend ? ' (resend)' : ''} ${body}\nWhen done, call taskdone(seq:${seq}, status:"done"|"failed", result:"…") to report — the system won't dispatch the next task until you do. Don't reply to this message via sendmsg; you can still communicate with the team/boss as usual.`,
-  todoNudgeMsg: (seq: number, total: number, body: string, n: number) =>
-    `[Task ${seq}/${total} progress check] Everyone has been idle for ${n} minutes with no taskdone report. Task: ${body}\nIf done, call taskdone(seq:${seq}, status:"done"|"failed", result:"…"); if still in progress just continue — this reminder repeats every ${n} minutes.`,
+  todoDispatchMsg: (seq: number, pos: number, total: number, body: string, isResend: boolean) =>
+    `[task #${seq} · ${pos}/${total}]${isResend ? ' (resend)' : ''} ${body}\nWhen done, call taskdone(seq:${seq}, status:"done"|"failed", result:"…") to report — the system won't dispatch the next task until you do. Don't reply to this message via sendmsg; you can still communicate with the team/boss as usual.`,
+  todoNudgeMsg: (seq: number, pos: number, total: number, body: string, n: number) =>
+    `[task #${seq} (${pos}/${total}) progress check] Everyone has been idle for ${n} minutes with no taskdone report. Task: ${body}\nIf done, call taskdone(seq:${seq}, status:"done"|"failed", result:"…"); if still in progress just continue — this reminder repeats every ${n} minutes.`,
   todoSummaryTitle: (done: number, failed: number, total: number) => `[todolist finished] ${total} tasks: ✅ ${done} succeeded · ❌ ${failed} failed`,
   todoSummaryLine: (seq: number, ok: boolean, body: string, result: string) => `${ok ? '✅' : '❌'} #${seq} ${body} — ${result}`,
   todoSuspendedMsg: '[todolist suspended] No lead assigned — task dispatch paused. Assign a lead with /lead and it will resume automatically.',

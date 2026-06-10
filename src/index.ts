@@ -99,15 +99,15 @@ export async function up(configPath: string) {
   // nudge 回调里引用 todo.state()(运行期才执行,安全);显式注解类型,避开 tsc 的自引用推断报错(TS7022)。
   const todo: TodoEngine = new TodoEngine({
     now: () => Date.now(),
-    dispatch: (task, total, isResend) => {
+    dispatch: (task, pos, total, isResend) => {
       const lead = currentLead();
       if (!lead) return undefined;
-      return router.send('boss', lead, t().todoDispatchMsg(task.seq, total, task.body, isResend))?.id;
+      return router.send('boss', lead, t().todoDispatchMsg(task.seq, pos, total, task.body, isResend))?.id;
     },
-    nudge: (task, total) => {
+    nudge: (task, pos, total) => {
       const lead = currentLead();
       if (!lead) return false;
-      return !!router.send('boss', lead, t().todoNudgeMsg(task.seq, total, task.body, todo.state().nudgeMinutes));
+      return !!router.send('boss', lead, t().todoNudgeMsg(task.seq, pos, total, task.body, todo.state().nudgeMinutes));
     },
     cancelQueued: (id) => { router.cancelQueued(id); },
     announceSummary: (tasks: TodoTask[]) => {

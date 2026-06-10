@@ -233,10 +233,10 @@ export const zh = {
   tplResearchEditor: '审校，审查并润色 writer 的产出',
 
   // —— todolist 消息模板(下发/巡查以 boss 名义、自包含;汇总以 falinks 名义入流水)——
-  todoDispatchMsg: (seq: number, total: number, body: string, isResend: boolean) =>
-    `【任务 ${seq}/${total}】${isResend ? '(重发)' : ''}${body}\n完成后调用 taskdone(seq:${seq}, status:"done"|"failed", result:"…")上报,系统才会下发下一条;勿用 sendmsg 回复本条,过程中可照常与团队/boss 沟通。`,
-  todoNudgeMsg: (seq: number, total: number, body: string, n: number) =>
-    `【任务 ${seq}/${total} 进度巡查】全员已空闲 ${n} 分钟仍未收到上报。任务内容:${body}\n已完成请调 taskdone(seq:${seq}, status:"done"|"failed", result:"…");仍在推进则继续即可,本提醒每 ${n} 分钟一次。`,
+  todoDispatchMsg: (seq: number, pos: number, total: number, body: string, isResend: boolean) =>
+    `【任务 #${seq}·第 ${pos}/${total} 条】${isResend ? '(重发)' : ''}${body}\n完成后调用 taskdone(seq:${seq}, status:"done"|"failed", result:"…")上报,系统才会下发下一条;勿用 sendmsg 回复本条,过程中可照常与团队/boss 沟通。`,
+  todoNudgeMsg: (seq: number, pos: number, total: number, body: string, n: number) =>
+    `【任务 #${seq}(第 ${pos}/${total} 条)进度巡查】全员已空闲 ${n} 分钟仍未收到上报。任务内容:${body}\n已完成请调 taskdone(seq:${seq}, status:"done"|"failed", result:"…");仍在推进则继续即可,本提醒每 ${n} 分钟一次。`,
   todoSummaryTitle: (done: number, failed: number, total: number) => `【todolist 跑完】共 ${total} 条:✅ ${done} 成 · ❌ ${failed} 败`,
   todoSummaryLine: (seq: number, ok: boolean, body: string, result: string) => `${ok ? '✅' : '❌'} #${seq} ${body} — ${result}`,
   todoSuspendedMsg: '【todolist 挂起】当前没有组长,任务暂停下发;/lead 指定组长后自动继续。',
