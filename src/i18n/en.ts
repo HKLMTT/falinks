@@ -32,6 +32,13 @@ export const en: typeof zh = {
   addFailed: 'add failed',
   removeFailed: 'remove failed',
   clearFailed: 'clear failed',
+  restartOk: (n: string) => `restarted ${n} (waiting for it to re-register)`,
+  restartFailed: 'restart failed',
+  restartBusy: (n: string) => `${n} is restarting/clearing, try again later`,
+  unresponsiveWarn: (items: { name: string; mcpSeen: boolean }[]) =>
+    '⚠ ' +
+    items.map((i) => `${i.name}${i.mcpSeen ? ' (MCP connected but never registered; session may be wedged)' : ' (CLI likely missing falinks MCP config; manually restarted?)'}`).join(', ') +
+    ' — try /restart <name> [fresh]',
   clearAll: 'everyone',
   clearNone: 'none',
   clearJoiner: ', ',
@@ -99,10 +106,12 @@ export const en: typeof zh = {
     lang: 'Switch language (zh/en)',
     lead: 'Designate the lead (coordinator): opens a picker',
     help: 'show usage',
+    restart: "restart an agent's CLI (with falinks config; add fresh = brand-new session)",
   } as Record<string, string>,
 
   // —— console/parse.ts ——
   usageRemove: 'usage: /remove <name>',
+  usageRestart: 'usage: /restart <name> [fresh]',
   usageAdd: 'usage: /add <name> (pick cli and dir via wizard), or /add <name> <cli> <dir>',
   usageLang: 'Usage: /lang (pick from the menu)',
   usageLead: 'Usage: /lead (pick from the menu)',

@@ -30,6 +30,14 @@ export const zh = {
   addFailed: 'add 失败',
   removeFailed: 'remove 失败',
   clearFailed: 'clear 失败',
+  restartOk: (n: string) => `已重启 ${n}(等它重新报到)`,
+  restartFailed: '重启失败',
+  restartBusy: (n: string) => `${n} 正在重启/清空中,稍后再试`,
+  // 失联警告行:按"是否连过 MCP"分流两种病因文案。
+  unresponsiveWarn: (items: { name: string; mcpSeen: boolean }[]) =>
+    '⚠ ' +
+    items.map((i) => `${i.name}${i.mcpSeen ? '(MCP 连过但未报到,会话可能瘫痪)' : '(CLI 可能没挂 falinks 工具,手动重启过?)'}`).join('、') +
+    ' —— 试试 /restart <名字> [fresh]',
   clearAll: '全员',
   clearNone: '无',
   clearJoiner: '、',
@@ -103,10 +111,12 @@ export const zh = {
     lang: '切换语言(中/英)',
     lead: '指定组长(协调者):弹出选择器选一个员工',
     help: '显示用法',
+    restart: '重启某员工的 CLI(带 falinks 配置;加 fresh=全新会话)',
   } as Record<string, string>,
 
   // —— console/parse.ts ——
   usageRemove: '用法: /remove <name>',
+  usageRestart: '用法: /restart <name> [fresh]',
   usageAdd: '用法: /add <名字>（按向导选 cli 和目录），或 /add <名字> <cli> <目录>',
   usageLang: '用法: /lang（按提示选语言）',
   usageLead: '用法: /lead（按提示选组长）',
