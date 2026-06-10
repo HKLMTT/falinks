@@ -44,6 +44,8 @@ export interface BusDeps {
   onShutdown?(closePanes: boolean): Promise<{ ok: boolean }>;
   onLang?(locale: 'zh' | 'en' | 'auto'): Promise<'zh' | 'en'>;
   onSetLead?(name: string): Promise<{ ok: boolean; error?: string }>;
+  /** 重启某员工的 CLI(带正确 MCP 配置;fresh=清会话记录全新开局)。 */
+  onRestartAgent?(name: string, fresh: boolean): Promise<{ ok: boolean; error?: string }>;
   /** 返回最近的诊断事件(守卫丢消息/注入失败/可疑自动 idle)；缺省视为无诊断。 */
   getDiag?(): unknown[];
 }
@@ -256,6 +258,15 @@ export async function startBus(deps: BusDeps, port: number, opts?: BusOptions): 
         if (!deps.onSetLead) return sendJson({ ok: false, error: 'lead not supported' });
         try {
           const r = await deps.onSetLead(String(abody.name));
+          return sendJson(r);
+        } catch (e: any) {
+          return sendJson({ ok: false, error: String(e?.message ?? e) });
+        }
+      }
+      if (req.method === 'POST' && url.pathname === '/admin/restart') {
+        if (!deps.onRestartAgent) return sendJson({ ok: false, error: 'restart not supported' });
+        try {
+          const r = await deps.onRestartAgent(String(abody.name), abody.fresh === true);
           return sendJson(r);
         } catch (e: any) {
           return sendJson({ ok: false, error: String(e?.message ?? e) });
