@@ -2,10 +2,11 @@ import { EventEmitter } from 'node:events';
 import { expect, test } from 'vitest';
 import { installResizeClear } from '../../src/console/run.js';
 
-// 整屏清除前缀:清屏 + 清滚动区 + 光标归位。窗口变窄时 iTerm2 回流已打印的行,
-// 必须在 resize 时整屏擦一次并重置 Ink 帧账,否则增量 eraseLines 擦错位、残留旧 logo。
+// resize 清屏前缀:只清可视屏 + 光标归位,不带 3J。窗口变窄时 iTerm2 回流已打印的行,
+// 必须在 resize 时擦一次可视屏并重置 Ink 帧账,否则增量 eraseLines 擦错位、残留旧 logo。
+// 但不清 scrollback(3J)——历史在终端原生滚动区里,清了就再也滚不回去(Claude Code 同款取舍)。
 // 同时:清屏只在 resize 发生,不是每帧——否则 1s 轮询下界面狂闪(本次回归的根因)。
-const CLEAR = '\u001B[2J\u001B[3J\u001B[H';
+const CLEAR_SCREEN = '[2J[H';
 
 function fakeStdout() {
   const ee = new EventEmitter() as any;
@@ -15,7 +16,7 @@ function fakeStdout() {
   return ee;
 }
 
-test('resize 触发:整屏清除 + 重置 Ink 帧账', () => {
+test('resize 触发:清可视屏(不清 scrollback)+ 重置 Ink 帧账', () => {
   const stdout = fakeStdout();
   let cleared = 0;
   installResizeClear(stdout, () => { cleared++; });
@@ -24,11 +25,12 @@ test('resize 触发:整屏清除 + 重置 Ink 帧账', () => {
   expect(cleared).toBe(0);
 
   stdout.emit('resize');
-  expect(stdout.writes).toEqual([CLEAR]); // resize 时整屏清一次
-  expect(cleared).toBe(1);               // 并重置帧账
+  expect(stdout.writes).toEqual([CLEAR_SCREEN]); // resize 时清一次可视屏
+  expect(stdout.writes[0]).not.toContain('[3J'); // 决不清 scrollback:历史要能滚回去
+  expect(cleared).toBe(1);                       // 并重置帧账
 
   stdout.emit('resize');
-  expect(stdout.writes).toEqual([CLEAR, CLEAR]); // 每次 resize 各清一次
+  expect(stdout.writes).toEqual([CLEAR_SCREEN, CLEAR_SCREEN]); // 每次 resize 各清一次
   expect(cleared).toBe(2);
 });
 
@@ -39,5 +41,5 @@ test('用 prependListener:抢在 Ink 自己的 resize 处理之前清屏', () =>
   installResizeClear(stdout, () => order.push('reset')); // 我们后安装,但要先跑
 
   stdout.emit('resize');
-  expect(order).toEqual(['reset', 'ink']); // 清屏+重置在 Ink 重绘之前
+  expect(order).toEqual(['reset', 'ink']);
 });

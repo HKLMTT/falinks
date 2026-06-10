@@ -17,16 +17,28 @@ export type KeyEvent =
   | { type: 'esc' }
   | { type: 'up' }
   | { type: 'down' }
-  | { type: 'pageup' }   // PageUp(保留解码;原生 scrollback 接管回看,App 不再特殊处理)
-  | { type: 'pagedown' } // PageDown(同上)
+  | { type: 'pageup' }   // PageUp:回看视口整页上翻
+  | { type: 'pagedown' } // PageDown:回看视口整页下翻
   | { type: 'left' }
   | { type: 'right' }
   | { type: 'home' }
   | { type: 'end' }
   | { type: 'ctrl'; key: string } // ctrl+<小写字母>，如 c/v
+  | { type: 'scroll'; dir: 'up' | 'down'; n: number } // 滚轮(1007 burst,由 wheelBurst 合成;decodeKey 不产生)
   | { type: 'unknown'; raw: string };
 
 const CSI_U = /^\x1b\[(\d+)(?:;(\d+))?u$/;
+
+/**
+ * 识别 alternate scroll(DECSET 1007)滚轮事件:alt screen 下终端把滚轮一格转成
+ * **同一 stdin chunk 里连续 ≥2 个**同向方向键(iTerm2 默认 3 个/格)。键盘单按/按住重复
+ * 每次都是单独一个 chunk 单个序列,永远不会凑成 burst——以此与键盘 ↑/↓ 消歧,无需鼠标上报。
+ */
+export function wheelBurst(s: string): { dir: 'up' | 'down'; n: number } | null {
+  const m = /^(?:\x1b\[A|\x1bOA){2,}$/.test(s) ? 'up' : /^(?:\x1b\[B|\x1bOB){2,}$/.test(s) ? 'down' : null;
+  if (!m) return null;
+  return { dir: m, n: s.length / 3 };
+}
 
 export function decodeKey(s: string): KeyEvent {
   // kitty CSI-u: ESC [ code ; mods u   （mods = 1 + 位掩码：1=Shift,2=Alt,4=Ctrl）

@@ -70,8 +70,16 @@ export const zh = {
     if (fastIdle) parts.push(`${fastIdle} 次可疑过早空闲`);
     return `⚠ 协作诊断:${parts.join(' · ')}(可能致卡死;/clear 全员可清空)`;
   },
-  /** 底部活区"等送达"行:仍在对方 inbox 排队、尚未投出的目标聚合(targets 形如 `→ qa · → backend`)。空则不显示。 */
-  pendingDeliver: (targets: string) => `⏳ 等送达: ${targets}`,
+  /** 底部活区"等送达"行:仍在对方 inbox 排队、尚未投出的目标聚合(targets 形如 `→ qa ×2 · → backend`)。空则不显示。 */
+  pendingDeliver: (targets: string) => `⏳ 等送达: ${targets} · Esc 取消排队`,
+  /** 取消排队浮层 */
+  qcancelTitle: (n: number) => `取消排队消息(共 ${n} 条)（↑↓ 选 · Enter 取消该条 · Esc 关闭）`,
+  qcancelOk: (to: string) => `✗ 已取消 1 条排队消息(→ ${to})`,
+  qcancelFailed: '取消失败(可能刚已送达)',
+  /** 历史里被撤销消息的标记 */
+  canceledMark: ' ✗已取消',
+  /** 回看态提示:offset=距最新多少行。 */
+  browseHint: (offset: number) => `↑ 回看中(距最新 ${offset} 行)· 滚轮/↑↓ 移动 · PgUp/PgDn 翻页 · Esc 或输入回到最新`,
   langAuto: '跟随系统',
   langZh: '中文',
   langEn: 'English',

@@ -186,6 +186,11 @@ export async function startBus(deps: BusDeps, port: number, opts?: BusOptions): 
         const msg = router.send('boss', String(abody.to), String(abody.message));
         return sendJson(msg ? { ok: true, id: msg.id } : { ok: false, error: 'unknown or dropped' });
       }
+      if (req.method === 'POST' && url.pathname === '/admin/cancel') {
+        // 撤销仍在排队的消息;已投出/不存在 → ok:false(控制台提示"可能已送达")。
+        const r = router.cancelQueued(String(abody.id));
+        return sendJson(r.ok ? { ok: true, to: r.to } : { ok: false, error: 'not queued' });
+      }
       if (req.method === 'POST' && url.pathname === '/admin/broadcast') {
         const sent: string[] = [];
         for (const a of router.roster()) {

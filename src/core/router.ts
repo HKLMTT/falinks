@@ -158,6 +158,21 @@ export class Router {
     return ids;
   }
 
+  /** 撤销一条仍在 inbox 排队的消息(按 id 全员查找)。已投出/不存在返回 ok:false。
+   *  流水里保留记录并标 canceled——历史可见"发过但被撤",不凭空消失。 */
+  cancelQueued(id: string): { ok: boolean; to?: AgentName } {
+    for (const a of this.agents.values()) {
+      const i = a.inbox.findIndex((m) => m.id === id);
+      if (i >= 0) {
+        a.inbox.splice(i, 1);
+        const rec = this.messageLog.find((m) => m.id === id);
+        if (rec) rec.canceled = true;
+        return { ok: true, to: a.name };
+      }
+    }
+    return { ok: false };
+  }
+
   /** 若 agent 空闲且 inbox 非空，取出一条投递并标 busy。 */
   private pump(a: AgentRuntime): void {
     if (a.status !== 'idle') return;

@@ -10,7 +10,7 @@ import { startBus, type Bus } from '../../src/bus/server.js';
 import { setLocale } from '../../src/i18n/index.js';
 
 // 端到端:真 bus + 真 Router → 渲染真实控制台 <App> → 读帧文本,
-// 验证「消息历史提交进终端原生 scrollback(<Static>)」与「底部活区花名册 statusline」整条链路。
+// 验证「消息历史进回看视口(alt screen 全屏自绘)」与「底部活区花名册 statusline」整条链路。
 
 function fakeStdout(columns: number, rows: number) {
   const out = new EventEmitter() as any;
@@ -61,7 +61,7 @@ afterEach(async () => { await bus.close(); });
 // 故"渲染层" e2e 仅本地跑、CI 跳过(CI=true 时)。本地用于盯整条 JSX 链路。
 const renderE2E = test.skipIf(!!process.env.CI);
 
-renderE2E('e2e:消息提交进 scrollback(<Static>)+ 底部活区花名册 statusline', async () => {
+renderE2E('e2e:消息进历史视口 + 底部活区花名册 statusline', async () => {
   router.send('boss', 'alice', 'hello-alice');  // alice idle → 即时投递 → busy
   router.send('boss', 'bob', 'hello-bob');       // bob idle → 即时投递
 
@@ -92,3 +92,64 @@ test('e2e(HTTP):/admin/log 的 queued 随投递翻转(排队中 → 已送达)',
   expect(log2.log.find((m: any) => m.id === m2.id).queued).toBe(false); // 已送达
 });
 
+renderE2E('e2e:滚轮 burst 进回看(底部活区仍在),Esc 回到最新', async () => {
+  for (let i = 1; i <= 30; i++) router.send('boss', 'alice', `历史消息-${i}`); // 远超 12 行视口
+
+  const stdout = fakeStdout(80, 14); // 矮终端:历史必被视口裁剪
+  const stdin = fakeStdin();
+  const inst = render(<App port={bus.port} />, { stdout, stdin, exitOnCtrlC: false, patchConsole: false });
+  // 最后一个**有内容**的帧(Ink 还会写 ?25l 等控制序列小片段,不能直接取 at(-1))。
+  const lastFrame = () => (stdout.frames as string[]).map(strip).filter((x) => x.trim()).at(-1) ?? '';
+  try {
+    await waitFor(() => lastFrame().includes('历史消息-30')); // 实时态:贴底显示最新
+    expect(lastFrame()).not.toContain('回看中');
+
+    stdin.emit('data', '\x1b[A\x1b[A\x1b[A'); // 滚轮一格(1007 burst:同 chunk 3 个 ↑)
+    await waitFor(() => lastFrame().includes('回看中'));
+    expect(lastFrame()).toContain('›'); // 底部输入区钉住不随滚动消失
+
+    for (let i = 0; i < 40; i++) stdin.emit('data', '\x1b[A\x1b[A\x1b[A'); // 滚到顶
+    await waitFor(() => lastFrame().includes('历史消息-1'));
+    expect(lastFrame()).not.toContain('历史消息-30'); // 最新的已滚出视口
+
+    stdin.emit('data', '\x1b'); // Esc 回底
+    await waitFor(() => lastFrame().includes('历史消息-30') && !lastFrame().includes('回看中'));
+  } finally {
+    inst.unmount();
+  }
+});
+
+
+renderE2E('e2e:Esc 开取消排队浮层,Enter 取消选中条 → 等送达计数缩、历史标已取消', async () => {
+  router.send('boss', 'alice', '占住-alice');   // 即时投递 → alice busy
+  router.send('boss', 'alice', '排队-甲');      // 排队
+  router.send('boss', 'alice', '排队-乙');      // 排队
+
+  const stdout = fakeStdout(100, 30);
+  const stdin = fakeStdin();
+  const inst = render(<App port={bus.port} />, { stdout, stdin, exitOnCtrlC: false, patchConsole: false });
+  const lastFrame = () => (stdout.frames as string[]).map(strip).filter((x) => x.trim()).at(-1) ?? '';
+  try {
+    await waitFor(() => lastFrame().includes('等送达') && lastFrame().includes('×2'));
+
+    stdin.emit('data', '\x1b'); // Esc → 取消排队浮层
+    await waitFor(() => lastFrame().includes('取消排队消息'));
+    expect(lastFrame()).toContain('排队-甲');
+    expect(lastFrame()).toContain('排队-乙');
+
+    stdin.emit('data', '\r'); // Enter 取消选中(第一条:排队-甲)
+    try {
+      await waitFor(() => lastFrame().includes('已取消 1 条排队消息'));
+    } catch (e) {
+      console.error('DEBUG cancel frame:', JSON.stringify(lastFrame().split('\n')));
+      throw e;
+    }
+    await waitFor(() => !lastFrame().includes('×2')); // 等送达从 ×2 缩到 1 条
+    await waitFor(() => lastFrame().includes('✗已取消')); // 历史行标记
+
+    stdin.emit('data', '\x1b'); // Esc 关浮层(若仍开着)
+    await waitFor(() => !lastFrame().includes('取消排队消息('));
+  } finally {
+    inst.unmount();
+  }
+});

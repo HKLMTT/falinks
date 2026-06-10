@@ -1,14 +1,14 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { readFileSync } from 'node:fs';
-import { Box, Static, Text, useStdin, useStdout } from 'ink';
+import { Box, Text, measureElement, useStdin, useStdout } from 'ink';
 import { parseConsoleInput, lastReplyTarget } from './parse.js';
 import { mentionState, applyMention } from './mention.js';
 import { commandState, applyCommand } from './commands.js';
 import { CLIS, dirSuggestions, fsListDirs } from './wizard.js';
 import { nameColor, formatTime, NAME_COLORS, statusGlyph, SPINNER_FRAMES } from './log-format.js';
 import { renderMarkdown } from './markdown.js';
-import { decodeKey, type KeyEvent } from './keys.js';
-import { appendCommitted, pendingTargets } from './scrollback.js';
+import { decodeKey, wheelBurst, type KeyEvent } from './keys.js';
+import { appendCommitted, pendingCounts, wrapSegs, sliceView, clampOffset, type StyledSeg } from './scrollback.js';
 import { saveClipboardImage, expandImageTokens } from './clipboard.js';
 import { t, setLocale } from '../i18n/index.js';
 
@@ -38,10 +38,10 @@ type WizardState =
 export function App({ port, initialStatus }: { port: number; initialStatus?: string }) {
   const [roster, setRoster] = useState<any[]>([]);
   const [log, setLog] = useState<any[]>([]);
-  // 已提交进终端原生 scrollback 的消息(只增不改、引用稳定),交给 <Static> 一次性印出、永不重绘。
+  // 全量消息历史(只增不改、引用稳定),扁平成屏幕行后由回看视口切片渲染。
   const committedRef = useRef<any[]>([]);
   const [committed, setCommitted] = useState<any[]>([]);
-  const [pending, setPending] = useState<string[]>([]); // 仍在对方 inbox 排队、尚未投出的目标
+  const [pending, setPending] = useState<{ to: string; n: number }[]>([]); // 仍在对方 inbox 排队的目标+条数
   const [diag, setDiag] = useState<any[]>([]); // 协作诊断事件(守卫丢消息/注入失败/可疑过早 idle)
   const [input, setInput] = useState('');
   const [cursor, setCursor] = useState(0);
@@ -53,6 +53,7 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
   const [wizard, setWizard] = useState<WizardState | null>(null);
   const [langPick, setLangPick] = useState<number | null>(null); // null=未激活,否则=高亮项 index
   const [leadPick, setLeadPick] = useState<number | null>(null); // /lead 选组长选择器:null=未激活
+  const [qCancel, setQCancel] = useState<number | null>(null); // 取消排队浮层:null=未激活,否则=高亮项 index
   const [questions, setQuestions] = useState<any[]>([]);
   const [qSel, setQSel] = useState(0);
   const [customAns, setCustomAns] = useState<string | null>(null); // 答题"自定义回答"输入态:null=未在输入
@@ -67,6 +68,11 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
     { v: 'en', label: t().langEn },
   ] as const;
   const leadOpts: string[] = roster.filter((a) => !a.virtual).map((a) => a.name); // /lead 候选=非虚拟员工
+  // 仍在排队的消息清单(取消浮层的数据源,随 1s 轮询实时刷新);清空时浮层自动关。
+  const queuedMsgs = log.filter((m: any) => m.queued);
+  useEffect(() => {
+    if (qCancel !== null && queuedMsgs.length === 0) setQCancel(null);
+  }, [qCancel, queuedMsgs.length]);
 
   // 自研键盘输入：开 kitty 协议后，自己读 stdin + decodeKey，规范化成按键事件交给 handleKey。
   // 这样 Shift+Enter（kitty CSI-u）能和回车区分，且不依赖终端配置；中文/方向键/Ctrl 组合也照常。
@@ -74,18 +80,31 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
   useEffect(() => { setRawMode?.(true); }, [setRawMode]);
   const { stdout } = useStdout();
 
-  // 启动 banner:FALINKS logo + 版本 + tagline 启动时往 scrollback 打印一次(像 shell banner,
-  // 随后续消息自然滚走),不再常驻顶部。Static 模型下顶部不再钉任何东西。
+  // 终端尺寸跟踪:alt screen 全屏自绘,根盒钉 rows-1 × cols(严格小于终端行数,防最后一行换行顶滚)。
+  // 用 || 不用 ??:无 tty/pty 异常时 rows/columns 可能是 0,0 也要落到默认值;再加下限防极端小窗。
+  const readDims = () => ({ rows: Math.max(6, stdout?.rows || 24), cols: Math.max(20, stdout?.columns || 80) });
+  const [dims, setDims] = useState(readDims);
   useEffect(() => {
-    const banner =
-      '\x1b[1;36m╔═╗╔═╗╦  ╦╔╗╔╦╔═╔═╗\x1b[0m\n' +
-      '\x1b[1;36m╠╣ ╠═╣║  ║║║║╠╩╗╚═╗\x1b[0m\n' +
-      '\x1b[1;36m╚  ╩ ╩╩═╝╩╝╚╝╩ ╩╚═╝\x1b[0m\n' +
-      `\x1b[2mv${VERSION} · ${tagline}\x1b[0m\n\n`;
-    (stdout ?? process.stdout).write(banner);
-    // 仅启动一次。
+    if (!stdout) return;
+    const onResize = () => setDims(readDims());
+    stdout.on('resize', onResize);
+    return () => { stdout.off('resize', onResize); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [stdout]);
+  const { rows, cols } = dims;
+  // 回看偏移:0=实时贴底,>0=视口底边距最新多少行。
+  const [scrollOff, setScrollOff] = useState(0);
+  // 视口真实行数 = (rows-1) - 底部活区实测高度。每帧渲染后用 measureElement 量活区(高度随浮层/输入行数变),
+  // 只存 ref 不进 state——夹紧发生在按键时刻,无需重渲染;首帧前用保守估计兜底。
+  const viewApprox = Math.max(3, rows - 8);
+  const bottomBoxRef = useRef<any>(null);
+  const viewHRef = useRef(viewApprox);
+  useEffect(() => {
+    try {
+      const m = bottomBoxRef.current ? measureElement(bottomBoxRef.current) : null;
+      if (m?.height) viewHRef.current = Math.max(3, rows - 1 - m.height);
+    } catch { /* 测量失败保持上次值 */ }
+  });
 
   // 轮询去重:数据没变就不 setState——否则每秒一个新数组引用就重渲染一次(活区无谓重绘)。
   const lastSeen = useRef({ roster: '', log: '', questions: '', diag: '' });
@@ -95,7 +114,7 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
         const r = await admin(port, 'GET', '/admin/roster');
         const rs = JSON.stringify(r.roster ?? []);
         if (rs !== lastSeen.current.roster) { lastSeen.current.roster = rs; setRoster(r.roster ?? []); }
-        // 拉近 100 条全量:committed 增量提交进 scrollback,pendingTargets 算出"等送达"。
+        // 拉近 100 条全量:committed 增量提交进 scrollback,pendingCounts 按目标聚合"等送达"条数。
         const l = await admin(port, 'GET', '/admin/log?limit=100');
         const fullLog = l.log ?? [];
         const ls = JSON.stringify(fullLog);
@@ -104,7 +123,7 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
           setLog(fullLog);
           const next = appendCommitted(committedRef.current, fullLog);
           if (next !== committedRef.current) { committedRef.current = next; setCommitted(next); }
-          setPending(pendingTargets(fullLog));
+          setPending(pendingCounts(fullLog));
         }
         const q = await admin(port, 'GET', '/admin/questions');
         const qs = JSON.stringify(q.questions ?? []);
@@ -153,14 +172,14 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
       if (a.kind === 'remove') { const r = await admin(port, 'POST', '/admin/remove', { name: a.name }); setStatus(r.ok ? t().removeOk(a.name) : '⚠ ' + (r.error ?? t().removeFailed)); return; }
       if (a.kind === 'clear') {
         const r = await admin(port, 'POST', '/admin/clear', { name: a.name });
-        // /clear 全员(无名)成功:清终端原生 scrollback(否则已"印"进去的旧消息清不掉)+ 重置 committed。
-        // /clear <名字> 只清那个 pane 上下文,不动屏幕/scrollback。
+        // /clear 全员(无名)成功:重置 committed——视口自绘,数据清了屏就清了(alt screen 无 scrollback 残留)。
+        // /clear <名字> 只清那个 pane 上下文,不动消息历史。
         if (r.ok && !a.name) {
-          (stdout ?? process.stdout).write('\x1b[3J\x1b[2J\x1b[H');
           committedRef.current = [];
           setCommitted([]);
           lastSeen.current.log = '';
           setPending([]);
+          setScrollOff(0);
         }
         setStatus(r.ok ? t().cleared(a.name ?? t().clearAll, (r.cleared ?? []).join(t().clearJoiner) || t().clearNone) : '⚠ ' + (r.error ?? t().clearFailed));
         return;
@@ -210,6 +229,48 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
   const qSelClamped = pendingQ ? Math.min(qSel, pendingQ.options.length) : 0;
   const onCustomSlot = !!pendingQ && qSelClamped === pendingQ.options.length;
 
+  // 历史区内容按"屏幕行"扁平化:banner + 每条消息(头部行 + 自折行的正文 + 空行)。
+  // 自己折行(而非交给 Ink wrap)使 1 项=1 屏幕行,回看偏移才能按行精确滚动;
+  // 宽度/花名册配色变了整体重算(≤100 条消息,开销可忽略)。
+  const flatLines = useMemo<StyledSeg[][]>(() => {
+    const width = Math.max(8, cols - 1);
+    // committed 是首见快照,取消状态(canceled)发生在之后——从实时 log 按 id 查最新态。
+    const liveById = new Map<string, any>(log.map((m: any) => [m.id, m]));
+    const out: StyledSeg[][] = [
+      [{ text: '╔═╗╔═╗╦  ╦╔╗╔╦╔═╔═╗', color: 'cyan', bold: true }],
+      [{ text: '╠╣ ╠═╣║  ║║║║╠╩╗╚═╗', color: 'cyan', bold: true }],
+      [{ text: '╚  ╩ ╩╩═╝╩╝╚╝╩ ╩╚═╝', color: 'cyan', bold: true }],
+      [{ text: `v${VERSION} · ${tagline}`, dim: true }],
+      [],
+    ];
+    for (const m of committed) {
+      const header: StyledSeg[] = [];
+      if (m.ts) header.push({ text: formatTime(m.ts) + ' ', dim: true });
+      header.push(
+        { text: String(m.from), color: colorFor(m.from), bold: true },
+        { text: ' → ' },
+        { text: String(m.to), color: colorFor(m.to), bold: true },
+      );
+      if (liveById.get(m.id)?.canceled) header.push({ text: t().canceledMark, color: 'red', dim: true });
+      for (const row of wrapSegs(header, width)) out.push(row);
+      for (const line of renderMarkdown(String(m.body)))
+        for (const row of wrapSegs(line, width - 2)) out.push([{ text: '  ' }, ...row]);
+      out.push([]);
+    }
+    return out;
+    // colorFor 由 roster 派生(每帧新引用),依赖列 roster 本体。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [committed, cols, roster, tagline, log]);
+
+  // 新行追加时锚定回看位置:offset 按"距底行数"计,不补偿增量会被新消息顶着跑;实时态(0)保持贴底。
+  const totalLinesRef = useRef(0);
+  useEffect(() => {
+    const grew = Math.max(0, flatLines.length - totalLinesRef.current);
+    totalLinesRef.current = flatLines.length;
+    setScrollOff((o) => (o > 0 ? clampOffset(o + grew, flatLines.length, viewHRef.current) : 0));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [flatLines.length]);
+
   function handleKey(ev: KeyEvent) {
     // Ctrl+C：不直接退，先问是否关闭员工窗口（优先于一切）。
     if (confirmExit) {
@@ -225,6 +286,18 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
       return; // 确认中，吞掉其它键
     }
     if (ev.type === 'ctrl' && ev.key === 'c') { setConfirmExit(true); return; }
+
+    // 滚轮(1007 burst)/PageUp/PageDown:滚回看视口。浮层菜单开着时滚轮代行 ↑/↓ 选项(CC 同款手感)。
+    const totalLines = flatLines.length;
+    const page = Math.max(1, viewHRef.current - 1);
+    if (ev.type === 'scroll') {
+      const menuActive = wizard || langPick !== null || leadPick !== null || qCancel !== null || active || (answering && !!pendingQ && scrollOff === 0);
+      if (menuActive) { handleKey({ type: ev.dir }); return; }
+      setScrollOff((o) => clampOffset(o + (ev.dir === 'up' ? ev.n : -ev.n), totalLines, viewHRef.current));
+      return;
+    }
+    if (ev.type === 'pageup') { setScrollOff((o) => clampOffset(o + page, totalLines, viewHRef.current)); return; }
+    if (ev.type === 'pagedown') { setScrollOff((o) => clampOffset(o - page, totalLines, viewHRef.current)); return; }
 
     // 向导模式：优先处理
     if (wizard) {
@@ -293,6 +366,42 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
       }
       return;
     }
+
+    // 取消排队浮层:↑↓ 选 · Enter 取消选中那条 · Esc 关闭。列表随轮询刷新,可连续取消多条。
+    if (qCancel !== null) {
+      const selIdx = Math.min(qCancel, Math.max(0, queuedMsgs.length - 1));
+      if (ev.type === 'esc') { setQCancel(null); return; }
+      if (ev.type === 'up') { setQCancel(Math.max(0, selIdx - 1)); return; }
+      if (ev.type === 'down') { setQCancel(Math.min(Math.max(0, queuedMsgs.length - 1), selIdx + 1)); return; }
+      if (ev.type === 'enter') {
+        const target = queuedMsgs[selIdx];
+        if (!target) { setQCancel(null); return; }
+        void (async () => {
+          const r = await admin(port, 'POST', '/admin/cancel', { id: target.id });
+          setStatus(r.ok ? t().qcancelOk(target.to) : '⚠ ' + t().qcancelFailed);
+          if (r.ok) {
+            // 本地即时把该条标记非排队(不等下轮轮询),列表/等送达计数立刻缩。
+            const nl = log.map((m: any) => (m.id === target.id ? { ...m, queued: false, canceled: true } : m));
+            setLog(nl);
+            setPending(pendingCounts(nl));
+          }
+        })();
+        return;
+      }
+      return; // 浮层吞掉其它键
+    }
+
+    // 回看态(scrollOff>0,且无向导/选择器浮层):↑/↓ 逐行滚、Esc 回底;
+    // 打字/回车/退格自动回底后继续正常处理(CC 同款:一输入即跳回最新)。
+    if (scrollOff > 0) {
+      if (ev.type === 'up') { setScrollOff((o) => clampOffset(o + 1, flatLines.length, viewHRef.current)); return; }
+      if (ev.type === 'down') { setScrollOff((o) => clampOffset(o - 1, flatLines.length, viewHRef.current)); return; }
+      if (ev.type === 'esc') { setScrollOff(0); return; }
+      if (ev.type === 'text' || ev.type === 'enter' || ev.type === 'shift-enter' || ev.type === 'backspace') setScrollOff(0); // 不 return,落到正常处理
+    }
+
+    // Esc(输入空、无浮层、非答题):有排队消息 → 打开取消排队浮层。答题态的 Esc(跳过问题)优先级更高,在下方处理。
+    if (ev.type === 'esc' && input === '' && !answering && queuedMsgs.length > 0) { setQCancel(0); return; }
 
     // Ctrl+V：读系统剪贴板里的截图，存临时文件，输入框只插入短占位 [图片N]（发送时展开成真实路径）
     if (ev.type === 'ctrl' && ev.key === 'v') {
@@ -418,14 +527,21 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
     }
   }
 
+  // 监听器只挂一次,经 ref 调用**最新一次渲染**的 handleKey 闭包。
+  // 老模式(每帧重挂、依赖数组列全状态)有竞态:按键若在 setState 后、effect 重订阅前到达,
+  // 会打进过期闭包(实测 Esc 开浮层后紧跟 Enter 会丢)。ref 在渲染期更新,无此窗口。
+  const handleKeyRef = useRef(handleKey);
+  handleKeyRef.current = handleKey;
   useEffect(() => {
     if (!stdin) return;
-    const onData = (d: Buffer | string) => handleKey(decodeKey(d.toString()));
+    const onData = (d: Buffer | string) => {
+      const s = d.toString();
+      const w = wheelBurst(s); // 1007 滚轮 burst 先于按键解码(同 chunk 连发方向键不可能是打字)
+      handleKeyRef.current(w ? { type: 'scroll', dir: w.dir, n: w.n } : decodeKey(s));
+    };
     stdin.on('data', onData);
     return () => { stdin.off('data', onData); };
-    // 每次渲染重挂，保证闭包里拿到最新 state；依赖列出 handleKey 读到的所有状态。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stdin, input, cursor, wizard, langPick, leadPick, confirmExit, questions, skippedQ, qSel, customAns, history, histIdx, attachments, sel, log, roster]);
+  }, [stdin]);
 
   const color = (s: string) => (s === 'idle' ? 'green' : s === 'busy' ? 'yellow' : s === 'dead' ? 'red' : 'gray');
 
@@ -436,43 +552,40 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
   const hasDiag = drops || injFails || fastIdle;
 
   return (
-    // 顶层不再钉高度/overflow:消息历史进 <Static> 一次性印进终端原生 scrollback、永不重绘
-    // (滚轮滚动/拖选复制都交回终端);底部活区(flexShrink=0)随内容自然占底部、原地小块重绘。
-    <Box flexDirection="column">
-      <Static items={committed}>
-        {(m: any) => (
-          <Box key={m.id} flexDirection="column" marginBottom={1}>
-            <Text>
-              {m.ts ? <Text dimColor>{formatTime(m.ts)} </Text> : null}
-              <Text color={colorFor(m.from)} bold>{m.from}</Text>
-              <Text> → </Text>
-              <Text color={colorFor(m.to)} bold>{m.to}</Text>
+    // alt screen 全屏自绘(CC 同款):根盒钉 rows-1 行(严格小于终端行数,防末行换行顶滚)。
+    // 历史区贴底渲染+overflow 裁顶:渲染行数恒给足 rows-1 行(≥视口容量),实际可见高度由 flex 决定,
+    // 溢出的从顶部裁掉——无需精确计算活区高度。底部活区 flexShrink=0 钉死,滚动只动历史区切片。
+    <Box flexDirection="column" height={rows - 1} width={cols}>
+      <Box flexDirection="column" flexGrow={1} overflow="hidden" justifyContent="flex-end">
+        {sliceView(flatLines, scrollOff, rows - 1).map((segs, i) => (
+          // 每行套 flexShrink=0 盒钉 1 行高:不钉的话 yoga 会把超高内容**压缩**(隔行丢失)而不是裁顶。
+          <Box key={i} flexShrink={0}>
+            <Text wrap="truncate-end">
+              {segs.length === 0 ? ' ' : segs.map((sg, k) => (
+                <Text key={k} color={sg.color} bold={sg.bold} italic={sg.italic} underline={sg.underline} strikethrough={sg.strikethrough} dimColor={sg.dim}>{sg.text}</Text>
+              ))}
             </Text>
-            {renderMarkdown(String(m.body)).map((segs: any[], j: number) => (
-              <Text key={j} wrap="wrap">{'  '}{segs.map((s: any, k: number) => (
-                <Text key={k} bold={s.bold} italic={s.italic} underline={s.underline} strikethrough={s.strikethrough} dimColor={s.dim}>{s.text}</Text>
-              ))}</Text>
-            ))}
           </Box>
-        )}
-      </Static>
+        ))}
+      </Box>
 
-      {/* 活区:花名册 statusline + 等送达 + 诊断 + 输入/浮层 + 状态行 */}
-      <Box flexDirection="column" flexShrink={0}>
+      {/* 活区:回看提示 + 花名册 statusline + 等送达 + 诊断 + 输入/浮层 + 状态行 */}
+      <Box ref={bottomBoxRef} flexDirection="column" flexShrink={0}>
+        {scrollOff > 0 ? <Text color="yellow">{t().browseHint(scrollOff)}</Text> : null}
         {roster.length ? (
           <Text>
             {roster.map((a, i) => (
               <Text key={a.name}>
                 {i ? <Text dimColor> · </Text> : null}
-                <Text color={color(a.status)}>{statusGlyph(a.status, !!a.virtual, frame)}</Text>
+                <Text color={color(a.status)}>{statusGlyph(a.status, !!a.virtual, frame)} </Text>
                 <Text color={colorFor(a.name)} bold>{a.name}</Text>
-                {a.lead ? <Text color="cyan" bold>♔</Text> : null}
+                {a.lead ? <Text color="cyan" bold> ♔</Text> : null}
               </Text>
             ))}
           </Text>
         ) : null}
         {pending.length ? (
-          <Text color="yellow">{t().pendingDeliver(pending.map((n) => '→ ' + n).join(' · '))}</Text>
+          <Text color="yellow">{t().pendingDeliver(pending.map((p) => '→ ' + p.to + (p.n > 1 ? ' ×' + p.n : '')).join(' · '))}</Text>
         ) : null}
         {hasDiag ? <Text color="yellow">{t().diagWarn(drops, injFails, fastIdle)}</Text> : null}
 
@@ -495,6 +608,15 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
               <Text dimColor>  {t().leadPickEmpty}</Text>
             ) : leadOpts.map((nm, i) => (
               <Text key={nm} inverse={i === leadPick}>  <Text color={colorFor(nm)} bold>{nm}</Text></Text>
+            ))}
+          </Box>
+        ) : qCancel !== null ? (
+          <Box flexDirection="column" marginTop={1}>
+            <Text color="yellow">{t().qcancelTitle(queuedMsgs.length)}</Text>
+            {queuedMsgs.map((m: any, i: number) => (
+              <Text key={m.id} inverse={i === Math.min(qCancel, Math.max(0, queuedMsgs.length - 1))} wrap="truncate-end">
+                {'  → '}<Text color={colorFor(m.to)} bold>{m.to}</Text>{'  '}{String(m.body).replace(/\s+/g, ' ').slice(0, 60)}
+              </Text>
             ))}
           </Box>
         ) : wizard ? (

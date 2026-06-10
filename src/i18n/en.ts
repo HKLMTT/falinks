@@ -70,7 +70,12 @@ export const en: typeof zh = {
     if (fastIdle) parts.push(`${fastIdle} suspect early-idle`);
     return `⚠ collab diag: ${parts.join(' · ')} (may stall the team; /clear all to reset)`;
   },
-  pendingDeliver: (targets: string) => `⏳ pending: ${targets}`,
+  pendingDeliver: (targets: string) => `⏳ pending: ${targets} · Esc to cancel`,
+  qcancelTitle: (n: number) => `Cancel queued messages (${n} total) (↑↓ select · Enter cancel · Esc close)`,
+  qcancelOk: (to: string) => `✗ canceled 1 queued message (→ ${to})`,
+  qcancelFailed: 'cancel failed (may have just been delivered)',
+  canceledMark: ' ✗canceled',
+  browseHint: (offset: number) => `↑ browsing (${offset} lines from latest) · wheel/↑↓ move · PgUp/PgDn page · Esc or type to jump back`,
   langAuto: 'Follow system',
   langZh: '中文',
   langEn: 'English',

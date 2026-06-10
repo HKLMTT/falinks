@@ -56,7 +56,11 @@ export async function up(configPath: string) {
     onDrop: (d) => { try { appendDiag(launchCwd, { kind: 'guard-drop', from: d.from, to: d.to, reason: d.reason, thread: d.thread, ts: Date.now() }); } catch { /* 诊断落盘失败不致命 */ } },
   });
   router.addVirtual('boss');
-  router.seedLog(loadMessageLog(launchCwd, historyCap) as Message[]); // 恢复历史消息流水
+  const seeded = loadMessageLog(launchCwd, historyCap) as Message[];
+  router.seedLog(seeded); // 恢复历史消息流水
+  // genId 形如 m${n};新会话 n 从 0 起会与持久化恢复的旧消息(也 m${k})撞号 → 控制台同 key 警告/漏渲染。
+  // 把 n 推到已恢复消息里最大序号之后,新消息 id 不再与历史冲突。
+  for (const msg of seeded) { const mt = /^m(\d+)$/.exec(msg.id); if (mt) n = Math.max(n, Number(mt[1])); }
 
   const store: SessionStore = loadStore(launchCwd);
   pruneToAgents(store, cfg.agents.map((a) => a.name));
