@@ -6,6 +6,7 @@ export interface AgentConfig {
   cwd: string;
   role?: string;
   lead?: boolean; // 组长/协调者:注入"协调者工作法"(先对齐需求→完整设计→定稿→才拆解分派)
+  model?: string; // 模型名,透传给 CLI(claude --model / codex -m);缺省=CLI 全局默认
   bootstrap: string;
 }
 
@@ -44,7 +45,9 @@ export function parseConfig(raw: any): FalinksConfig {
     }
     if (names.has(a.name)) throw new Error(`duplicate agent name: ${a.name}`);
     names.add(a.name);
-    return { name: a.name, cli: a.cli, cwd: a.cwd, role: a.role, lead: a.lead === true, bootstrap: a.bootstrap };
+    if (a.model !== undefined && typeof a.model !== 'string')
+      throw new Error(`config.agents[${i}].model must be a string`);
+    return { name: a.name, cli: a.cli, cwd: a.cwd, role: a.role, lead: a.lead === true, bootstrap: a.bootstrap, model: a.model || undefined };
   });
 
   const routes: Record<string, AgentName> = raw.routes ?? {};
