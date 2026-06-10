@@ -70,6 +70,8 @@ function body_locale_invalid(l: unknown): boolean {
 
 function serverForAgent(agentName: string, deps: BusDeps, questions: QuestionStore): McpServer {
   const { router } = deps;
+  // 任何工具调用 = 该员工经 MCP 活着的铁证(失联自愈)。服务端代登记不经此处,不会误打点。
+  const touch = () => router.touchMcp(agentName);
   const server = new McpServer({ name: `falinks-bus-${agentName}`, version: '1.0.0' }, { capabilities: {} });
 
   // send 返回 undefined 有三种原因,旧代码一律报 "unknown or dead target" → agent 误判对方已死而放弃,
@@ -82,6 +84,7 @@ function serverForAgent(agentName: string, deps: BusDeps, questions: QuestionSto
   };
 
   server.registerTool('register', { description: t().toolDescRegister, inputSchema: {} }, async () => {
+    touch();
     const sid = deps.getSessionId(agentName);
     if (!sid) return ok({ ok: false, error: 'no session for agent' });
     router.register(agentName, sid);
@@ -91,11 +94,13 @@ function serverForAgent(agentName: string, deps: BusDeps, questions: QuestionSto
   server.registerTool('sendmsg', {
     description: t().toolDescSendmsg, inputSchema: { to: z.string(), message: z.string() },
   }, async ({ to, message }) => {
+    touch();
     const msg = router.send(agentName, to, message);
     return msg ? ok({ ok: true, id: msg.id, to: msg.to }) : ok({ ok: false, error: explainUndeliverable(to) });
   });
 
   server.registerTool('idle', { description: t().toolDescIdle, inputSchema: {} }, async () => {
+    touch();
     router.onIdle(agentName);
     return ok({ ok: true });
   });
@@ -104,6 +109,7 @@ function serverForAgent(agentName: string, deps: BusDeps, questions: QuestionSto
     description: t().toolDescAsk,
     inputSchema: { to: z.string(), question: z.string(), options: z.array(z.string()).min(1) },
   }, async ({ to, question, options }) => {
+    touch();
     if (to === 'boss' || to === '老板') {
       const id = questions.add({ from: agentName, question, options });
       return ok({ ok: true, id, pending: true });
@@ -114,6 +120,7 @@ function serverForAgent(agentName: string, deps: BusDeps, questions: QuestionSto
   });
 
   server.registerTool('who', { description: t().toolDescWho, inputSchema: {} }, async () => {
+    touch();
     return ok({ roster: router.roster().map((a) => ({ name: a.name, role: a.role, status: a.status })) });
   });
 
@@ -147,7 +154,7 @@ export async function startBus(deps: BusDeps, port: number, opts?: BusOptions): 
         return sendJson(identity);
       }
       if (req.method === 'GET' && url.pathname === '/admin/roster') {
-        return sendJson({ roster: router.roster().map((a) => ({ name: a.name, role: a.role, status: a.status, virtual: !!a.virtual, lead: !!a.lead })) });
+        return sendJson({ roster: router.roster().map((a) => ({ name: a.name, role: a.role, status: a.status, virtual: !!a.virtual, lead: !!a.lead, unresponsive: !!a.unresponsive, mcpSeen: a.lastMcpHttpAt != null })) });
       }
       if (req.method === 'GET' && url.pathname === '/admin/log') {
         const queued = router.queuedMessageIds();
@@ -263,6 +270,7 @@ export async function startBus(deps: BusDeps, port: number, opts?: BusOptions): 
     // 路径里的中文/非 ASCII 名会被 HTTP 客户端百分号编码，需解码回真实名（否则与注册名对不上）。
     let agentName: string;
     try { agentName = decodeURIComponent(match[1]); } catch { agentName = match[1]; }
+    deps.router.touchMcpHttp(agentName); // CLI 启动 initialize 即打点;只用于告警文案分流
 
     let body: unknown;
     if (req.method === 'POST') {
