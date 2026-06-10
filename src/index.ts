@@ -253,6 +253,8 @@ export async function up(configPath: string) {
       }
       router.removeAgent(name);
       forgetAgentState(name); // 与 pane 下线路径对齐:清干净,防同名 re-add 继承旧状态
+      const ci = cfg.agents.findIndex((x) => x.name === name);
+      if (ci >= 0) cfg.agents.splice(ci, 1); // 同步清内存:否则同名 re-add 后 /restart//lead 会 find 到旧 spec(旧模型/旧角色)
       try { removeAgentFromConfigFile(configPath, name); } catch { /* 配置写回失败不致命 */ }
       return { ok: true };
     },
