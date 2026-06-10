@@ -1,0 +1,76 @@
+import { expect, test } from 'vitest';
+import { Router } from '../../src/core/router.js';
+import type { AgentRuntime, Message } from '../../src/core/types.js';
+
+function mkRouter() {
+  let n = 0;
+  let now = 1000;
+  const delivered: Message[] = [];
+  const r = new Router(
+    { deliver: (_a: AgentRuntime, m: Message) => delivered.push(m) },
+    { now: () => now, genId: () => `m${++n}` },
+  );
+  return { r, delivered, setNow: (v: number) => { now = v; } };
+}
+
+test('touchMcp 记录时间戳并清 unresponsive 与哑巴计数', () => {
+  const { r, setNow } = mkRouter();
+  r.addAgent('alice');
+  r.bumpMute('alice');
+  r.markUnresponsive('alice');
+  setNow(2000);
+  r.touchMcp('alice');
+  const a = r.get('alice')!;
+  expect(a.lastMcpAt).toBe(2000);
+  expect(a.unresponsive).toBe(false);
+  expect(a.muteStreak).toBe(0);
+});
+
+test('touchMcp/touchMcpHttp 未知名宽容不抛(野请求可打任意路径)', () => {
+  const { r } = mkRouter();
+  expect(() => r.touchMcp('ghost')).not.toThrow();
+  expect(() => r.touchMcpHttp('ghost')).not.toThrow();
+});
+
+test('touchMcpHttp 只记 HTTP 时间戳,不动 lastMcpAt', () => {
+  const { r, setNow } = mkRouter();
+  r.addAgent('alice');
+  setNow(3000);
+  r.touchMcpHttp('alice');
+  const a = r.get('alice')!;
+  expect(a.lastMcpHttpAt).toBe(3000);
+  expect(a.lastMcpAt).toBeUndefined();
+});
+
+test('bumpMute 递增并返回当前计数', () => {
+  const { r } = mkRouter();
+  r.addAgent('alice');
+  expect(r.bumpMute('alice')).toBe(1);
+  expect(r.bumpMute('alice')).toBe(2);
+  expect(r.bumpMute('ghost')).toBe(0); // 未知名宽容
+});
+
+test('markUnresponsive 边沿触发:首次 true,再标 false', () => {
+  const { r } = mkRouter();
+  r.addAgent('alice');
+  expect(r.markUnresponsive('alice')).toBe(true);
+  expect(r.markUnresponsive('alice')).toBe(false);
+  expect(r.markUnresponsive('ghost')).toBe(false);
+});
+
+test('markLaunching 保留 inbox、状态回 launching、清失联痕迹', () => {
+  const { r } = mkRouter();
+  r.addAgent('alice');
+  r.register('alice', 's1');          // idle
+  r.send('boss-x', 'alice', 'one');   // 投出 → busy(发件人未知名也能送:send 只校验目标)
+  r.send('boss-x', 'alice', 'two');   // 排队
+  r.bumpMute('alice');
+  r.markUnresponsive('alice');
+  r.markLaunching('alice');
+  const a = r.get('alice')!;
+  expect(a.status).toBe('launching');
+  expect(a.inbox.length).toBe(1);     // 排队消息保留
+  expect(a.unresponsive).toBe(false);
+  expect(a.muteStreak).toBe(0);
+  expect(a.handling).toBeUndefined();
+});

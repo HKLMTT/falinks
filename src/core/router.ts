@@ -123,6 +123,48 @@ export class Router {
     if (a.status === 'busy') a.status = 'stuck';
   }
 
+  /** 员工经 MCP 调到任意工具(总线 handler 层调用;服务端代登记不算):活着的铁证,顺带自愈失联标志。 */
+  touchMcp(name: AgentName): void {
+    const a = this.agents.get(name); // 宽容未知名:任何人可 curl 任意 /agent/<name>/mcp
+    if (!a) return;
+    a.lastMcpAt = this.deps.now();
+    a.unresponsive = false;
+    a.muteStreak = 0;
+  }
+
+  /** 命中该员工 MCP 端点的任意 HTTP 请求(initialize/tools-list 也算):只作告警文案分流,不作触发条件。 */
+  touchMcpHttp(name: AgentName): void {
+    const a = this.agents.get(name);
+    if (a) a.lastMcpHttpAt = this.deps.now();
+  }
+
+  /** 哑巴计数 +1(投递后自动降闲且零 MCP 调用),返回当前计数。 */
+  bumpMute(name: AgentName): number {
+    const a = this.agents.get(name);
+    if (!a) return 0;
+    a.muteStreak = (a.muteStreak ?? 0) + 1;
+    return a.muteStreak;
+  }
+
+  /** 标失联嫌疑。返回是否为新标记(边沿触发:调用方据此只落一次诊断)。 */
+  markUnresponsive(name: AgentName): boolean {
+    const a = this.agents.get(name);
+    if (!a || a.unresponsive) return false;
+    a.unresponsive = true;
+    return true;
+  }
+
+  /** 现有员工置回 launching(/restart 用):保留 inbox 排队消息,清 handling 与失联痕迹。 */
+  markLaunching(name: AgentName): void {
+    const a = this.agents.get(name);
+    if (!a) return;
+    a.status = 'launching';
+    a.handling = undefined;
+    a.handlingFrom = undefined;
+    a.unresponsive = false;
+    a.muteStreak = 0;
+  }
+
   /**
    * 暂时标忙（如 /clear 清空上下文期间）：让发来的消息进 inbox 排队，
    * 不会投进正在清空/重启的 pane。员工清完重新 register（→idle）会自动把排队的 pump 出去。
