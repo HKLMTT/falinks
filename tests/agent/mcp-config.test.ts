@@ -53,6 +53,15 @@ test('codex resume: uses resume <id> with no prompt (恢复静默,不重放任�
   expect(r.needsBootstrapInject).toBe(false);
 });
 
+test('codex bootstrapFile: 用 "$(cat 文件)" 读取,命令不内联长 bootstrap(防 write-text 截断)', () => {
+  const longBootstrap = '协作规则'.repeat(200); // 长 bootstrap
+  const r = buildAgentLaunch('codex', { ...spec, bootstrap: longBootstrap, bootstrapFile: '/tmp/falinks-x/alice-bootstrap.txt' });
+  expect(r.command).toContain(`"$(cat '/tmp/falinks-x/alice-bootstrap.txt')"`);
+  expect(r.command).not.toContain(longBootstrap); // 长文本不进命令行
+  expect(r.command.length).toBeLessThan(400);     // 命令保持短
+  expect(r.needsBootstrapInject).toBe(false);
+});
+
 // 徽章:启动命令前缀 printf OSC SetBadgeFormat(base64),CLI 接管前由 shell 打到终端输出。
 const b64 = (s: string) => Buffer.from(s).toString('base64');
 

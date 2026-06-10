@@ -81,6 +81,9 @@ export async function up(configPath: string) {
 
     const fullBootstrap = composeBootstrap(a);
     bootstraps.set(a.name, fullBootstrap); // 供 /clear 后重注入
+    // codex 首启把 bootstrap 作为命令行参数——长 bootstrap 内联会被 write-text 截断,故写临时文件、命令里 $(cat) 读取。
+    const bootstrapFile = join(tmp, `${a.name}-bootstrap.txt`);
+    writeFileSync(bootstrapFile, fullBootstrap);
 
     // 决定 fresh / resume，并据此选注入文本与命令参数。
     let resuming = false;
@@ -107,7 +110,7 @@ export async function up(configPath: string) {
 
     const { command, needsBootstrapInject } = buildAgentLaunch(a.cli, {
       name: a.name, busPort: bus.port, mcpConfigPath: cfgPath,
-      bootstrap: fullBootstrap, sessionId: claudeSessionId, resumeId, badge,
+      bootstrap: fullBootstrap, bootstrapFile, sessionId: claudeSessionId, resumeId, badge,
     });
 
     const sid = await driver.splitFrom(anchor, dir, { cwd: a.cwd, command });
