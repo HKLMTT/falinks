@@ -60,7 +60,12 @@ export class TodoEngine {
       t.status = 'failed';
       t.result = 'removed by boss';
       t.ts = this.cb.now();
+      if (this.lastDispatchId) this.cb.cancelQueued(this.lastDispatchId); // 旧下发可能还在 inbox 排队:撤掉,防 boss 已移除的任务事后送达
       this.lastDispatchId = undefined;
+      // 若移除后已无 pending/current → 退回 idle(无需 resume,直接可重新 start)
+      if (!this.st.tasks.some((x) => x.status === 'pending' || x.status === 'current')) {
+        this.st.state = 'idle';
+      }
       this.cb.persist(this.st);
       return { ok: true };
     }
@@ -70,6 +75,7 @@ export class TodoEngine {
   clear(): TodoResult {
     if (this.st.state === 'running') return { ok: false, error: 'todolist is running — /todo stop first' };
     this.st = { state: 'idle', nudgeMinutes: this.st.nudgeMinutes, tasks: [] };
+    if (this.lastDispatchId) this.cb.cancelQueued(this.lastDispatchId); // 旧下发可能还在 inbox 排队:撤掉,防 boss 已移除的任务事后送达
     this.lastDispatchId = undefined;
     this.cb.persist(this.st);
     return { ok: true };

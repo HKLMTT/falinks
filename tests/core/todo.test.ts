@@ -170,3 +170,13 @@ test('seq 单调递增不复用(rm 后再 add 不撞号)', () => {
   e.add('a'); e.add('b'); e.rm(2); e.add('c');
   expect(e.state().tasks.map((t) => t.seq)).toEqual([1, 3]);
 });
+
+test('paused 态 rm current 与 clear 都撤掉仍在排队的旧下发', () => {
+  const { e, calls } = mk();
+  e.add('a'); e.start(undefined, true); e.stop();
+  e.rm(1);
+  expect(calls.cancel).toEqual(['msg1']);
+  e.add('b'); e.start(undefined, true); e.stop();
+  e.clear();
+  expect(calls.cancel).toEqual(['msg1', 'msg2']);
+});
