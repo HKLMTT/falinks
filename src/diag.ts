@@ -18,7 +18,8 @@ export type DiagEvent =
   | { kind: 'inject-fail'; to: string; error: string; msgId?: string; ts: number }
   | { kind: 'auto-idle'; name: string; sinceDeliverMs: number; ts: number }
   | { kind: 'agent-unresponsive'; name: string; rule: 'register-timeout' | 'mute'; ts: number }
-  | { kind: 'poll'; name: string; status: string; proc: boolean; scrape: boolean; paneBusy: boolean; grace: boolean; streak: number; action: string; bottom: string; ts: number };
+  | { kind: 'poll'; name: string; status: string; proc: boolean; scrape: boolean; paneBusy: boolean; grace: boolean; streak: number; action: string; bottom: string; ts: number }
+  | { kind: 'todo-send-failing'; ts: number };
 
 /** 每个项目目录一份诊断流水:~/.falinks/diag/<cwd 的 sha1 前16位>.jsonl。root 可注入便于测试。 */
 export function diagPath(cwd: string, root = runtimeDir()): string {

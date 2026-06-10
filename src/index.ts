@@ -24,6 +24,9 @@ import { loadMessageLog, appendMessageLog, clearMessageLog, MESSAGE_LOG_CAP } fr
 import { appendDiag, clearDiag, loadDiag } from './diag.js';
 import { t, setLocale, detectLocale } from './i18n/index.js';
 import { saveSettings } from './settings.js';
+import { TodoEngine } from './core/todo.js';
+import { loadTodo, saveTodo } from './todo-store.js';
+import type { TodoTask } from './todo-store.js';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -89,6 +92,38 @@ export async function up(configPath: string) {
 
   const store: SessionStore = loadStore(launchCwd);
   pruneToAgents(store, cfg.agents.map((a) => a.name));
+
+  // todolist 引擎:回调全在此拼装(模板/落盘),引擎纯逻辑。下发/巡查以 boss 名义(lead 回 boss 无害);
+  // 汇总/告警以 'falinks' 裸名入流水(send 不校验发件人;不注册虚拟成员,免污染花名册)。
+  const currentLead = () => router.roster().find((x) => x.lead && x.status !== 'dead')?.name;
+  // nudge 回调里引用 todo.state()(运行期才执行,安全);显式注解类型,避开 tsc 的自引用推断报错(TS7022)。
+  const todo: TodoEngine = new TodoEngine({
+    now: () => Date.now(),
+    dispatch: (task, total, isResend) => {
+      const lead = currentLead();
+      if (!lead) return undefined;
+      return router.send('boss', lead, t().todoDispatchMsg(task.seq, total, task.body, isResend))?.id;
+    },
+    nudge: (task, total) => {
+      const lead = currentLead();
+      if (!lead) return false;
+      return !!router.send('boss', lead, t().todoNudgeMsg(task.seq, total, task.body, todo.state().nudgeMinutes));
+    },
+    cancelQueued: (id) => { router.cancelQueued(id); },
+    announceSummary: (tasks: TodoTask[]) => {
+      const done = tasks.filter((x) => x.status === 'done').length;
+      const failed = tasks.filter((x) => x.status === 'failed').length;
+      const lines = tasks.filter((x) => x.status === 'done' || x.status === 'failed')
+        .map((x) => t().todoSummaryLine(x.seq, x.status === 'done', x.body, x.result ?? ''));
+      router.send('falinks', 'boss', `${t().todoSummaryTitle(done, failed, tasks.length)}\n${lines.join('\n')}`);
+    },
+    announceSuspended: () => { router.send('falinks', 'boss', t().todoSuspendedMsg); },
+    announceSendFailing: () => {
+      router.send('falinks', 'boss', t().todoSendFailingMsg);
+      try { appendDiag(launchCwd, { kind: 'todo-send-failing', ts: Date.now() }); } catch { /* 诊断落盘失败不致命 */ }
+    },
+    persist: (st) => { try { saveTodo(launchCwd, st); } catch { /* 落盘失败不致命,内存继续 */ } },
+  }, loadTodo(launchCwd));
   const tmp = mkdtempSync(join(tmpdir(), 'falinks-'));
   let bus: Bus;
   let lastRight = '';      // 上次新建的右侧 pane,作为下次分屏的首选锚点
@@ -224,6 +259,7 @@ export async function up(configPath: string) {
     getSessionId: (name) => sessions.get(name),
     onAddAgent: async (spec) => {
       if (!lastRight && !consoleSid) return { ok: false, error: 'layout not ready' };
+      if (spec.name === 'falinks') return { ok: false, error: 'reserved name' }; // 汇总消息的系统发件人名
       if (router.get(spec.name)) return { ok: false, error: 'name exists' };
       // 锚点自愈:lastRight 指向的 pane 可能已被关/被删(野指针),回退到永远活着的控制台 pane。
       // 否则 splitFrom 抛 anchor not found,此后 /add 全部失败、只能重开。
@@ -358,6 +394,25 @@ export async function up(configPath: string) {
       } finally {
         restarting.delete(name);
       }
+    },
+    todo: {
+      taskdone: (seq, status, result) => todo.taskdone(seq, status, result),
+      op: (op, args) => {
+        switch (op) {
+          case 'add': {
+            const body = String(args.body ?? '').trim() ? String(args.body) : '';
+            if (!body) return { ok: false, error: 'empty task body' };
+            return todo.add(body);
+          }
+          case 'rm': return todo.rm(Number(args.seq));
+          case 'clear': return todo.clear();
+          case 'start': return todo.start(args.n === undefined ? undefined : Number(args.n), !!currentLead());
+          case 'stop': return todo.stop();
+          case 'resume': return todo.resume(!!currentLead());
+          default: return { ok: false, error: `unknown op: ${op}` };
+        }
+      },
+      state: () => todo.state(),
     },
     getDiag: () => { try { return loadDiag(launchCwd); } catch { return []; } },
   }, cfg.busPort ?? 0, {
@@ -511,6 +566,9 @@ export async function up(configPath: string) {
           /* 探测失败忽略，下一轮再试 */
         }
       }
+      // todolist 巡查驱动:全员(非虚拟)无人 busy 视为空闲;lead 存活与否决定挂起/恢复。
+      const rs = router.roster();
+      todo.tick(rs.some((x) => !x.virtual && x.status === 'busy'), rs.some((x) => x.lead && x.status !== 'dead'));
     })();
   }, 1500);
 
