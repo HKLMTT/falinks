@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync, realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseStatusSessionId, encodeClaudeProjectDir, claudeSessionExists } from '../../src/session/capture.js';
@@ -43,4 +43,40 @@ test('claudeSessionExists true only when <id>.jsonl is under the encoded project
   writeFileSync(join(dir, 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee.jsonl'), '{}');
   expect(claudeSessionExists(cwd, 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee', home)).toBe(true);
   expect(claudeSessionExists(cwd, 'ffffffff-bbbb-cccc-dddd-eeeeeeeeeeee', home)).toBe(false);
+});
+
+test('claudeSessionExists 对 symlink cwd 做 realpath 归一化(claude 按真实路径编码项目目录)', () => {
+  // 现实事故形态:配置 cwd=/tmp/xxx(symlink),claude 实际把会话写在 -private-tmp-xxx 下,
+  // 原实现拿原始 cwd 编码去找 → 永远判 fresh、resume 失效。
+  const home = mkdtempSync(join(tmpdir(), 'fakehome-'));
+  const base = mkdtempSync(join(tmpdir(), 'realbase-'));
+  const real = join(base, 'proj');
+  mkdirSync(real);
+  const link = join(base, 'link-to-proj');
+  symlinkSync(real, link);
+  // 会话文件放在「真实路径编码」的目录下(模拟 claude 的行为)
+  const dir = join(home, '.claude', 'projects', encodeClaudeProjectDir(realpathSync(real)));
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee.jsonl'), '{}');
+  // 用 symlink 路径查询也必须命中
+  expect(claudeSessionExists(link, 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee', home)).toBe(true);
+});
+
+test('claudeSessionExists 兼容按原始路径编码的旧会话目录(双形态都查)', () => {
+  const home = mkdtempSync(join(tmpdir(), 'fakehome-'));
+  const base = mkdtempSync(join(tmpdir(), 'realbase-'));
+  const real = join(base, 'proj');
+  mkdirSync(real);
+  const link = join(base, 'link-to-proj');
+  symlinkSync(real, link);
+  // 会话文件在「原始(symlink)路径编码」的目录下也要能命中(防 claude 版本差异)
+  const dir = join(home, '.claude', 'projects', encodeClaudeProjectDir(link));
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee.jsonl'), '{}');
+  expect(claudeSessionExists(link, 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee', home)).toBe(true);
+});
+
+test('claudeSessionExists 对不存在的 cwd 不抛(realpath 失败回退原路径)', () => {
+  const home = mkdtempSync(join(tmpdir(), 'fakehome-'));
+  expect(claudeSessionExists('/no/such/dir-xyz', 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee', home)).toBe(false);
 });

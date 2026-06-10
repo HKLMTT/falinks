@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs';
+import { existsSync, realpathSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 
@@ -16,7 +16,14 @@ export function encodeClaudeProjectDir(cwd: string): string {
   return cwd.replace(/[^a-zA-Z0-9]/g, '-');
 }
 
-/** 该 cwd 下是否已存在某 session id 的 jsonl（决定 claude 用 --resume 还是 --session-id，避免 resume 报错）。 */
+/** 该 cwd 下是否已存在某 session id 的 jsonl（决定 claude 用 --resume 还是 --session-id，避免 resume 报错）。
+ *  claude 按 cwd 的**真实路径**编码项目目录(Node process.cwd() 解析符号链接),配置里写 symlink
+ *  路径(如 /tmp → /private/tmp)时按原始 cwd 编码永远找不到 → 永远判 fresh。两种编码形态都查。 */
 export function claudeSessionExists(cwd: string, sessionId: string, home = homedir()): boolean {
-  return existsSync(join(home, '.claude', 'projects', encodeClaudeProjectDir(cwd), `${sessionId}.jsonl`));
+  const candidates = new Set([cwd]);
+  try { candidates.add(realpathSync(cwd)); } catch { /* cwd 不存在:按原始路径查,自然 false */ }
+  for (const c of candidates) {
+    if (existsSync(join(home, '.claude', 'projects', encodeClaudeProjectDir(c), `${sessionId}.jsonl`))) return true;
+  }
+  return false;
 }
