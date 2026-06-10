@@ -146,6 +146,12 @@ export class Router {
     return a.muteStreak;
   }
 
+  /** 清哑巴计数(健康证据出现时由调用方触发;touchMcp 内部已自带清零)。 */
+  clearMute(name: AgentName): void {
+    const a = this.agents.get(name);
+    if (a) a.muteStreak = 0;
+  }
+
   /** 标失联嫌疑。返回是否为新标记(边沿触发:调用方据此只落一次诊断)。虚拟成员排除(boss 从不调 MCP 工具)。 */
   markUnresponsive(name: AgentName): boolean {
     const a = this.agents.get(name);

@@ -54,6 +54,14 @@ export async function up(configPath: string) {
   const MUTE_THRESHOLD = 2;           // 连续"有活无声"达到次数 → 失联告警
   const expectRegister = new Map<string, { by: number; since: number }>(); // A-1:bootstrap 交付后的报到期限
   const muteCountedAt = new Map<string, number>(); // A-2:已计过嫌疑的投递时刻(每次投递最多计一次)
+  // 员工离场/重启时把所有 per-agent 跟踪状态一次清干净(新增 per-agent Map 务必加进来)。
+  const forgetAgentState = (name: string) => {
+    lastDeliverAt.delete(name);
+    missStreak.delete(name);
+    idleStreak.delete(name);
+    expectRegister.delete(name);
+    muteCountedAt.delete(name);
+  };
   const armRegisterExpectation = (name: string) => {
     const now = Date.now();
     expectRegister.set(name, { by: now + REGISTER_TIMEOUT_MS, since: now });
@@ -229,21 +237,20 @@ export async function up(configPath: string) {
     onRemoveAgent: async (name) => {
       const sid = sessions.get(name);
       if (!sid) return { ok: false, error: 'unknown agent' };
+      if (restarting.has(name)) return { ok: false, error: t().restartBusy(name) };
       await driver.closePane(sid);
       sessions.delete(name);
       if (sid === lastRight) lastRight = consoleSid; // 删的正是当前锚点 → 复位到控制台 pane,别留野指针
       router.removeAgent(name);
-      lastDeliverAt.delete(name);
-      missStreak.delete(name);
-      idleStreak.delete(name); // 与 pane 下线路径对齐:清干净,防同名 re-add 继承旧去抖计数
-      expectRegister.delete(name);
-      muteCountedAt.delete(name);
+      forgetAgentState(name); // 与 pane 下线路径对齐:清干净,防同名 re-add 继承旧去抖计数
       try { removeAgentFromConfigFile(configPath, name); } catch { /* 配置写回失败不致命 */ }
       return { ok: true };
     },
     onClear: async (name) => {
       if (name && !sessions.has(name)) return { ok: false, error: `unknown agent: ${name}` };
-      const targets = name ? [name] : router.roster().filter((a) => !a.virtual).map((a) => a.name);
+      if (name && restarting.has(name)) return { ok: false, error: t().restartBusy(name) };
+      const targets = (name ? [name] : router.roster().filter((a) => !a.virtual).map((a) => a.name))
+        .filter((nm) => !restarting.has(nm)); // 全员清时跳过重启中的人:别把 /clear 注进正在关闭的 pane
       const cleared: string[] = [];
       // 并发清空：每个员工各自 /clear → 等一下 → 重注入 bootstrap，互不阻塞（总耗时≈单个，不再 N 倍）。
       await Promise.all(targets.map(async (nm) => {
@@ -316,26 +323,25 @@ export async function up(configPath: string) {
     },
     onRestartAgent: async (name, fresh) => {
       const spec = cfg.agents.find((x) => x.name === name);
-      const sid = sessions.get(name);
-      if (!spec || !sid || !router.get(name)) return { ok: false, error: `unknown agent: ${name}` };
+      if (!spec || !router.get(name)) return { ok: false, error: `unknown agent: ${name}` };
       if (restarting.has(name) || clearing.has(name)) return { ok: false, error: t().restartBusy(name) };
       restarting.add(name);
       try {
         if (fresh) { delete store.agents[name]; saveStore(launchCwd, store); } // fresh:清会话记录→launchInto 走全新开局
+        // 注意:旧 launch 的后台 IIFE 可能在 fresh 删除后仍把旧 sessionId 写回 store(窄竞态,可接受;再 /restart fresh 一次即可)。
         router.markLaunching(name); // inbox 保留,重新 register 后照常投递
-        lastDeliverAt.delete(name);
-        missStreak.delete(name);
-        idleStreak.delete(name);
-        expectRegister.delete(name);
-        muteCountedAt.delete(name);
-        await driver.closePane(sid).catch(() => {});
-        sessions.delete(name);
-        if (sid === lastRight) lastRight = consoleSid; // 关的是锚点 → 复位
+        forgetAgentState(name);
+        const sid = sessions.get(name);
+        if (sid) { // 上次重启失败后 sessions 可能已无此人:pane 已不在,跳过关闭,仍可重建
+          await driver.closePane(sid).catch(() => {});
+          sessions.delete(name);
+          if (sid === lastRight) lastRight = consoleSid; // 关的是锚点 → 复位
+        }
         const anchor = await chooseAnchor(lastRight, consoleSid, (s) => driver.paneExists(s));
         lastRight = await launchInto(anchor, 'horizontal', spec);
         return { ok: true };
       } catch (e: any) {
-        router.markDead(name); // 重建失败与 pane 丢失同等对待
+        router.markDead(name); // 留在花名册标 dead:用户可再 /restart(无 sid 路径)重试,不会卡死
         return { ok: false, error: String(e?.message ?? e) };
       } finally {
         restarting.delete(name);
@@ -419,11 +425,7 @@ export async function up(configPath: string) {
             sessions.delete(name);
             if (sid === lastRight) lastRight = consoleSid; // 下线的正是当前锚点 → 复位,别留野指针
             router.removeAgent(name);
-            lastDeliverAt.delete(name);
-            missStreak.delete(name);
-            idleStreak.delete(name);
-            expectRegister.delete(name);
-            muteCountedAt.delete(name);
+            forgetAgentState(name);
             if (!inProcessConsole) console.log(t().workerWindowClosed(name));
             continue;
           }
@@ -487,7 +489,7 @@ export async function up(configPath: string) {
               // A-2 有活无声:走到这=自动降闲(不是它自己调 idle 工具)。投递过却全程零 MCP 调用 → 哑巴嫌疑。
               const mv = judgeAutoIdleSilence({ deliveredAt: lastDeliverAt.get(name), countedAt: muteCountedAt.get(name) ?? 0, lastMcpAt: a.lastMcpAt });
               muteCountedAt.set(name, mv.countedAt);
-              if (mv.reset) a.muteStreak = 0;
+              if (mv.reset) router.clearMute(name);
               if (mv.count && router.bumpMute(name) >= MUTE_THRESHOLD) alarmUnresponsive(name, 'mute');
               router.onIdle(name);
             }

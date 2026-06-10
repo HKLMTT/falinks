@@ -50,6 +50,15 @@ test('bumpMute 递增并返回当前计数', () => {
   expect(r.bumpMute('ghost')).toBe(0); // 未知名宽容
 });
 
+test('clearMute 清零哑巴计数,未知名宽容', () => {
+  const { r } = mkRouter();
+  r.addAgent('alice');
+  r.bumpMute('alice');
+  r.clearMute('alice');
+  expect(r.get('alice')!.muteStreak).toBe(0);
+  expect(() => r.clearMute('ghost')).not.toThrow();
+});
+
 test('markUnresponsive 边沿触发:首次 true,再标 false', () => {
   const { r } = mkRouter();
   r.addAgent('alice');
