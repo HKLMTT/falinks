@@ -84,3 +84,36 @@ export function reconcilePaneStatus(opts: {
   }
   return 'none';
 }
+
+/**
+ * A-1 报到超时判定(纯函数,健康轮询逐轮调用)。
+ * since = bootstrap 交付时刻(claude=注入成功、codex=启动序列完成),by = since + 90s。
+ * 员工在 since 之后有过任意 MCP 调用 → satisfied(调用方删除 expectation);
+ * 过期仍无 → timeout(告警);否则 waiting。
+ */
+export function checkRegisterTimeout(opts: {
+  now: number;
+  by: number;
+  since: number;
+  lastMcpAt?: number;
+}): 'satisfied' | 'timeout' | 'waiting' {
+  if (opts.lastMcpAt !== undefined && opts.lastMcpAt >= opts.since) return 'satisfied';
+  if (opts.now > opts.by) return 'timeout';
+  return 'waiting';
+}
+
+/**
+ * A-2 有活无声判定(纯函数,自动降闲 mark-idle 时调用;员工自己调 idle 工具不会走到这)。
+ * 每次投递最多贡献一次嫌疑(countedAt 去重,防 observeBusy 升降反复计同一条);
+ * 投递后有 MCP 活动 = 健康 → reset 清哑巴计数;从未投递不计(observeBusy 场景守卫)。
+ */
+export function judgeAutoIdleSilence(opts: {
+  deliveredAt?: number;
+  countedAt: number;
+  lastMcpAt?: number;
+}): { count: boolean; reset: boolean; countedAt: number } {
+  const d = opts.deliveredAt ?? 0;
+  if (!d || d <= opts.countedAt) return { count: false, reset: false, countedAt: opts.countedAt };
+  if ((opts.lastMcpAt ?? 0) >= d) return { count: false, reset: true, countedAt: d };
+  return { count: true, reset: false, countedAt: d };
+}
