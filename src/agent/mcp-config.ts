@@ -23,6 +23,7 @@ export interface LaunchSpec {
   sessionId?: string;    // claude 首启：--session-id（确定性 id）
   resumeId?: string;     // 恢复：claude --resume / codex resume <id>
   badge?: string;        // iTerm2 徽章文本（如 "lead·组长"）；设置时给命令加 printf OSC 前缀
+  model?: string;        // 模型名:claude 加 --model、codex 加 -m;fresh 与 resume 都带(防恢复后漂回全局默认)
 }
 
 export interface AgentLaunch {
@@ -50,8 +51,9 @@ export function buildAgentLaunch(cli: string, spec: LaunchSpec): AgentLaunch {
         : spec.sessionId
           ? ` --session-id ${spec.sessionId}`
           : '';
+      const model = spec.model ? ` --model ${shQuote(spec.model)}` : '';
       return {
-        command: withBadge(`claude --mcp-config ${spec.mcpConfigPath} --dangerously-skip-permissions${tail}`, spec.badge),
+        command: withBadge(`claude --mcp-config ${spec.mcpConfigPath} --dangerously-skip-permissions${model}${tail}`, spec.badge),
         needsBootstrapInject: true,
       };
     }
@@ -59,8 +61,9 @@ export function buildAgentLaunch(cli: string, spec: LaunchSpec): AgentLaunch {
       // 经 spike 验证：--no-alt-screen 利于读屏/注入；bypass 免审批；-c 内联配 streamable_http MCP；
       // bootstrap 作为位置参数传入，codex 自启即处理，无需注入。
       const url = busUrl(spec.name, spec.busPort);
+      const model = spec.model ? ` -m ${shQuote(spec.model)}` : '';
       const base =
-        `codex --no-alt-screen --dangerously-bypass-approvals-and-sandbox` +
+        `codex --no-alt-screen --dangerously-bypass-approvals-and-sandbox${model}` +
         ` -c 'mcp_servers.falinks.transport="streamable_http"'` +
         ` -c 'mcp_servers.falinks.url="${url}"'`;
       // codex 的 prompt 优先用临时文件 "$(cat 文件)" 读取:codex 命令本就长(内联 -c 配置),
