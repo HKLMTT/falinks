@@ -11,6 +11,7 @@ export interface CommandDef {
 export const COMMANDS: CommandDef[] = [
   { name: 'add', usage: '/add <name> <cli> <cwd>', get hint() { return t().cmdHint.add; } },
   { name: 'remove', usage: '/remove <name>', get hint() { return t().cmdHint.remove; } },
+  { name: 'restart', usage: '/restart <name> [fresh]', get hint() { return t().cmdHint.restart; } },
   { name: 'clear', usage: '/clear [name]', get hint() { return t().cmdHint.clear; } },
   { name: 'lang', usage: '/lang', noArgs: true, get hint() { return t().cmdHint.lang; } },
   { name: 'lead', usage: '/lead', noArgs: true, get hint() { return t().cmdHint.lead; } },

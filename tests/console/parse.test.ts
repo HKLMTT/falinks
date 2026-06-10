@@ -94,3 +94,9 @@ test('[图片N] 开头按回复处理(不被当命令);命令判定基于原始�
 test('empty input -> noop', () => {
   expect(parseConsoleInput('   ').kind).toBe('noop');
 });
+
+test('parses /restart with optional fresh flag', () => {
+  expect(parseConsoleInput('/restart lead')).toEqual({ kind: 'restart', name: 'lead', fresh: false });
+  expect(parseConsoleInput('/restart @lead fresh')).toEqual({ kind: 'restart', name: 'lead', fresh: true });
+  expect(parseConsoleInput('/restart')).toMatchObject({ kind: 'error' });
+});

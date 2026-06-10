@@ -170,6 +170,7 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
       }
       if (a.kind === 'add') { const r = await admin(port, 'POST', '/admin/add', a.spec); setStatus(r.ok ? t().addOk(a.spec.name) : '⚠ ' + (r.error ?? t().addFailed)); return; }
       if (a.kind === 'remove') { const r = await admin(port, 'POST', '/admin/remove', { name: a.name }); setStatus(r.ok ? t().removeOk(a.name) : '⚠ ' + (r.error ?? t().removeFailed)); return; }
+      if (a.kind === 'restart') { const r = await admin(port, 'POST', '/admin/restart', { name: a.name, fresh: a.fresh }); setStatus(r.ok ? t().restartOk(a.name) : '⚠ ' + (r.error ?? t().restartFailed)); return; }
       if (a.kind === 'clear') {
         const r = await admin(port, 'POST', '/admin/clear', { name: a.name });
         // /clear 全员(无名)成功:重置 committed——视口自绘,数据清了屏就清了(alt screen 无 scrollback 残留)。
@@ -551,6 +552,9 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
   const fastIdle = diag.filter((e) => e?.kind === 'auto-idle').length;
   const hasDiag = drops || injFails || fastIdle;
 
+  // 失联员工警告(roster 驱动:员工一恢复 MCP 调用标志即清,警告行自动消失)。
+  const unresp = roster.filter((a) => a.unresponsive).map((a) => ({ name: a.name, mcpSeen: !!a.mcpSeen }));
+
   return (
     // alt screen 全屏自绘(CC 同款):根盒钉 rows-1 行(严格小于终端行数,防末行换行顶滚)。
     // 历史区贴底渲染+overflow 裁顶:渲染行数恒给足 rows-1 行(≥视口容量),实际可见高度由 flex 决定,
@@ -580,6 +584,7 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
                 <Text color={color(a.status)}>{statusGlyph(a.status, !!a.virtual, frame)} </Text>
                 <Text color={colorFor(a.name)} bold>{a.name}</Text>
                 {a.lead ? <Text color="cyan" bold> ♔</Text> : null}
+                {a.unresponsive ? <Text color="red" bold> ⚠</Text> : null}
               </Text>
             ))}
           </Text>
@@ -587,6 +592,7 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
         {pending.length ? (
           <Text color="yellow">{t().pendingDeliver(pending.map((p) => '→ ' + p.to + (p.n > 1 ? ' ×' + p.n : '')).join(' · '))}</Text>
         ) : null}
+        {unresp.length ? <Text color="red">{t().unresponsiveWarn(unresp)}</Text> : null}
         {hasDiag ? <Text color="yellow">{t().diagWarn(drops, injFails, fastIdle)}</Text> : null}
 
         {confirmExit ? (

@@ -7,6 +7,7 @@ export type ConsoleAction =
   | { kind: 'add'; spec: { name: string; cli: string; cwd: string } }
   | { kind: 'add-start'; name: string }
   | { kind: 'remove'; name: string }
+  | { kind: 'restart'; name: string; fresh: boolean }
   | { kind: 'clear'; name?: string }
   | { kind: 'lang-start' }
   | { kind: 'lead-start' }
@@ -33,6 +34,10 @@ export function parseConsoleInput(line: string): ConsoleAction {
     if (cmd === 'remove') {
       if (!args[0]) return { kind: 'error', message: t().usageRemove };
       return { kind: 'remove', name: args[0] };
+    }
+    if (cmd === 'restart') {
+      if (!args[0]) return { kind: 'error', message: t().usageRestart };
+      return { kind: 'restart', name: args[0].replace(/^@/, ''), fresh: args[1] === 'fresh' };
     }
     if (cmd === 'clear') {
       return { kind: 'clear', name: args[0] ? args[0].replace(/^@/, '') : undefined };

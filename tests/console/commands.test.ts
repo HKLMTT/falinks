@@ -4,15 +4,15 @@ import { commandState, applyCommand, COMMANDS } from '../../src/console/commands
 test('bare / activates with all commands', () => {
   const s = commandState('/');
   expect(s.active).toBe(true);
-  expect(s.matches.map((c) => c.name)).toEqual(['add', 'remove', 'clear', 'lang', 'lead', 'help']);
+  expect(s.matches.map((c) => c.name)).toEqual(['add', 'remove', 'restart', 'clear', 'lang', 'lead', 'help']);
 });
 
 test('/a matches add', () => {
   expect(commandState('/a').matches.map((c) => c.name)).toEqual(['add']);
 });
 
-test('/r matches remove', () => {
-  expect(commandState('/r').matches.map((c) => c.name)).toEqual(['remove']);
+test('/r matches remove and restart', () => {
+  expect(commandState('/r').matches.map((c) => c.name)).toEqual(['remove', 'restart']);
 });
 
 test('/h matches help', () => {
@@ -50,4 +50,10 @@ test('lang/help 标记为无参命令(补全时直接执行,不补尾空格)', (
   expect(byName.add.noArgs).toBeUndefined();
   expect(byName.remove.noArgs).toBeUndefined();
   expect(byName.clear.noArgs).toBeUndefined();
+});
+
+test('/res completes to restart', () => {
+  const s = commandState('/res');
+  expect(s.active).toBe(true);
+  expect(s.matches.map((c) => c.name)).toContain('restart');
 });
