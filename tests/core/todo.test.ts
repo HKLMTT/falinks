@@ -22,6 +22,7 @@ function mk(initial?: TodoState) {
     announceSummary: () => { calls.summary++; },
     announceSuspended: () => { calls.suspended++; },
     announceSendFailing: () => { calls.sendFailing++; },
+    removedByBossText: () => 'removed',
     persist: () => { calls.persist++; },
   }, initial);
   return { e, calls, setNow: (v: number) => { now = v; }, setSendOk: (v: boolean) => { sendOk = v; } };
@@ -204,4 +205,14 @@ test('finished+add 清旧账后再 start:dispatch 收到 pos=1(seq 已是更大�
   const last = calls.dispatch[calls.dispatch.length - 1];
   expect(last.pos).toBe(1);   // 显示用位置:第 1 条(新清单)
   expect(last.seq).toBe(2);   // id 不归零:seq=2
+});
+
+test('start 拒绝非法巡查间隔(0/负/NaN/小数)', () => {
+  const { e } = mk();
+  e.add('a');
+  expect(e.start(0, true).ok).toBe(false);
+  expect(e.start(-5, true).ok).toBe(false);
+  expect(e.start(Number.NaN, true).ok).toBe(false);
+  expect(e.start(2.5, true).ok).toBe(false);
+  expect(e.start(2, true).ok).toBe(true);
 });

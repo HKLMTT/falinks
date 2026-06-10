@@ -122,6 +122,7 @@ export async function up(configPath: string) {
       router.send('falinks', 'boss', t().todoSendFailingMsg);
       try { appendDiag(launchCwd, { kind: 'todo-send-failing', ts: Date.now() }); } catch { /* 诊断落盘失败不致命 */ }
     },
+    removedByBossText: () => t().todoRemovedByBoss,
     persist: (st) => { try { saveTodo(launchCwd, st); } catch { /* 落盘失败不致命,内存继续 */ } },
   }, loadTodo(launchCwd));
   const tmp = mkdtempSync(join(tmpdir(), 'falinks-'));

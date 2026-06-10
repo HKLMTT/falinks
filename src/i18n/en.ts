@@ -243,4 +243,5 @@ export const en: typeof zh = {
   todoListEmpty: '(empty) — /todo add <content> to add tasks',
   todoOpOk: (op: string) => `todo ${op} done`,
   todoAddOk: (seq: number) => `Task #${seq} added`,
+  todoRemovedByBoss: 'removed by boss (skipped)',
 };

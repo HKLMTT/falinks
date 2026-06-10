@@ -171,3 +171,12 @@ interface TodoState {
 16. stop→resume 重发与 inbox 排队旧下发叠成两份(副作用任务重复执行风险)→ 重发前 cancelQueued。
 17. current 卡死无脱困正路 → paused 态允许 rm current(标 failed 跳过)。
 18. 启动恢复提示只在单窗口模式可达 → 改由控制台从 GET /admin/todo 推导,两模式统一。
+
+## 实现后记(2026-06-10)
+
+- 下发/巡查模板从 spec 的「任务 k/n」(k=seq)改为「任务 #seq·第 pos/total 条」:seq 作为 taskdone 校验 id **跨轮不归零**(finished 态 add 清旧账后 seq 继续递增),直接当位置显示会出现「任务 4/1」;pos 由引擎按 tasks 下标实时计算,seq 仅出现在 taskdone 指令里。别把两者合回去。
+- paused 态 rm 掉 current 后若已无 pending/current,**直接转 finished 并出汇总**(spec 只写了"resume 后从下一条继续")——否则旧账滞留,下轮 add+start 会被状态机挡住、旧 done 任务还会污染下轮汇总。
+- 引擎回调把 spec 的单一 announce(text) 拆成 announceSummary/announceSuspended/announceSendFailing 三个类型化回调:index.ts 分别决定收件身份与是否落 diag(todo-send-failing 进诊断流水)。
+- finished 态 start 的报错文案是「add 新任务或 clear」而非 spec 的"需先 clear":配合"finished 态 add 自动清旧账转 idle",add 才是续单正路。
+- nudge 计时锚定为"重置事件发生时刻"(计划初稿是惰性锚定到下一次空闲 tick,被引擎测试抓出偏差)。
+- /restart 重启中的 lead 不触发挂起(status='launching'≠dead):下发/巡查照常入 inbox 排队,重新 register 后送达——有意行为。

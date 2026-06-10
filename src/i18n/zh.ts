@@ -248,4 +248,5 @@ export const zh = {
   todoListEmpty: '(空)— /todo add <内容> 添加',
   todoOpOk: (op: string) => `todo ${op} 完成`,
   todoAddOk: (seq: number) => `已加入任务 #${seq}`,
+  todoRemovedByBoss: 'boss 移除(跳过)',
 };

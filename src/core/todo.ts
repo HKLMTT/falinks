@@ -18,6 +18,7 @@ export interface TodoCallbacks {
   announceSummary(tasks: TodoTask[]): void;
   announceSuspended(): void;
   announceSendFailing(): void;
+  removedByBossText(): string;
   persist(st: TodoState): void;
 }
 
@@ -64,7 +65,7 @@ export class TodoEngine {
     }
     if (t.status === 'current' && this.st.state === 'paused') { // 脱困:跳过卡死的当前条
       t.status = 'failed';
-      t.result = 'removed by boss';
+      t.result = this.cb.removedByBossText();
       t.ts = this.cb.now();
       if (this.lastDispatchId) this.cb.cancelQueued(this.lastDispatchId); // 旧下发可能还在 inbox 排队:撤掉,防 boss 已移除的任务事后送达
       this.lastDispatchId = undefined;
@@ -97,6 +98,8 @@ export class TodoEngine {
     if (this.st.state === 'finished') return { ok: false, error: 'finished — /todo add new tasks or /todo clear' };
     if (!this.st.tasks.some((t) => t.status === 'pending')) return { ok: false, error: 'todolist is empty' };
     if (!hasLead) return { ok: false, error: 'no lead — set one with /lead first' };
+    if (nMinutes !== undefined && (!Number.isInteger(nMinutes) || nMinutes <= 0))
+      return { ok: false, error: 'nudge minutes must be a positive integer' };
     if (nMinutes !== undefined) this.st.nudgeMinutes = nMinutes;
     this.st.state = 'running';
     this.suspended = false;
