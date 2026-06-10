@@ -202,6 +202,7 @@ export const en: typeof zh = {
   toolDescAsk:
     'Pose a multiple-choice question. Send to the boss (to="boss") and the boss sees clickable options and picks one; send to a coworker and they receive a message with numbered options and reply via sendmsg with their pick.',
   toolDescWho: 'View the online roster',
+  toolDescTaskdone: '[todolist only · lead only] report the current task finished: taskdone(seq, status:"done"|"failed", result). The system records it and dispatches the next task; report failures too — the list never stops.',
 
   // —— templates.ts ——
   roleBootstrap: (role: string) => `Your duties: ${role}. Keep it concise, no fluff.`,

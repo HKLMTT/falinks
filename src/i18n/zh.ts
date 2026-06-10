@@ -207,6 +207,7 @@ export const zh = {
   toolDescAsk:
     '出选择题。发给老板(to="boss")老板会看到可点选项并回选;发给同事则对方收到带编号选项的消息,用 sendmsg 回选哪个。',
   toolDescWho: '查看在线花名册',
+  toolDescTaskdone: '【todolist 专用·仅组长】上报当前任务完结:taskdone(seq, status:"done"|"failed", result)。系统记录后才会下发下一条;失败也要报,不会中断清单。',
 
   // —— templates.ts ——
   roleBootstrap: (role: string) => `你的职责：${role}。风格简练，少废话。`,

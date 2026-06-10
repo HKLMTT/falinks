@@ -48,6 +48,12 @@ export interface BusDeps {
   onRestartAgent?(name: string, fresh: boolean): Promise<{ ok: boolean; error?: string }>;
   /** 返回最近的诊断事件(守卫丢消息/注入失败/可疑自动 idle)；缺省视为无诊断。 */
   getDiag?(): unknown[];
+  /** todolist 引擎入口(index.ts 注入):taskdone 上报、op 命令分发、state 只读快照。 */
+  todo?: {
+    taskdone(seq: number, status: 'done' | 'failed', result: string): { ok: boolean; error?: string };
+    op(op: string, args: { body?: string; seq?: number; n?: number }): { ok: boolean; error?: string; [k: string]: unknown };
+    state(): unknown;
+  };
 }
 
 export interface Bus {
@@ -124,6 +130,16 @@ function serverForAgent(agentName: string, deps: BusDeps, questions: QuestionSto
   server.registerTool('who', { description: t().toolDescWho, inputSchema: {} }, async () => {
     touch();
     return ok({ roster: router.roster().map((a) => ({ name: a.name, role: a.role, status: a.status })) });
+  });
+
+  server.registerTool('taskdone', {
+    description: t().toolDescTaskdone,
+    inputSchema: { seq: z.number(), status: z.enum(['done', 'failed']), result: z.string() },
+  }, async ({ seq, status, result }) => {
+    touch();
+    if (!deps.todo) return ok({ ok: false, error: 'todolist not available' });
+    if (!router.get(agentName)?.lead) return ok({ ok: false, error: 'only the lead can call taskdone' });
+    return ok(deps.todo.taskdone(seq, status, result));
   });
 
   return server;
@@ -268,6 +284,17 @@ export async function startBus(deps: BusDeps, port: number, opts?: BusOptions): 
         try {
           const r = await deps.onRestartAgent(String(abody.name), abody.fresh === true);
           return sendJson(r);
+        } catch (e: any) {
+          return sendJson({ ok: false, error: String(e?.message ?? e) });
+        }
+      }
+      if (req.method === 'GET' && url.pathname === '/admin/todo') {
+        return sendJson({ todo: deps.todo ? deps.todo.state() : null });
+      }
+      if (req.method === 'POST' && url.pathname === '/admin/todo') {
+        if (!deps.todo) return sendJson({ ok: false, error: 'todo not supported' });
+        try {
+          return sendJson(deps.todo.op(String(abody.op), { body: abody.body, seq: abody.seq, n: abody.n }));
         } catch (e: any) {
           return sendJson({ ok: false, error: String(e?.message ?? e) });
         }
