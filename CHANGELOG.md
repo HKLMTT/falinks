@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.11.0
+
+- **todolist 无人值守任务清单**:`/todo add <内容>`(支持多行)逐条建单 → `/todo start [巡查分钟]` 后系统自动把任务按序下发给组长,组长用新 MCP 工具 `taskdone(seq, done|failed, result)` 上报完结,系统才下发下一条;**双机制保送达**——组长主动上报 + 空闲巡查(全员空闲满 N 分钟自动询问组长,默认 10 分钟,**追问不止**)。单条失败记录后继续不中断(夜间批量不被堵),跑完 `falinks → boss` 出汇总(x 成 y 败 + 各条结果)。清单落盘 `~/.falinks/todos/`,falinks 重启后降为暂停态、控制台提示 `/todo resume` 续跑(重发当前条,防组长失忆)。配套:`/todo list` 浮层、`/todo rm/clear/stop/resume`、子命令补全、活区 `📋 k/n` 进度常驻行;运行中无组长自动挂起告警、`/lead` 指定后自动续;`taskdone` 仅组长可调且 seq 必须匹配当前条(防模型连调两次误结下一条)。
+- **创建员工可指定模型**:`falinks.config.json` 的 agent 支持可选 `"model"` 字段,`/add` 向导在选完 CLI 后新增"模型"步(留空=CLI 全局默认);claude 加 `--model`、codex 加 `-m`,**首启与 resume/重启都带**(不再漂回全局默认)。填错模型名会启动失败并触发"未报到"告警,不会静默。
+- **员工失联检测**:员工 CLI 没挂上 falinks MCP 工具(如手动重启了裸 CLI)时不再静默——总线按"是否收到该员工的 MCP 调用"判定:bootstrap 注入后 90 秒没报到、或被投递消息后干完活却全程零工具调用(连续 2 次),花名册标红 `⚠` + 控制台警告(按"连过 MCP 没/连过但没报到"分流病因文案,附 `/restart` 提示)+ 诊断落盘;收到任意工具调用即自愈。源于真实事故:lead 被手动重启成裸 claude 后,所有回复只打在自己 pane 里,boss 端十分钟零感知。
+- **`/restart <name> [fresh]` 命令**:用正确的 MCP 配置原地重启某员工的 CLI(以前手动重启必丢 falinks 工具,这正是上面事故的成因)。默认 resume 保留记忆,`fresh` 清会话记录全新开局(处置上下文耗尽的死胡同会话);重启期间排队消息保留、就绪后照常投递;重启失败可重试不卡死。
+- **修复:`/add` 创建的员工本会话内 `/restart` 报 unknown**——动态新增的员工没进内存团队名单;`/remove` 也同步清理,同名重加不再拿到旧配置。
+- **修复:symlink 工作目录(如 `/tmp`)下 resume 永远失效**——claude 按真实路径存会话,存在性检查现做 realpath 归一化(双形态兼容)。
+- 杂项:配置保留名 `boss`/`falinks` 校验;`/remove @名字` 与其他命令对齐剥 `@`;一行帮助补 `/restart` `/todo` `/lead`;README 补新功能文档。
+
 ## 0.10.0
 
 - **控制台全屏渲染，复刻 Claude Code 的滚动体验**：进入 alternate screen 自绘视口，**滚轮直接上滚回看历史（无需任何快捷键）、底部输入区钉死不随滚动**，拖选复制保持终端原生（不开鼠标上报）。原理与 Claude Code 相同：alternate scroll(1007) 让终端把滚轮转成方向键。回看中 ↑↓ 逐行滚、`PageUp/PageDown` 翻页、`Esc` 或直接打字跳回最新；全帧用 synchronized output(2026) 包裹，不闪烁；退出后终端还原到启动前内容。
