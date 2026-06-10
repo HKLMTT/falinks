@@ -169,13 +169,14 @@ export async function up(configPath: string) {
           }
         } else {
           // codex：首启 bootstrap 作为命令位置参数；恢复则命令不带 prompt。盲发 Enter 接受信任目录对话。
+          // codex:bootstrap 是启动参数,进程一起即可能调工具——期限从启动起算,防快手 register 落在盲窗里。
+          if (!resuming) armRegisterExpectation(a.name);
           await sleep(2500);
           await driver.inject(sid, '', true);
           await sleep(1500);
           await driver.inject(sid, '', true);
           await sleep(3000);
           await driver.inject(sid, '', true); // 第三次兜底（codex 启动慢时前两次可能太早）
-          if (!resuming) armRegisterExpectation(a.name); // codex 的 bootstrap 是启动参数,启动序列完成即视为已交付
 
           // codex 首启：注入 /status 读屏抓 session id（轮询重试，员工忙时也能抓到）。
           if (!resuming) {
@@ -235,14 +236,16 @@ export async function up(configPath: string) {
       return { ok: true };
     },
     onRemoveAgent: async (name) => {
-      const sid = sessions.get(name);
-      if (!sid) return { ok: false, error: 'unknown agent' };
+      if (!router.get(name)) return { ok: false, error: 'unknown agent' };
       if (restarting.has(name)) return { ok: false, error: t().restartBusy(name) };
-      await driver.closePane(sid);
-      sessions.delete(name);
-      if (sid === lastRight) lastRight = consoleSid; // 删的正是当前锚点 → 复位到控制台 pane,别留野指针
+      const sid = sessions.get(name); // 重启失败后 sessions 可能已无此人:pane 已不在,仍允许移除(否则卡在花名册)
+      if (sid) {
+        await driver.closePane(sid);
+        sessions.delete(name);
+        if (sid === lastRight) lastRight = consoleSid; // 删的正是当前锚点 → 复位到控制台 pane,别留野指针
+      }
       router.removeAgent(name);
-      forgetAgentState(name); // 与 pane 下线路径对齐:清干净,防同名 re-add 继承旧去抖计数
+      forgetAgentState(name); // 与 pane 下线路径对齐:清干净,防同名 re-add 继承旧状态
       try { removeAgentFromConfigFile(configPath, name); } catch { /* 配置写回失败不致命 */ }
       return { ok: true };
     },

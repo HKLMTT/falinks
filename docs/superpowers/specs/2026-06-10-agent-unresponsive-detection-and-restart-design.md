@@ -109,3 +109,9 @@ falinks 对"员工 CLI 没挂上 falinks MCP 工具"完全不可见:
 ## 验收标准(对照事故)
 
 重演事故场景:手动在员工 pane 起裸 claude → /clear 全员 → 90s 内控制台出现 ⚠ 与警告行;boss 执行 /restart lead → 员工带 MCP 配置重启、register 报到、⚠ 消失、排队消息送达。
+
+## 实现后记(2026-06-10)
+
+- /restart 失败的员工**留在花名册标 dead**(可再次 /restart 重试或 /remove 移除),与"pane 丢失即自动下线"路径有意不同——别"修"回去。
+- 花名册徽章实现为纯红色 `⚠`,病因文案放在下方警告行(unresponsiveWarn,按 mcpSeen 分流),与 spec 措辞略异属有意取舍。
+- codex 的 A-1 期限从进程启动起算(claude 从 bootstrap 注入成功起算),防 codex 快手 register 落在启动盲窗里。
