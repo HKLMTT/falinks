@@ -51,6 +51,8 @@ export const zh = {
   wizardAddPrefix: '添加员工 ',
   wizardCliSuffix: ' — 选择 CLI（↑↓ 选 · Enter 下一步 · Esc 取消）',
   wizardExperimental: '  (实验)',
+  wizardModelSuffix: ' — 模型（Enter 下一步 · 留空=CLI 默认 · Esc 取消）',
+  wizardModelHint: '例：claude-opus-4-8 / claude-fable-5。留空用 CLI 全局默认；填错会启动失败并触发 ⚠ 未报到告警。',
   wizardRoleSuffix: ' — 角色/职责（Enter 下一步 · Esc 取消）',
   wizardRoleExample: '例：负责后端开发 / 审查代码 / 调研查证。留空=通用员工。',
   wizardDefaultRole: '员工',

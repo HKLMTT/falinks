@@ -52,6 +52,8 @@ export const en: typeof zh = {
   wizardAddPrefix: 'Add worker ',
   wizardCliSuffix: ' — pick a CLI (↑↓ select · Enter next · Esc cancel)',
   wizardExperimental: '  (experimental)',
+  wizardModelSuffix: ' — model (Enter next · blank = CLI default · Esc cancel)',
+  wizardModelHint: 'e.g. claude-opus-4-8 / claude-fable-5. Blank = CLI global default; a wrong name fails to launch and trips the ⚠ no-register alarm.',
   wizardRoleSuffix: ' — role/duties (Enter next · Esc cancel)',
   wizardRoleExample: 'e.g. backend dev / code review / research. Leave empty = generic worker.',
   wizardDefaultRole: 'worker',

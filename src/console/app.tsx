@@ -32,8 +32,9 @@ async function admin(port: number, method: string, path: string, body?: unknown)
 
 type WizardState =
   | { name: string; step: 'cli'; sel: number }
-  | { name: string; step: 'role'; cli: string; roleText: string }
-  | { name: string; step: 'cwd'; cli: string; role: string; path: string; sel: number };
+  | { name: string; step: 'model'; cli: string; modelText: string }
+  | { name: string; step: 'role'; cli: string; model?: string; roleText: string }
+  | { name: string; step: 'cwd'; cli: string; model?: string; role: string; path: string; sel: number };
 
 export function App({ port, initialStatus }: { port: number; initialStatus?: string }) {
   const [roster, setRoster] = useState<any[]>([]);
@@ -306,11 +307,17 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
       if (wizard.step === 'cli') {
         if (ev.type === 'up') { setWizard({ ...wizard, sel: Math.max(0, wizard.sel - 1) }); return; }
         if (ev.type === 'down') { setWizard({ ...wizard, sel: Math.min(CLIS.length - 1, wizard.sel + 1) }); return; }
-        if (ev.type === 'enter' || ev.type === 'tab') { setWizard({ name: wizard.name, step: 'role', cli: CLIS[wizard.sel], roleText: '' }); return; }
+        if (ev.type === 'enter' || ev.type === 'tab') { setWizard({ name: wizard.name, step: 'model', cli: CLIS[wizard.sel], modelText: '' }); return; }
+        return;
+      }
+      if (wizard.step === 'model') {
+        if (ev.type === 'enter') { setWizard({ name: wizard.name, step: 'role', cli: wizard.cli, model: wizard.modelText.trim() || undefined, roleText: '' }); return; }
+        if (ev.type === 'backspace') { setWizard({ ...wizard, modelText: wizard.modelText.slice(0, -1) }); return; }
+        if (ev.type === 'text') { setWizard({ ...wizard, modelText: wizard.modelText + ev.text }); return; }
         return;
       }
       if (wizard.step === 'role') {
-        if (ev.type === 'enter') { setWizard({ name: wizard.name, step: 'cwd', cli: wizard.cli, role: wizard.roleText.trim() || t().wizardDefaultRole, path: defaultCwd, sel: 0 }); return; }
+        if (ev.type === 'enter') { setWizard({ name: wizard.name, step: 'cwd', cli: wizard.cli, model: wizard.model, role: wizard.roleText.trim() || t().wizardDefaultRole, path: defaultCwd, sel: 0 }); return; }
         if (ev.type === 'backspace') { setWizard({ ...wizard, roleText: wizard.roleText.slice(0, -1) }); return; }
         if (ev.type === 'text') { setWizard({ ...wizard, roleText: wizard.roleText + ev.text }); return; }
         return;
@@ -323,7 +330,7 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
         const w = wizard;
         setWizard(null);
         void (async () => {
-          const r = await admin(port, 'POST', '/admin/add', { name: w.name, cli: w.cli, cwd: w.path, role: w.role });
+          const r = await admin(port, 'POST', '/admin/add', { name: w.name, cli: w.cli, cwd: w.path, role: w.role, model: w.model });
           setStatus(r.ok ? t().wizardAddOk(w.name, w.role, w.path) : '⚠ ' + (r.error ?? t().addFailed));
         })();
         return;
@@ -634,9 +641,15 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
                   <Text key={c} inverse={i === wizard.sel}>  {c}{c === 'codex' ? t().wizardExperimental : ''}</Text>
                 ))}
               </>
+            ) : wizard.step === 'model' ? (
+              <>
+                <Text>{t().wizardAddPrefix}<Text bold>{wizard.name}</Text> [{wizard.cli}]{t().wizardModelSuffix}</Text>
+                <Box><Text color="green">› </Text><Text>{wizard.modelText}</Text><Text inverse> </Text></Box>
+                <Text dimColor>{t().wizardModelHint}</Text>
+              </>
             ) : wizard.step === 'role' ? (
               <>
-                <Text>{t().wizardAddPrefix}<Text bold>{wizard.name}</Text> [{wizard.cli}]{t().wizardRoleSuffix}</Text>
+                <Text>{t().wizardAddPrefix}<Text bold>{wizard.name}</Text> [{wizard.cli}{wizard.model ? '·' + wizard.model : ''}]{t().wizardRoleSuffix}</Text>
                 <Box><Text color="green">› </Text><Text>{wizard.roleText}</Text><Text inverse> </Text></Box>
                 <Text dimColor>{t().wizardRoleExample}</Text>
               </>
