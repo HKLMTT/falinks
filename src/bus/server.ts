@@ -170,6 +170,11 @@ export async function startBus(deps: BusDeps, port: number, opts?: BusOptions): 
       if (req.method === 'POST' && url.pathname === '/admin/answer') {
         const q = questions.take(String(abody.id));
         if (!q) return sendJson({ ok: false, error: 'no such question' });
+        // 自定义回答:老板没选预设项,而是自由输入文本 → 直接把文本注回提问者。
+        if (typeof abody.text === 'string' && abody.text.trim()) {
+          router.send('boss', q.from, t().bossAnswered(q.question, abody.text.trim()));
+          return sendJson({ ok: true });
+        }
         const choice = Number(abody.choice);
         if (!Number.isInteger(choice) || choice < 0 || choice >= q.options.length) {
           return sendJson({ ok: false, error: 'bad choice' });

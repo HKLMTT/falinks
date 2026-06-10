@@ -86,3 +86,12 @@ test('/admin/answer 越界 / 未知 id -> 友好错误', async () => {
   expect((await http('POST', '/admin/answer', { id: questions[0].id, choice: 9 })).error).toBe('bad choice');
   expect((await http('POST', '/admin/answer', { id: 'nope', choice: 0 })).error).toBe('no such question');
 });
+
+test('/admin/answer 自定义 text -> 把老板自由回答注回提问者,pending 清空', async () => {
+  await callTool('alice', 'ask', { to: 'boss', question: '用哪个方案?', options: ['A', 'B'] });
+  const { questions } = await http('GET', '/admin/questions');
+  const r = await http('POST', '/admin/answer', { id: questions[0].id, text: '都不用,先调研一周' });
+  expect(r.ok).toBe(true);
+  expect(driver.injections.some((i) => i.sessionId === sessions.get('alice') && i.text.includes('都不用,先调研一周'))).toBe(true);
+  expect((await http('GET', '/admin/questions')).questions.length).toBe(0);
+});

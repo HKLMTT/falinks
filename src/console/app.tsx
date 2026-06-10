@@ -55,6 +55,7 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
   const [leadPick, setLeadPick] = useState<number | null>(null); // /lead 选组长选择器:null=未激活
   const [questions, setQuestions] = useState<any[]>([]);
   const [qSel, setQSel] = useState(0);
+  const [customAns, setCustomAns] = useState<string | null>(null); // 答题"自定义回答"输入态:null=未在输入
   const [skippedQ, setSkippedQ] = useState<string | null>(null);
   const [confirmExit, setConfirmExit] = useState(false);
   const [tagline] = useState(() => t().taglines[Math.floor(Math.random() * t().taglines.length)]);
@@ -205,7 +206,9 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
   // 待答的选择题（跳过的不抢）：输入空 + 非向导时进入"答题"态
   const pendingQ = questions.find((q) => q.id !== skippedQ) ?? null;
   const answering = !!pendingQ && input === '' && !wizard;
-  const qSelClamped = pendingQ ? Math.min(qSel, Math.max(0, pendingQ.options.length - 1)) : 0;
+  // 选项末尾恒加一个"自定义回答"虚拟项;qSel 取值 0..options.length(最后一个=自定义)。
+  const qSelClamped = pendingQ ? Math.min(qSel, pendingQ.options.length) : 0;
+  const onCustomSlot = !!pendingQ && qSelClamped === pendingQ.options.length;
 
   function handleKey(ev: KeyEvent) {
     // Ctrl+C：不直接退，先问是否关闭员工窗口（优先于一切）。
@@ -304,11 +307,30 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
       return;
     }
 
-    // 答题态：有待答选择题且输入框为空 → ↑↓ 选项、Enter 回复、Esc 跳过；一打字就让位给普通输入。
+    // 答题态：有待答选择题且输入框为空 → ↑↓ 选项(末尾恒有"自定义回答")、Enter 回复、Esc 跳过；一打字让位普通输入。
     if (answering && pendingQ) {
+      // "自定义回答"输入子态:打字编辑、Enter 发送自由文本给提问者、Esc 返回选项列表。
+      if (customAns !== null) {
+        if (ev.type === 'esc') { setCustomAns(null); return; }
+        if (ev.type === 'enter') {
+          const text = customAns.trim();
+          if (!text) { setCustomAns(null); return; }
+          const id = pendingQ.id; const from = pendingQ.from;
+          setCustomAns(null); setQSel(0);
+          void (async () => {
+            const r = await admin(port, 'POST', '/admin/answer', { id, text });
+            setStatus(r.ok ? t().answeredOk(from, text) : '⚠ ' + (r.error ?? t().unknownError));
+          })();
+          return;
+        }
+        if (ev.type === 'backspace') { setCustomAns((c) => (c ?? '').slice(0, -1)); return; }
+        if (ev.type === 'text') { setCustomAns((c) => (c ?? '') + ev.text); return; }
+        return; // 其它键在自定义输入态吞掉
+      }
       if (ev.type === 'up') { setQSel((s) => Math.max(0, s - 1)); return; }
-      if (ev.type === 'down') { setQSel((s) => Math.min(pendingQ.options.length - 1, s + 1)); return; }
+      if (ev.type === 'down') { setQSel((s) => Math.min(pendingQ.options.length, s + 1)); return; }
       if (ev.type === 'enter') {
+        if (onCustomSlot) { setCustomAns(''); return; } // 选中"自定义回答" → 进输入子态
         const id = pendingQ.id; const from = pendingQ.from; const choice = qSelClamped; const picked = pendingQ.options[choice];
         setQSel(0);
         void (async () => {
@@ -403,7 +425,7 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
     return () => { stdin.off('data', onData); };
     // 每次渲染重挂，保证闭包里拿到最新 state；依赖列出 handleKey 读到的所有状态。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stdin, input, cursor, wizard, langPick, leadPick, confirmExit, questions, skippedQ, qSel, history, histIdx, attachments, sel, log, roster]);
+  }, [stdin, input, cursor, wizard, langPick, leadPick, confirmExit, questions, skippedQ, qSel, customAns, history, histIdx, attachments, sel, log, roster]);
 
   const color = (s: string) => (s === 'idle' ? 'green' : s === 'busy' ? 'yellow' : s === 'dead' ? 'red' : 'gray');
 
@@ -509,7 +531,12 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
                 {pendingQ.options.map((o: string, i: number) => (
                   <Text key={i} inverse={i === qSelClamped}>  {i + 1}. {o}</Text>
                 ))}
-                <Text dimColor>{t().answerKeys}{questions.length > 1 ? t().answerMore(questions.length - 1) : ''}{t().answerOrType}</Text>
+                <Text inverse={onCustomSlot} dimColor={!onCustomSlot}>  {t().answerCustom}</Text>
+                {customAns !== null ? (
+                  <Text>{t().answerCustomPrompt}<Text color="green">{customAns}</Text><Text inverse> </Text></Text>
+                ) : (
+                  <Text dimColor>{t().answerKeys}{questions.length > 1 ? t().answerMore(questions.length - 1) : ''}{t().answerOrType}</Text>
+                )}
               </Box>
             ) : null}
             <Box marginTop={1}>

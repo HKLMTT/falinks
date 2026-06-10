@@ -52,6 +52,9 @@ export const zh = {
   answerKeys: '↑↓ 选 · Enter 回复 · Esc 跳过',
   answerMore: (n: number) => ` · 还有 ${n} 个待答`,
   answerOrType: ' · 或打字改普通输入',
+  answerCustom: '✏️ 自定义回答…',
+  answerCustomPrompt: '自定义回答(Enter 发送 · Esc 返回选项): ',
+  bossAnswered: (question: string, text: string) => `对“${question}”，老板回复：${text}`,
   roster: '花名册',
   messages: '消息',
   /** 花名册里的员工状态本地化（未知值原样返回，前向兼容新状态）。 */

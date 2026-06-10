@@ -54,6 +54,9 @@ export const en: typeof zh = {
   answerKeys: '↑↓ select · Enter reply · Esc skip',
   answerMore: (n: number) => ` · ${n} more pending`,
   answerOrType: ' · or type to switch to normal input',
+  answerCustom: '✏️ Custom answer…',
+  answerCustomPrompt: 'Custom answer (Enter send · Esc back to options): ',
+  bossAnswered: (question: string, text: string) => `On "${question}", boss replied: ${text}`,
   roster: 'Roster',
   messages: 'Messages',
   agentStatus: (s: string): string =>
