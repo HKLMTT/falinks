@@ -17,7 +17,7 @@
 - `falinks.config.json` 的 agent 加可选 `model?: string`(`src/core/config.ts` 解析,空/缺省=沿用 CLI 全局默认,即现状)。
 - `src/agent/mcp-config.ts`:`LaunchSpec` 加 `model?`;`buildAgentLaunch`:
   - claude:命令追加 `--model <m>`——**fresh 与 `--resume` 两种命令都加**(否则重启恢复的会话漂回全局默认,正是 pasg-dev 事故里模型漂移的路径);
-  - codex:追加模型参数,**具体 flag 实现前 spike 验证**(疑似 `-m <m>`,与现有 `-c` 内联配置共存;**`codex resume <id>` 是否吃同一 flag 也一并验证**);验证不通过则 codex 暂不支持 model 字段并在启动时控制台报错提示,绝不静默忽略。
+  - codex:追加 `-m <m>`——**spike 已验证**(2026-06-10:`codex --help` 与 `codex resume --help` 均有 `-m, --model <MODEL>`,fresh 与 resume 都支持)。
 - 传递链全程透传 model:`/add` 向导(见下)→ `/admin/add` body → `BusDeps.onAddAgent(spec)` → `launchInto(a)` → `buildAgentLaunch`。
 - **修复既有缺口**:`onAddAgent` 目前只 launchInto + 写回配置文件,**不把新员工 push 进内存 `cfg.agents`**——导致本会话内对 /add 创建的员工 `/restart` 报 unknown agent(它查 cfg.agents)、`/lead` 切换的 bootstrap 重组也漏掉它。本期一并修:onAddAgent 成功后把 spec(含 model)push 进 `cfg.agents`。否则"model 贯穿 /restart"的承诺对主入口(/add 向导)不成立。
 - `/add` 向导(console)在选完 cli 后加一步「模型(留空=CLI 默认)」,自由文本,不做名单校验——**填错的自然兜底**:CLI 启动失败 → 员工永不报到 → A-1 失联检测 90s 内亮 ⚠(v0.10.x 已交付的机制)。
