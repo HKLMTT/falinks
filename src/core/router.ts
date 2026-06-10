@@ -146,15 +146,15 @@ export class Router {
     return a.muteStreak;
   }
 
-  /** 标失联嫌疑。返回是否为新标记(边沿触发:调用方据此只落一次诊断)。 */
+  /** 标失联嫌疑。返回是否为新标记(边沿触发:调用方据此只落一次诊断)。虚拟成员排除(boss 从不调 MCP 工具)。 */
   markUnresponsive(name: AgentName): boolean {
     const a = this.agents.get(name);
-    if (!a || a.unresponsive) return false;
+    if (!a || a.virtual || a.unresponsive) return false;
     a.unresponsive = true;
     return true;
   }
 
-  /** 现有员工置回 launching(/restart 用):保留 inbox 排队消息,清 handling 与失联痕迹。 */
+  /** 现有员工置回 launching(/restart 用):保留 inbox 排队消息,清 handling、失联痕迹及 MCP 时间戳(新进程从零观察)。 */
   markLaunching(name: AgentName): void {
     const a = this.agents.get(name);
     if (!a) return;
@@ -163,6 +163,8 @@ export class Router {
     a.handlingFrom = undefined;
     a.unresponsive = false;
     a.muteStreak = 0;
+    a.lastMcpAt = undefined;
+    a.lastMcpHttpAt = undefined;
   }
 
   /**

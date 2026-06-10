@@ -58,14 +58,23 @@ test('markUnresponsive 边沿触发:首次 true,再标 false', () => {
   expect(r.markUnresponsive('ghost')).toBe(false);
 });
 
-test('markLaunching 保留 inbox、状态回 launching、清失联痕迹', () => {
+test('markUnresponsive 对虚拟成员返回 false(boss 从不调 MCP 工具)', () => {
   const { r } = mkRouter();
+  r.addVirtual('boss');
+  expect(r.markUnresponsive('boss')).toBe(false);
+});
+
+test('markLaunching 保留 inbox、状态回 launching、清失联痕迹及 MCP 时间戳', () => {
+  const { r, setNow } = mkRouter();
   r.addAgent('alice');
   r.register('alice', 's1');          // idle
   r.send('boss-x', 'alice', 'one');   // 投出 → busy(发件人未知名也能送:send 只校验目标)
   r.send('boss-x', 'alice', 'two');   // 排队
   r.bumpMute('alice');
   r.markUnresponsive('alice');
+  setNow(5000);
+  r.touchMcp('alice');
+  r.touchMcpHttp('alice');
   r.markLaunching('alice');
   const a = r.get('alice')!;
   expect(a.status).toBe('launching');
@@ -73,4 +82,17 @@ test('markLaunching 保留 inbox、状态回 launching、清失联痕迹', () =>
   expect(a.unresponsive).toBe(false);
   expect(a.muteStreak).toBe(0);
   expect(a.handling).toBeUndefined();
+  expect(a.handlingFrom).toBeUndefined();
+  expect(a.lastMcpAt).toBeUndefined();
+  expect(a.lastMcpHttpAt).toBeUndefined();
+});
+
+test('markLaunching 对 dead 状态的员工也生效(restart-the-dead)', () => {
+  const { r } = mkRouter();
+  r.addAgent('alice');
+  r.register('alice', 's1');
+  r.markDead('alice');
+  expect(r.get('alice')!.status).toBe('dead');
+  r.markLaunching('alice');
+  expect(r.get('alice')!.status).toBe('launching');
 });
