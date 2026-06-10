@@ -9,6 +9,7 @@ import { runtimeDir } from './runtime.js';
  * - guard-drop:消息被守卫(回合上限/循环/限流)拦下、整条丢弃 → 收件人永远收不到。
  * - inject-fail:消息已出队但注入 pane 失败 → 消息丢失,发件人却以为发出去了。
  * - auto-idle:健康轮询把某员工自动判为 idle(可能在它还没真正回完时就降,导致下一条排队消息叠注入)。
+ * - agent-unresponsive:失联告警(A-1 报到超时 / A-2 有活无声),边沿触发、每次失联只记一条。
  */
 export const DIAG_CAP = 1000;
 
@@ -16,6 +17,7 @@ export type DiagEvent =
   | { kind: 'guard-drop'; from: string; to: string; reason: string; thread?: string; ts: number }
   | { kind: 'inject-fail'; to: string; error: string; msgId?: string; ts: number }
   | { kind: 'auto-idle'; name: string; sinceDeliverMs: number; ts: number }
+  | { kind: 'agent-unresponsive'; name: string; rule: 'register-timeout' | 'mute'; ts: number }
   | { kind: 'poll'; name: string; status: string; proc: boolean; scrape: boolean; paneBusy: boolean; grace: boolean; streak: number; action: string; bottom: string; ts: number };
 
 /** 每个项目目录一份诊断流水:~/.falinks/diag/<cwd 的 sha1 前16位>.jsonl。root 可注入便于测试。 */

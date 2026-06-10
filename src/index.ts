@@ -6,7 +6,7 @@ import { parseConfig } from './core/config.js';
 import { Router } from './core/router.js';
 import type { AgentRuntime, Message } from './core/types.js';
 import { Guards } from './core/guards.js';
-import { makeDeliverer, detectScreenState, isPaneBusy, reconcilePaneStatus } from './orchestrator.js';
+import { makeDeliverer, detectScreenState, isPaneBusy, reconcilePaneStatus, checkRegisterTimeout, judgeAutoIdleSilence } from './orchestrator.js';
 import { ITerm2Driver } from './terminal/iterm.js';
 import { startBus, type Bus } from './bus/server.js';
 import { mcpConfigFor, buildAgentLaunch } from './agent/mcp-config.js';
@@ -47,6 +47,22 @@ export async function up(configPath: string) {
   const sessions = new Map<string, string>();
   const bootstraps = new Map<string, string>(); // name -> 完整 bootstrap（/clear 后重注入,恢复员工身份）
   const clearing = new Set<string>(); // 正在 /clear 的员工：健康轮询期间别自动 onIdle（否则会把排队消息投进正在清空的 pane）
+  const restarting = new Set<string>(); // 正在 /restart 的员工:轮询跳过(防关旧 pane 期间被"pane 消失"误下线丢 inbox)
+  const missStreak = new Map<string, number>(); // 连续探测不到 pane 的次数（去抖：osascript 高并发会瞬时误报，连续多次才下线）
+  const idleStreak = new Map<string, number>(); // 连续采到 pane"不忙"的次数（自动空闲去抖）
+  const REGISTER_TIMEOUT_MS = 90_000; // bootstrap 交付后这么久没任何 MCP 调用 → 报到超时告警(限流重压下可能误报,自愈)
+  const MUTE_THRESHOLD = 2;           // 连续"有活无声"达到次数 → 失联告警
+  const expectRegister = new Map<string, { by: number; since: number }>(); // A-1:bootstrap 交付后的报到期限
+  const muteCountedAt = new Map<string, number>(); // A-2:已计过嫌疑的投递时刻(每次投递最多计一次)
+  const armRegisterExpectation = (name: string) => {
+    const now = Date.now();
+    expectRegister.set(name, { by: now + REGISTER_TIMEOUT_MS, since: now });
+  };
+  // 失联告警:边沿触发(router 标志首转才落盘),花名册 ⚠ 由 /admin/roster 透出、警告行由控制台渲染。
+  const alarmUnresponsive = (name: string, rule: 'register-timeout' | 'mute') => {
+    if (!router.markUnresponsive(name)) return;
+    try { appendDiag(launchCwd, { kind: 'agent-unresponsive', name, rule, ts: Date.now() }); } catch { /* 诊断落盘失败不致命 */ }
+  };
   const historyCap = cfg.historyCap ?? MESSAGE_LOG_CAP;
   const router = new Router(deliverer, {
     now: () => Date.now(), genId: () => `m${++n}`, routes: cfg.routes, guards,
@@ -109,7 +125,10 @@ export async function up(configPath: string) {
     // pane 视觉身份(默认开,config.paneTheme:false 关):按角色染背景色 + 员工名徽章。
     // paneIdx 在 addAgent 之前取 = 新员工将占的 roster 下标(boss=0);与控制台花名册配色同下标对应。
     const themed = cfg.paneTheme !== false;
-    const paneIdx = router.roster().length;
+    const paneIdx = (() => {
+      const i = router.roster().findIndex((x) => x.name === a.name);
+      return i >= 0 ? i : router.roster().length; // 已在花名册(restart)用原下标保色;新员工按将占下标
+    })();
     const badge = themed ? a.name : undefined;
 
     const { command, needsBootstrapInject } = buildAgentLaunch(a.cli, {
@@ -119,7 +138,8 @@ export async function up(configPath: string) {
 
     const sid = await driver.splitFrom(anchor, dir, { cwd: a.cwd, command });
     sessions.set(a.name, sid);
-    router.addAgent(a.name, a.role, a.lead);
+    if (router.get(a.name)) router.markLaunching(a.name); // restart:保留 inbox,状态回 launching
+    else router.addAgent(a.name, a.role, a.lead);
     await driver.setName(sid, a.name).catch(() => {}); // pane 标题=员工名
     if (themed) await driver.setBackgroundColor(sid, paneBgColor(paneIdx)).catch(() => {}); // 角色底色(CLI 改不掉,建 pane 时设一次即可)
 
@@ -134,7 +154,10 @@ export async function up(configPath: string) {
             await sleep(700);
             const state = detectScreenState(await driver.readScreen(sid));
             if (state === 'trust-dialog') { await driver.inject(sid, '', true); continue; }
-            if (state === 'ready') { if (!resuming) await driver.inject(sid, fullBootstrap, true); break; }
+            if (state === 'ready') {
+              if (!resuming) { await driver.inject(sid, fullBootstrap, true); armRegisterExpectation(a.name); }
+              break;
+            }
           }
         } else {
           // codex：首启 bootstrap 作为命令位置参数；恢复则命令不带 prompt。盲发 Enter 接受信任目录对话。
@@ -144,6 +167,7 @@ export async function up(configPath: string) {
           await driver.inject(sid, '', true);
           await sleep(3000);
           await driver.inject(sid, '', true); // 第三次兜底（codex 启动慢时前两次可能太早）
+          if (!resuming) armRegisterExpectation(a.name); // codex 的 bootstrap 是启动参数,启动序列完成即视为已交付
 
           // codex 首启：注入 /status 读屏抓 session id（轮询重试，员工忙时也能抓到）。
           if (!resuming) {
@@ -212,6 +236,8 @@ export async function up(configPath: string) {
       lastDeliverAt.delete(name);
       missStreak.delete(name);
       idleStreak.delete(name); // 与 pane 下线路径对齐:清干净,防同名 re-add 继承旧去抖计数
+      expectRegister.delete(name);
+      muteCountedAt.delete(name);
       try { removeAgentFromConfigFile(configPath, name); } catch { /* 配置写回失败不致命 */ }
       return { ok: true };
     },
@@ -230,6 +256,7 @@ export async function up(configPath: string) {
           await sleep(1500);
           const bs = bootstraps.get(nm);
           if (bs) await driver.inject(sid, bs, true); // 重注入 bootstrap：恢复身份+重新 register（→idle→投出排队消息）
+          if (bs) armRegisterExpectation(nm); // /clear 重注入 bootstrap 后同样限期报到
           cleared.push(nm);
         } finally {
           clearing.delete(nm);
@@ -286,6 +313,33 @@ export async function up(configPath: string) {
       router.send('boss', name, `${t().leadAssignedMsg}\n${t().coordinatorRules}`);
       if (cur && cur !== name) router.send('boss', cur, t().leadRevokedMsg);
       return { ok: true };
+    },
+    onRestartAgent: async (name, fresh) => {
+      const spec = cfg.agents.find((x) => x.name === name);
+      const sid = sessions.get(name);
+      if (!spec || !sid || !router.get(name)) return { ok: false, error: `unknown agent: ${name}` };
+      if (restarting.has(name) || clearing.has(name)) return { ok: false, error: t().restartBusy(name) };
+      restarting.add(name);
+      try {
+        if (fresh) { delete store.agents[name]; saveStore(launchCwd, store); } // fresh:清会话记录→launchInto 走全新开局
+        router.markLaunching(name); // inbox 保留,重新 register 后照常投递
+        lastDeliverAt.delete(name);
+        missStreak.delete(name);
+        idleStreak.delete(name);
+        expectRegister.delete(name);
+        muteCountedAt.delete(name);
+        await driver.closePane(sid).catch(() => {});
+        sessions.delete(name);
+        if (sid === lastRight) lastRight = consoleSid; // 关的是锚点 → 复位
+        const anchor = await chooseAnchor(lastRight, consoleSid, (s) => driver.paneExists(s));
+        lastRight = await launchInto(anchor, 'horizontal', spec);
+        return { ok: true };
+      } catch (e: any) {
+        router.markDead(name); // 重建失败与 pane 丢失同等对待
+        return { ok: false, error: String(e?.message ?? e) };
+      } finally {
+        restarting.delete(name);
+      }
     },
     getDiag: () => { try { return loadDiag(launchCwd); } catch { return []; } },
   }, cfg.busPort ?? 0, {
@@ -353,12 +407,11 @@ export async function up(configPath: string) {
                               // 2 次(≈3s)+ is processing 自带 2s 衰减 ≈ 真正停手后约 5s 降闲。
   const SUSPECT_FAST_IDLE_MS = 8000; // 投递后这么快就被自动降 idle 视为"可疑(可能没回完)",落盘诊断
   const DEBUG_BUSY = !!process.env.FALINKS_DEBUG_BUSY; // 开则逐轮询把判忙信号+决策落盘(排查闪烁)
-  const missStreak = new Map<string, number>(); // 连续探测不到 pane 的次数（去抖：osascript 高并发会瞬时误报，连续多次才下线）
-  const idleStreak = new Map<string, number>(); // 连续采到 pane"不忙"的次数（自动空闲去抖）
   setInterval(() => {
     void (async () => {
       for (const [name, sid] of [...sessions]) {
         try {
+          if (restarting.has(name)) continue; // 重启中:旧 pane 已关属预期,跳过下线判定与状态校准
           if (!(await driver.paneExists(sid))) {
             const n = (missStreak.get(name) ?? 0) + 1;
             missStreak.set(name, n);
@@ -369,6 +422,8 @@ export async function up(configPath: string) {
             lastDeliverAt.delete(name);
             missStreak.delete(name);
             idleStreak.delete(name);
+            expectRegister.delete(name);
+            muteCountedAt.delete(name);
             if (!inProcessConsole) console.log(t().workerWindowClosed(name));
             continue;
           }
@@ -377,6 +432,14 @@ export async function up(configPath: string) {
 
           // 清空中（/clear）跳过状态校准：否则会把排队消息投进正在清空的 pane。
           if (clearing.has(name)) continue;
+
+          // A-1 报到超时:bootstrap 交付后限期内必须出现任意 MCP 调用,否则告警(工具没挂/会话瘫痪)。
+          const exp = expectRegister.get(name);
+          if (exp) {
+            const verdict = checkRegisterTimeout({ now: Date.now(), by: exp.by, since: exp.since, lastMcpAt: router.get(name)?.lastMcpAt });
+            if (verdict === 'satisfied') expectRegister.delete(name);
+            else if (verdict === 'timeout') { expectRegister.delete(name); alarmUnresponsive(name, 'register-timeout'); }
+          }
 
           // 按 pane 实况校准花名册：pane 在生成却显示 idle → 升 busy（修"干活却显示空闲"）；
           // busy 但 pane 已空闲、过宽限、连续 IDLE_STREAK 次不忙 → 降 idle 并 pump 排队消息。
@@ -421,6 +484,11 @@ export async function up(configPath: string) {
               if (since < SUSPECT_FAST_IDLE_MS) {
                 try { appendDiag(launchCwd, { kind: 'auto-idle', name, sinceDeliverMs: since, ts: Date.now() }); } catch { /* 诊断落盘失败不致命 */ }
               }
+              // A-2 有活无声:走到这=自动降闲(不是它自己调 idle 工具)。投递过却全程零 MCP 调用 → 哑巴嫌疑。
+              const mv = judgeAutoIdleSilence({ deliveredAt: lastDeliverAt.get(name), countedAt: muteCountedAt.get(name) ?? 0, lastMcpAt: a.lastMcpAt });
+              muteCountedAt.set(name, mv.countedAt);
+              if (mv.reset) a.muteStreak = 0;
+              if (mv.count && router.bumpMute(name) >= MUTE_THRESHOLD) alarmUnresponsive(name, 'mute');
               router.onIdle(name);
             }
             else if (action === 'mark-busy') router.observeBusy(name);
