@@ -1,0 +1,172 @@
+// tests/core/todo.test.ts
+import { expect, test } from 'vitest';
+import { TodoEngine } from '../../src/core/todo.js';
+import type { TodoState } from '../../src/todo-store.js';
+
+function mk(initial?: TodoState) {
+  let now = 0;
+  let nextId = 0;
+  const calls = {
+    dispatch: [] as { seq: number; isResend: boolean }[],
+    nudge: [] as number[],
+    cancel: [] as string[],
+    summary: 0, suspended: 0, sendFailing: 0,
+    persist: 0,
+  };
+  let sendOk = true; // false 模拟守卫丢弃
+  const e = new TodoEngine({
+    now: () => now,
+    dispatch: (t, _total, isResend) => { calls.dispatch.push({ seq: t.seq, isResend }); return sendOk ? `msg${++nextId}` : undefined; },
+    nudge: (t) => { calls.nudge.push(t.seq); return sendOk; },
+    cancelQueued: (id) => { calls.cancel.push(id); },
+    announceSummary: () => { calls.summary++; },
+    announceSuspended: () => { calls.suspended++; },
+    announceSendFailing: () => { calls.sendFailing++; },
+    persist: () => { calls.persist++; },
+  }, initial);
+  return { e, calls, setNow: (v: number) => { now = v; }, setSendOk: (v: boolean) => { sendOk = v; } };
+}
+const MIN = 60_000;
+
+test('start 下发第一条;taskdone 推进;failed 也继续;最后一条→finished+汇总', () => {
+  const { e, calls } = mk();
+  e.add('a'); e.add('b'); e.add('c');
+  expect(e.start(undefined, true).ok).toBe(true);
+  expect(calls.dispatch.map((d) => d.seq)).toEqual([1]);
+  expect(e.taskdone(1, 'done', 'ok').ok).toBe(true);
+  expect(calls.dispatch.map((d) => d.seq)).toEqual([1, 2]);
+  expect(e.taskdone(2, 'failed', 'broke').ok).toBe(true); // 失败不中断
+  expect(calls.dispatch.map((d) => d.seq)).toEqual([1, 2, 3]);
+  expect(e.taskdone(3, 'done', 'ok').ok).toBe(true);
+  expect(e.state().state).toBe('finished');
+  expect(calls.summary).toBe(1);
+});
+
+test('taskdone seq 错位/重复拒绝;无活动清单拒绝', () => {
+  const { e } = mk();
+  expect(e.taskdone(1, 'done', 'x').ok).toBe(false); // idle 无清单
+  e.add('a'); e.add('b'); e.start(undefined, true);
+  expect(e.taskdone(2, 'done', 'x').ok).toBe(false); // 错位:current 是 1
+  expect(e.taskdone(1, 'done', 'x').ok).toBe(true);
+  expect(e.taskdone(1, 'done', 'x').ok).toBe(false); // 重复:current 已是 2
+});
+
+test('start 校验:空单/已 running/finished/无 lead', () => {
+  const { e } = mk();
+  expect(e.start(undefined, true).ok).toBe(false); // 空单
+  e.add('a');
+  expect(e.start(undefined, false).ok).toBe(false); // 无 lead
+  expect(e.start(undefined, true).ok).toBe(true);
+  expect(e.start(undefined, true).ok).toBe(false); // 已 running
+});
+
+test('stop 后迟到的 taskdone 只记录不下发;resume 校验 lead 并重发 current(先撤旧排队)', () => {
+  const { e, calls } = mk();
+  e.add('a'); e.add('b'); e.start(undefined, true);
+  e.stop();
+  expect(e.taskdone(1, 'done', 'late').ok).toBe(true);
+  expect(calls.dispatch.length).toBe(1); // 没下发第二条
+  expect(e.resume(false).ok).toBe(false); // 无 lead 拒绝
+  expect(e.resume(true).ok).toBe(true);   // current 已完结 → 下发下一条 pending
+  expect(calls.dispatch.map((d) => d.seq)).toEqual([1, 2]);
+});
+
+test('stop→resume 时 current 未完结:撤旧排队再重发(防叠两份)', () => {
+  const { e, calls } = mk();
+  e.add('a'); e.start(undefined, true);
+  e.stop();
+  e.resume(true);
+  expect(calls.cancel).toEqual(['msg1']);
+  expect(calls.dispatch).toEqual([{ seq: 1, isResend: false }, { seq: 1, isResend: true }]);
+});
+
+test('巡查:无人忙满 N 触发 nudge 并重置;有人忙/下发/巡查后计时重置;永不放弃', () => {
+  const { e, calls, setNow } = mk();
+  e.add('a'); e.start(undefined, true); // N 默认 10 分钟
+  setNow(5 * MIN); e.tick(false, true);
+  expect(calls.nudge.length).toBe(0); // 未满 N(下发时刻重置过)
+  setNow(10 * MIN + 1); e.tick(false, true);
+  expect(calls.nudge).toEqual([1]);   // 满 N 巡查
+  setNow(15 * MIN); e.tick(true, true);   // 有人忙 → 重置
+  setNow(24 * MIN); e.tick(false, true);  // 距重置 9 分钟,未满
+  expect(calls.nudge.length).toBe(1);
+  setNow(25 * MIN + 1); e.tick(false, true);
+  expect(calls.nudge).toEqual([1, 1]); // 永不放弃,再问
+});
+
+test('start 可指定 N', () => {
+  const { e, calls, setNow } = mk();
+  e.add('a'); e.start(2, true);
+  setNow(2 * MIN + 1); e.tick(false, true);
+  expect(calls.nudge).toEqual([1]);
+});
+
+test('send 失败:下发失败靠巡查兜底;巡查失败不重置计时下一 tick 重试;连续失败≥3 边沿公告一次', () => {
+  const { e, calls, setNow, setSendOk } = mk();
+  e.add('a');
+  setSendOk(false);
+  e.start(undefined, true); // 下发被丢(fail 1)
+  setNow(10 * MIN + 1);
+  e.tick(false, true); // 巡查被丢(fail 2),计时不重置
+  e.tick(false, true); // 立刻重试(fail 3)→ 公告
+  expect(calls.sendFailing).toBe(1);
+  e.tick(false, true); // fail 4,不重复公告
+  expect(calls.sendFailing).toBe(1);
+  setSendOk(true);
+  e.tick(false, true); // 巡查成功(自包含,即重试下发)
+  expect(calls.nudge.length).toBe(4);
+});
+
+test('lead 缺失挂起(边沿公告一次),恢复后撤旧排队重发 current', () => {
+  const { e, calls, setNow } = mk();
+  e.add('a'); e.start(undefined, true);
+  e.tick(false, false); e.tick(false, false);
+  expect(calls.suspended).toBe(1); // 边沿一次
+  setNow(60 * MIN); e.tick(false, false);
+  expect(calls.nudge.length).toBe(0); // 挂起期间不巡查
+  e.tick(false, true); // lead 回归
+  expect(calls.cancel).toEqual(['msg1']);
+  expect(calls.dispatch).toEqual([{ seq: 1, isResend: false }, { seq: 1, isResend: true }]);
+});
+
+test('add:running 追加队尾;finished 后 add 自动转 idle 清旧账', () => {
+  const { e } = mk();
+  e.add('a'); e.start(undefined, true);
+  e.add('b'); // running 追加
+  expect(e.state().tasks.length).toBe(2);
+  e.taskdone(1, 'done', 'x'); e.taskdone(2, 'done', 'x');
+  expect(e.state().state).toBe('finished');
+  e.add('tomorrow');
+  expect(e.state().state).toBe('idle');
+  expect(e.state().tasks.map((t) => t.body)).toEqual(['tomorrow']); // 旧账清掉
+});
+
+test('rm:pending 可删;paused 态可删 current(标 failed 脱困);running 态 current 拒绝;clear 仅非 running', () => {
+  const { e } = mk();
+  e.add('a'); e.add('b');
+  expect(e.rm(2).ok).toBe(true); // pending
+  e.start(undefined, true);
+  expect(e.rm(1).ok).toBe(false); // running 的 current
+  expect(e.clear().ok).toBe(false); // running 拒绝 clear
+  e.stop();
+  expect(e.rm(1).ok).toBe(true);  // paused 脱困
+  expect(e.state().tasks.find((t) => t.seq === 1)!.status).toBe('failed');
+  expect(e.clear().ok).toBe(true);
+  expect(e.state().tasks).toEqual([]);
+  expect(e.state().state).toBe('idle');
+});
+
+test('resume 时已无 current 且无 pending → 直接 finished+汇总', () => {
+  const { e, calls } = mk();
+  e.add('a'); e.start(undefined, true); e.stop();
+  e.taskdone(1, 'done', 'x'); // paused 完结最后一条
+  e.resume(true);
+  expect(e.state().state).toBe('finished');
+  expect(calls.summary).toBe(1);
+});
+
+test('seq 单调递增不复用(rm 后再 add 不撞号)', () => {
+  const { e } = mk();
+  e.add('a'); e.add('b'); e.rm(2); e.add('c');
+  expect(e.state().tasks.map((t) => t.seq)).toEqual([1, 3]);
+});
