@@ -53,6 +53,8 @@ export interface BusDeps {
     taskdone(seq: number, status: 'done' | 'failed', result: string): { ok: boolean; error?: string };
     op(op: string, args: { body?: string; seq?: number; n?: number }): { ok: boolean; error?: string; [k: string]: unknown };
     state(): unknown;
+    /** lead 批量建单(todoplan 工具):from=调用者名(通知留痕用)。 */
+    plan(tasks: string[], replace: boolean, from: string): { ok: boolean; error?: string; seqs?: number[] };
   };
 }
 
@@ -140,6 +142,26 @@ function serverForAgent(agentName: string, deps: BusDeps, questions: QuestionSto
     if (!deps.todo) return ok({ ok: false, error: 'todolist not available' });
     if (!router.get(agentName)?.lead) return ok({ ok: false, error: 'only the lead can call taskdone' });
     return ok(deps.todo.taskdone(seq, status, result));
+  });
+
+  server.registerTool('todoplan', {
+    description: t().toolDescTodoplan,
+    inputSchema: { tasks: z.array(z.string()).min(1), replace: z.boolean().optional() },
+  }, async ({ tasks, replace }) => {
+    touch();
+    if (!deps.todo) return ok({ ok: false, error: 'todolist not available' });
+    if (!router.get(agentName)?.lead) return ok({ ok: false, error: 'only the lead can call todoplan' });
+    return ok(deps.todo.plan(tasks, replace === true, agentName));
+  });
+
+  server.registerTool('todostart', {
+    description: t().toolDescTodostart,
+    inputSchema: { nudgeMinutes: z.number().optional() },
+  }, async ({ nudgeMinutes }) => {
+    touch();
+    if (!deps.todo) return ok({ ok: false, error: 'todolist not available' });
+    if (!router.get(agentName)?.lead) return ok({ ok: false, error: 'only the lead can call todostart' });
+    return ok(deps.todo.op('start', { n: nudgeMinutes }));
   });
 
   return server;

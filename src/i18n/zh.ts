@@ -213,6 +213,8 @@ export const zh = {
     '出选择题。发给老板(to="boss")老板会看到可点选项并回选;发给同事则对方收到带编号选项的消息,用 sendmsg 回选哪个。',
   toolDescWho: '查看在线花名册',
   toolDescTaskdone: '【todolist 专用·仅组长】上报当前任务完结:taskdone(seq, status:"done"|"failed", result)。系统记录后才会下发下一条;失败也要报,不会中断清单。',
+  toolDescTodoplan: '【todo 模式·仅组长】boss 明确要求用 todo 模式执行时,把拆解定稿的任务批量建成清单:todoplan(tasks:[每条一个任务], replace?)。建完必须用 ask(to:"boss") 征得 boss 同意才可 todostart;修订自己刚建的清单传 replace:true。',
+  toolDescTodostart: '【todo 模式·仅组长】启动已建好的任务清单:todostart(nudgeMinutes?)。必须先经 ask 获得 boss 明确同意;paused 状态的恢复属 boss 干预权(/todo resume),本工具不可用。',
 
   // —— templates.ts ——
   roleBootstrap: (role: string) => `你的职责：${role}。风格简练，少废话。`,

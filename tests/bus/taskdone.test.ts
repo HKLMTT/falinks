@@ -34,6 +34,7 @@ beforeEach(async () => {
       taskdone: (seq: number, status: 'done' | 'failed', result: string) => { tdCalls.push([seq, status, result]); return { ok: true }; },
       op: (op: string, args: { body?: string; seq?: number; n?: number }) => ({ ok: true, op, args }),
       state: () => ({ state: 'running', nudgeMinutes: 10, tasks: [] }),
+      plan: (_t: string[], _r: boolean, _f: string) => ({ ok: true }),
     },
   }, 0);
 });

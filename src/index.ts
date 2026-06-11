@@ -398,6 +398,7 @@ export async function up(configPath: string) {
     },
     todo: {
       taskdone: (seq, status, result) => todo.taskdone(seq, status, result),
+      plan: (tasks, replace, _from) => todo.plan(tasks, replace),
       op: (op, args) => {
         switch (op) {
           case 'add': {

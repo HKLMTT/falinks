@@ -208,6 +208,8 @@ export const en: typeof zh = {
     'Pose a multiple-choice question. Send to the boss (to="boss") and the boss sees clickable options and picks one; send to a coworker and they receive a message with numbered options and reply via sendmsg with their pick.',
   toolDescWho: 'View the online roster',
   toolDescTaskdone: '[todolist only · lead only] report the current task finished: taskdone(seq, status:"done"|"failed", result). The system records it and dispatches the next task; report failures too — the list never stops.',
+  toolDescTodoplan: '[todo mode · lead only] when boss explicitly asks for todo-mode execution, batch-create the finalized task breakdown: todoplan(tasks:[one per task], replace?). You MUST get boss approval via ask(to:"boss") before todostart; pass replace:true to revise a list you just created.',
+  toolDescTodostart: '[todo mode · lead only] start the prepared task list: todostart(nudgeMinutes?). Requires explicit boss approval via ask first; resuming a paused list is the boss\'s call (/todo resume), not this tool.',
 
   // —— templates.ts ——
   roleBootstrap: (role: string) => `Your duties: ${role}. Keep it concise, no fluff.`,
