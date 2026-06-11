@@ -321,8 +321,8 @@ export async function up(configPath: string) {
           await driver.inject(sid, '/clear', true);   // claude/codex 同名：清空上下文、开新会话
           await sleep(1500);
           const bs = bootstraps.get(nm);
+          if (bs) armRegisterExpectation(nm); // 先布防再注入：重注入失败（拥堵超时）也要 90s 亮 ⚠，不能无告警裸奔
           if (bs) await driver.inject(sid, bs, true); // 重注入 bootstrap：恢复身份+重新 register（→idle→投出排队消息）
-          if (bs) armRegisterExpectation(nm); // /clear 重注入 bootstrap 后同样限期报到
           cleared.push(nm);
         } finally {
           clearing.delete(nm);
@@ -502,6 +502,8 @@ export async function up(configPath: string) {
   const NAME_PIN_EVERY = 10; // 每 10 轮随批量脚本钉一次标题(≈15s),代替逐轮无条件写
   let pollInFlight = false;  // 重入护栏:上一轮未归本轮跳过——pane 极多时轮询自动变慢,而不是叠加冻死 iTerm
   let pollRound = 0;
+  let pollFailStreak = 0;    // 批量探测连续整轮失败计数:≥10(≈15s+ 状态完全没更新)落一次诊断,冻结可见而非无声
+  let pollFailAnnounced = false;
   setInterval(() => {
     if (pollInFlight) return;
     pollInFlight = true;
@@ -513,8 +515,17 @@ export async function up(configPath: string) {
         let statuses: Map<string, { processing: boolean }>;
         try {
           statuses = await driver.pollPanes(targets.map(([nm, sid]) => ({ sessionId: sid, pinName: pin ? nm : undefined })));
-        } catch {
-          return; // 批量探测整体失败(超时/iTerm 忙):本轮全员维持现状,护栏顺延下一轮再试
+          pollFailStreak = 0;
+          pollFailAnnounced = false;
+        } catch (e: any) {
+          // 批量探测整体失败(超时/iTerm 忙):本轮全员维持现状,护栏顺延下一轮再试。
+          // 连续失败 ≥10 轮(≈15s+ 状态完全没更新)落一次诊断——状态冻结要可见,不能和"全员安静"无法区分。
+          pollFailStreak++;
+          if (pollFailStreak >= 10 && !pollFailAnnounced) {
+            pollFailAnnounced = true;
+            try { appendDiag(launchCwd, { kind: 'poll-frozen', streak: pollFailStreak, error: String(e?.message ?? e), ts: Date.now() }); } catch { /* 诊断落盘失败不致命 */ }
+          }
+          return;
         }
         for (const [name, sid] of targets) {
           try {

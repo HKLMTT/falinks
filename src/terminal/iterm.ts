@@ -9,14 +9,15 @@ export function shQuote(s: string): string {
 }
 
 /** 执行一段 AppleScript(经 osascript stdin),返回 trim 后的 stdout。
- *  15s 超时强杀:iTerm 主线程拥堵时挂死的调用不再永久占位(调用方按"探测失败"兜底)。 */
+ *  默认 15s 超时强杀:iTerm 主线程拥堵时挂死的调用不再永久占位(调用方按"探测失败"兜底)。
+ *  timeoutMs 可由调用方按需延长(如批量 pollPanes 随 pane 数伸缩)。 */
 const OSASCRIPT_TIMEOUT_MS = 15_000;
-function osascript(script: string): Promise<string> {
+function osascript(script: string, timeoutMs = OSASCRIPT_TIMEOUT_MS): Promise<string> {
   return new Promise((resolve, reject) => {
     const p = spawn('osascript', ['-']);
     let out = '';
     let err = '';
-    const timer = setTimeout(() => { p.kill(); reject(new Error('osascript timeout')); }, OSASCRIPT_TIMEOUT_MS);
+    const timer = setTimeout(() => { p.kill(); reject(new Error('osascript timeout')); }, timeoutMs);
     p.stdout.on('data', (d) => (out += d.toString()));
     p.stderr.on('data', (d) => (err += d.toString()));
     p.on('error', (e) => { clearTimeout(timer); reject(e); });
@@ -154,7 +155,10 @@ end tell`;
 
   async pollPanes(targets: { sessionId: string; pinName?: string }[]): Promise<Map<string, { processing: boolean }>> {
     if (targets.length === 0) return new Map();
-    const out = await osascript(buildPollScript(targets));
+    // 超时随目标数伸缩(15s + 100ms/目标,上限 60s):pane 极多时批量脚本本身变慢,
+    // 固定 15s 会让每轮都超时 → 永久状态冻结;重入护栏已防叠加,等久一点没有代价。
+    const timeoutMs = Math.min(60_000, 15_000 + targets.length * 100);
+    const out = await osascript(buildPollScript(targets), timeoutMs);
     const m = parsePollOutput(out);
     // 护栏:有输出却一条都解析不出 = 脚本输出格式坏了(如 AppleScript 常量被遮蔽),
     // 宁可整轮失败(调用方跳过维持现状)也不能返回空 Map 把全员误判成 pane 消失。

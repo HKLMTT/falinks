@@ -20,7 +20,8 @@ export type DiagEvent =
   | { kind: 'agent-unresponsive'; name: string; rule: 'register-timeout' | 'mute'; ts: number }
   | { kind: 'poll'; name: string; status: string; proc: boolean; scrape: boolean; paneBusy: boolean; grace: boolean; streak: number; action: string; bottom: string; ts: number }
   | { kind: 'todo-send-failing'; ts: number }
-  | { kind: 'bootstrap-fail'; name: string; error: string; ts: number };
+  | { kind: 'bootstrap-fail'; name: string; error: string; ts: number }
+  | { kind: 'poll-frozen'; streak: number; error: string; ts: number } // 批量轮询连续整轮失败(状态冻结);
 
 /** 每个项目目录一份诊断流水:~/.falinks/diag/<cwd 的 sha1 前16位>.jsonl。root 可注入便于测试。 */
 export function diagPath(cwd: string, root = runtimeDir()): string {
