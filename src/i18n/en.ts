@@ -236,6 +236,7 @@ export const en: typeof zh = {
     `[task #${seq} (${pos}/${total}) progress check] Everyone has been idle for ${n} minutes with no taskdone report. Task: ${body}\nIf done, call taskdone(seq:${seq}, status:"done"|"failed", result:"…"); if still in progress just continue — this reminder repeats every ${n} minutes.`,
   todoSummaryTitle: (done: number, failed: number, total: number) => `[todolist finished] ${total} tasks: ✅ ${done} succeeded · ❌ ${failed} failed`,
   todoSummaryLine: (seq: number, ok: boolean, body: string, result: string) => `${ok ? '✅' : '❌'} #${seq} ${body} — ${result}`,
+  todoPlannedMsg: (from: string, n: number) => `[todo mode] lead ${from} created a ${n}-task list — /todo list to review; the lead will start it after your approval (or run /todo start yourself).`,
   todoSuspendedMsg: '[todolist suspended] No lead assigned — task dispatch paused. Assign a lead with /lead and it will resume automatically.',
   todoSendFailingMsg: '[todolist warning] Message delivery has failed repeatedly (guardrail or lead unreachable) — the list may be stalled, please investigate.',
   todoProgressLine: (k: number, total: number, body: string, paused: boolean) =>

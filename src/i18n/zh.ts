@@ -241,6 +241,7 @@ export const zh = {
     `【任务 #${seq}(第 ${pos}/${total} 条)进度巡查】全员已空闲 ${n} 分钟仍未收到上报。任务内容:${body}\n已完成请调 taskdone(seq:${seq}, status:"done"|"failed", result:"…");仍在推进则继续即可,本提醒每 ${n} 分钟一次。`,
   todoSummaryTitle: (done: number, failed: number, total: number) => `【todolist 跑完】共 ${total} 条:✅ ${done} 成 · ❌ ${failed} 败`,
   todoSummaryLine: (seq: number, ok: boolean, body: string, result: string) => `${ok ? '✅' : '❌'} #${seq} ${body} — ${result}`,
+  todoPlannedMsg: (from: string, n: number) => `【todo 模式】组长 ${from} 已建 ${n} 条任务清单,/todo list 查看;待 boss 确认后由组长启动(或你直接 /todo start)。`,
   todoSuspendedMsg: '【todolist 挂起】当前没有组长,任务暂停下发;/lead 指定组长后自动继续。',
   todoSendFailingMsg: '【todolist 告警】连续多次消息发送失败(守卫拦截或组长不可达),清单可能停滞,请检查。',
   todoProgressLine: (k: number, total: number, body: string, paused: boolean) =>

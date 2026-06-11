@@ -398,7 +398,11 @@ export async function up(configPath: string) {
     },
     todo: {
       taskdone: (seq, status, result) => todo.taskdone(seq, status, result),
-      plan: (tasks, replace, _from) => todo.plan(tasks, replace),
+      plan: (tasks, replace, from) => {
+        const r = todo.plan(tasks, replace);
+        if (r.ok) router.send('falinks', 'boss', t().todoPlannedMsg(from, tasks.length)); // 系统留痕:boss 在消息流可见
+        return r;
+      },
       op: (op, args) => {
         switch (op) {
           case 'add': {
