@@ -4,7 +4,7 @@ import { Box, Text, measureElement, useStdin, useStdout } from 'ink';
 import { parseConsoleInput, lastReplyTarget } from './parse.js';
 import { mentionState, applyMention } from './mention.js';
 import { commandState, applyCommand, todoSubState } from './commands.js';
-import { CLIS, dirSuggestions, fsListDirs } from './wizard.js';
+import { CLIS, dirSuggestions, fsListDirs, MODEL_PRESETS } from './wizard.js';
 import { nameColor, formatTime, NAME_COLORS, statusGlyph, SPINNER_FRAMES } from './log-format.js';
 import { renderMarkdown } from './markdown.js';
 import { decodeKey, wheelBurst, type KeyEvent } from './keys.js';
@@ -32,7 +32,8 @@ async function admin(port: number, method: string, path: string, body?: unknown)
 
 type WizardState =
   | { name: string; step: 'cli'; sel: number }
-  | { name: string; step: 'model'; cli: string; modelText: string }
+  | { name: string; step: 'model'; cli: string; sel: number }
+  | { name: string; step: 'model-custom'; cli: string; modelText: string }
   | { name: string; step: 'role'; cli: string; model?: string; roleText: string }
   | { name: string; step: 'cwd'; cli: string; model?: string; role: string; path: string; sel: number };
 
@@ -335,10 +336,23 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
       if (wizard.step === 'cli') {
         if (ev.type === 'up') { setWizard({ ...wizard, sel: Math.max(0, wizard.sel - 1) }); return; }
         if (ev.type === 'down') { setWizard({ ...wizard, sel: Math.min(CLIS.length - 1, wizard.sel + 1) }); return; }
-        if (ev.type === 'enter' || ev.type === 'tab') { setWizard({ name: wizard.name, step: 'model', cli: CLIS[wizard.sel], modelText: '' }); return; }
+        if (ev.type === 'enter' || ev.type === 'tab') { setWizard({ name: wizard.name, step: 'model', cli: CLIS[wizard.sel], sel: 0 }); return; }
         return;
       }
       if (wizard.step === 'model') {
+        // 模型预设选择:↑↓ 在预设里移动,enter/tab 确认;选中"自定义…"哨兵转文本子步
+        const presets = MODEL_PRESETS(wizard.cli);
+        if (ev.type === 'up') { setWizard({ ...wizard, sel: Math.max(0, wizard.sel - 1) }); return; }
+        if (ev.type === 'down') { setWizard({ ...wizard, sel: Math.min(presets.length - 1, wizard.sel + 1) }); return; }
+        if (ev.type === 'enter' || ev.type === 'tab') {
+          const picked = presets[wizard.sel];
+          if (picked.value === 'custom') { setWizard({ name: wizard.name, step: 'model-custom', cli: wizard.cli, modelText: '' }); return; }
+          setWizard({ name: wizard.name, step: 'role', cli: wizard.cli, model: picked.value, roleText: '' });
+          return;
+        }
+        return;
+      }
+      if (wizard.step === 'model-custom') {
         if (ev.type === 'enter') { setWizard({ name: wizard.name, step: 'role', cli: wizard.cli, model: wizard.modelText.trim() || undefined, roleText: '' }); return; }
         if (ev.type === 'backspace') { setWizard({ ...wizard, modelText: wizard.modelText.slice(0, -1) }); return; }
         if (ev.type === 'text') { setWizard({ ...wizard, modelText: wizard.modelText + ev.text }); return; }
@@ -695,6 +709,13 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
                 ))}
               </>
             ) : wizard.step === 'model' ? (
+              <>
+                <Text wrap="truncate-end">{t().wizardAddPrefix}<Text bold>{wizard.name}</Text> [{wizard.cli}]{t().wizardModelPickSuffix}</Text>
+                {MODEL_PRESETS(wizard.cli).map((p, i) => (
+                  <Text key={p.key} inverse={i === wizard.sel} wrap="truncate-end">  {p.value ?? t().wizardModelDefaultLabel}  {t().wizardModelPresets[p.key] ?? ''}</Text>
+                ))}
+              </>
+            ) : wizard.step === 'model-custom' ? (
               <>
                 <Text wrap="truncate-end">{t().wizardAddPrefix}<Text bold>{wizard.name}</Text> [{wizard.cli}]{t().wizardModelSuffix}</Text>
                 <Box><Text color="green">› </Text><Text wrap="truncate-end">{wizard.modelText}</Text><Text inverse> </Text></Box>
