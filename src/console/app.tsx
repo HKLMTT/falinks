@@ -712,7 +712,8 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
               <>
                 <Text wrap="truncate-end">{t().wizardAddPrefix}<Text bold>{wizard.name}</Text> [{wizard.cli}]{t().wizardModelPickSuffix}</Text>
                 {MODEL_PRESETS(wizard.cli).map((p, i) => (
-                  <Text key={p.key} inverse={i === wizard.sel} wrap="truncate-end">  {p.value ?? t().wizardModelDefaultLabel}  {t().wizardModelPresets[p.key] ?? ''}</Text>
+                  // custom 是哨兵不是模型名,value 列不显示它(否则 UI 裸露 "custom" 中英混排)
+                  <Text key={p.key} inverse={i === wizard.sel} wrap="truncate-end">  {p.key === 'custom' ? '' : `${p.value ?? t().wizardModelDefaultLabel}  `}{t().wizardModelPresets[p.key] ?? ''}</Text>
                 ))}
               </>
             ) : wizard.step === 'model-custom' ? (
