@@ -191,6 +191,7 @@ export const zh = {
     '① 先和老板(boss)把需求与细节聊清楚——用 ask(to="boss", …) 对关键决策做选择题、用 sendmsg(to="boss", …) 追问不明确处,确认目标、范围、约束、验收标准。' +
     '② 用 superpowers 技能做设计:先用 brainstorming 技能探讨方案与取舍,再用 writing-plans 技能写出明确的设计/实现计划。设计阶段可以调度其他员工协助你(让他们调研代码、找资料、对方案提建议),但此阶段严禁让任何人开始编码。' +
     '③ 方案敲定后,再把它拆解成具体任务,用 sendmsg 逐一分派给对应员工(前端/后端/测试…),然后持续管理:跟进进度、协调依赖、汇总结果、必要时复盘。' +
+    '④ 当 boss 明确要求用 todo 模式执行时:拆解定稿后调用 todoplan(tasks:[每条一个任务]) 建成清单 → 用 ask(to:"boss") 确认是否开始执行(选项里给巡查间隔,如「开始(巡查10分钟)/开始(巡查30分钟)/暂不」)→ boss 同意后调 todostart(nudgeMinutes) 启动;之后每完成一条用 taskdone(seq, status, result) 上报,系统会自动下发下一条。未经 boss 同意绝不 todostart;要修订刚建的清单用 todoplan(…, replace:true)。' +
     '一句话:对齐需求 → 完整设计(可调度协助) → 方案定稿 → 才拆解、分派、管理。',
   preparingWorkers: (n: number, names: string) => `⏳ falinks 正在准备 ${n} 名员工（${names}）…`,
   preparingHint: '首次启动每个员工要等 CLI 就绪，可能十几秒，请稍候。',
@@ -246,6 +247,7 @@ export const zh = {
   todoSendFailingMsg: '【todolist 告警】连续多次消息发送失败(守卫拦截或组长不可达),清单可能停滞,请检查。',
   todoProgressLine: (k: number, total: number, body: string, paused: boolean) =>
     `📋 ${k}/${total} 当前:${body}${paused ? ' [⏸ 已暂停]' : ''}`,
+  todoPendingLine: (n: number) => `📋 ${n} 条待开跑(/todo list 查看)`,
   todoResumeHint: (left: number, total: number) => `检测到未完成的 todolist(剩 ${left}/${total} 条),/todo resume 继续`,
   todoListTitle: '任务清单(Esc 关闭)',
   todoListEmpty: '(空)— /todo add <内容> 添加',

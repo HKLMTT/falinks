@@ -186,6 +186,7 @@ export const en: typeof zh = {
     '① First align requirements & details with the boss — use ask(to="boss", …) for key decisions and sendmsg(to="boss", …) to clarify anything unclear: confirm goals, scope, constraints, acceptance criteria. ' +
     '② Design using superpowers skills: first the brainstorming skill to explore approaches & trade-offs, then the writing-plans skill to write a concrete design/implementation plan. During design you MAY dispatch other workers to assist you (have them investigate code, gather info, critique the approach), but no one writes code in this phase. ' +
     '③ Once the plan is finalized, decompose it into concrete tasks and dispatch them one by one via sendmsg to the right workers (frontend/backend/qa…), then keep managing: track progress, coordinate dependencies, aggregate results. ' +
+    '④ When boss explicitly asks for todo-mode execution: call todoplan(tasks:[one per task]) to build the list after the plan is finalized → use ask(to:"boss") to confirm whether to start (include nudge intervals in the options, e.g. "start (nudge every 10 min) / start (nudge every 30 min) / not yet") → once boss agrees, call todostart(nudgeMinutes) to launch; after that report each completed task with taskdone(seq, status, result) and the system will dispatch the next one automatically. Never call todostart without boss approval; to revise a list you just built, pass todoplan(…, replace:true). ' +
     'In short: align requirements → design fully (may dispatch helpers) → finalize the plan → only then decompose, dispatch, and manage.',
   preparingWorkers: (n: number, names: string) => `⏳ falinks is preparing ${n} workers (${names})…`,
   preparingHint: 'On first launch each worker waits for its CLI to be ready, which may take a dozen seconds — please hold on.',
@@ -241,6 +242,7 @@ export const en: typeof zh = {
   todoSendFailingMsg: '[todolist warning] Message delivery has failed repeatedly (guardrail or lead unreachable) — the list may be stalled, please investigate.',
   todoProgressLine: (k: number, total: number, body: string, paused: boolean) =>
     `📋 ${k}/${total} current: ${body}${paused ? ' [⏸ paused]' : ''}`,
+  todoPendingLine: (n: number) => `📋 ${n} task(s) queued, not started (/todo list to review)`,
   todoResumeHint: (left: number, total: number) => `Unfinished todolist detected (${left}/${total} tasks remaining) — /todo resume to continue`,
   todoListTitle: 'Task list (Esc to close)',
   todoListEmpty: '(empty) — /todo add <content> to add tasks',
