@@ -6,6 +6,8 @@
 - **控制权与留痕**:两个新工具仅组长可调;建单成功系统消息留痕(`falinks → boss`,带建单人名字);控制台进度行新增「📋 N 条待开跑」(清单建好未启动时常驻);rm/clear/stop/resume 仍为 boss 专属命令,boss 也可直接 `/todo start`。"先 ask 征得同意才可 todostart"写入组长工作法与工具描述,boss 随时 `/todo stop` 兜底。
 - **修订正路**:boss 看完清单要求调整时,组长用 `todoplan(…, replace:true)` 重建(非运行态);默认拒绝覆盖已有清单,防误删 boss 手动建的单。
 - 组长工作法(coordinatorRules)追加第 ④ 条:todoplan → ask 确认 → todostart → taskdone 循环的完整协议(中英)。
+- **修复:窗口/办公室开多后 iTerm 未响应(轮询风暴)**。根因实测:健康轮询每员工每 1.5s 发 3-4 次"全遍历"AppleScript(每次都在 iTerm 内扫全部 pane),无重入护栏、无超时,多办公室叠加把 iTerm 主线程的 Apple Event 队列灌满(2 办公室 14 pane 实测 23-26 个并发 osascript、iTerm 空闲 CPU 26%)。修复五件套:**每办公室每轮 1 个批量脚本**(单次遍历采集存在性+is processing+顺带钉名)、重入护栏(上一轮未归本轮跳过)、读屏只给"busy 且不在生成"的员工做降闲裁决、标题钉名降为每 10 轮一次、osascript 15s 超时(批量脚本随 pane 数伸缩至 60s)。修后实测:并发 osascript 23-26 → **1**。
+- **失联检测增强**(修复过程中发现的盲点):员工 fresh 启动**一开始就布防** A-1 报到期限(以前注入成功才布防,bootstrap 交付失败=无告警永久 launching);`/clear` 重注入同理先布防;ready 检测单次读屏失败不再杀死整个准备流程;后台准备失败、轮询连续整轮失败均落诊断(`bootstrap-fail` / `poll-frozen`),拥堵导致的异常从"静默"变"可见"。
 
 ## 0.11.0
 
