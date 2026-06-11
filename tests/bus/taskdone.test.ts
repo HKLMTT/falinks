@@ -31,11 +31,11 @@ beforeEach(async () => {
     router,
     getSessionId: () => undefined,
     todo: {
-      taskdone: (seq, status, result) => { tdCalls.push([seq, status, result]); return { ok: true }; },
-      op: (op, args) => ({ ok: true, op, args }),
+      taskdone: (seq: number, status: 'done' | 'failed', result: string) => { tdCalls.push([seq, status, result]); return { ok: true }; },
+      op: (op: string, args: { body?: string; seq?: number; n?: number }) => ({ ok: true, op, args }),
       state: () => ({ state: 'running', nudgeMinutes: 10, tasks: [] }),
     },
-  } as any, 0);
+  }, 0);
 });
 
 afterEach(async () => { await bus.close(); });
