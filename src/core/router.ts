@@ -67,7 +67,7 @@ export class Router {
     return routed && this.agents.has(routed) ? routed : undefined;
   }
 
-  send(from: AgentName, to: AgentName, body: string): Message | undefined {
+  send(from: AgentName, to: AgentName, body: string, opts?: { urgent?: boolean }): Message | undefined {
     const target = this.resolve(to);
     if (!target) return undefined;
     const a = this.must(target);
@@ -95,12 +95,15 @@ export class Router {
       }
     }
 
-    const msg: Message = { id: this.deps.genId(), from, to: target, body, ts: this.deps.now(), thread };
+    // launching 的 pane 还没就绪,直送会注进启动中的 shell 而丢失 → 退化为正常排队(不标 urgent,控制台如实显示排队)。
+    const urgent = !!opts?.urgent && !a.virtual && a.status !== 'launching';
+    const msg: Message = { id: this.deps.genId(), from, to: target, body, ts: this.deps.now(), thread, ...(urgent ? { urgent: true } : {}) };
     this.messageLog.push(msg);
     const cap = this.deps.logCap ?? 300;
     if (this.messageLog.length > cap) this.messageLog.shift();
     this.deps.onLog?.(msg);
     if (a.virtual) return msg;       // 虚拟成员：只记日志，不注入、不置 busy
+    if (urgent) { this.deliverUrgent(a, msg); return msg; }
     a.inbox.push(msg);
     this.pump(a);
     return msg;
@@ -234,6 +237,16 @@ export class Router {
     a.status = 'busy';
     a.handling = msg.thread;
     a.handlingFrom = msg.from;
+    this.deliverer.deliver(a, msg);
+  }
+
+  /** 插队直送:闲时等价 pump(置 busy、记 handling);忙/卡时不动状态机——别把在办线程的跟踪改写成插队消息的。 */
+  private deliverUrgent(a: AgentRuntime, msg: Message): void {
+    if (a.status === 'idle') {
+      a.status = 'busy';
+      a.handling = msg.thread;
+      a.handlingFrom = msg.from;
+    }
     this.deliverer.deliver(a, msg);
   }
 

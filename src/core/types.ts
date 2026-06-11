@@ -15,6 +15,7 @@ export interface Message {
   ts: number;
   thread?: string; // 服务端派生的会话线程 id（仅在配置了 Guards 时设置）
   canceled?: boolean; // 排队期间被老板撤销（从未投递）;流水保留记录,历史里标"已取消"
+  urgent?: boolean; // boss 插队直送:跳过队列直接注入(忙时进 CLI 输入缓冲);排队消息被提升直送时事后补标
 }
 
 export interface AgentRuntime {
