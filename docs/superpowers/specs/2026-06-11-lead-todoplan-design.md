@@ -90,3 +90,8 @@ zh/en 同步,在现有条目后追加一条(编号顺延):
 3. todostart 原拟新钩子 → 复用 op('start'),少一接口面且不暴露管理 op。
 4. 参数校验缺失 → zod min(1) + 引擎拒空白条目且原子失败。
 5. 确认 lead 调 todostart 时自己 busy,任务 1 入 inbox 排队无竞态;paused 恢复权留 boss。
+
+## 实现后记(2026-06-11)
+
+- todoPlannedMsg 最终文案较设计稿增补后半句「待 boss 确认后由组长启动(或你直接 /todo start)」,明确双启动路径;行为无变化。
+- 测试要点中的控制台 idle 分支未落为独立 vitest 用例,由实机 E2E 验收覆盖;i18n 新键中英一致性由 `en: typeof zh` 类型约束(CI 全项目 tsc 门槛)兜底。
