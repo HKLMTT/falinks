@@ -8,6 +8,9 @@ test('buildPollScript:单次遍历,按 id 分支,带 pinName 的顺带 set name'
     { sessionId: 'BBB-2' },
   ]);
   expect(s).toContain('tell application "iTerm2"');
+  // tabchar 在 tell 块外定义,防止被 iTerm tab 类遮蔽
+  expect(s).toContain('set tabchar to tab');
+  expect(s).toContain('& sid & tabchar &');
   // 只有一组 repeat 遍历(单次扫描)
   expect(s.match(/repeat with w in windows/g)!.length).toBe(1);
   expect(s).toContain('if sid is "AAA-1"');

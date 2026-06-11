@@ -154,7 +154,12 @@ end tell`;
 
   async pollPanes(targets: { sessionId: string; pinName?: string }[]): Promise<Map<string, { processing: boolean }>> {
     if (targets.length === 0) return new Map();
-    return parsePollOutput(await osascript(buildPollScript(targets)));
+    const out = await osascript(buildPollScript(targets));
+    const m = parsePollOutput(out);
+    // 护栏:有输出却一条都解析不出 = 脚本输出格式坏了(如 AppleScript 常量被遮蔽),
+    // 宁可整轮失败(调用方跳过维持现状)也不能返回空 Map 把全员误判成 pane 消失。
+    if (out.trim() !== '' && m.size === 0) throw new Error(`pollPanes: unparseable output: ${out.slice(0, 80)}`);
+    return m;
   }
 }
 
@@ -165,11 +170,12 @@ export function buildPollScript(targets: { sessionId: string; pinName?: string }
     .map((t) => {
       const pin = t.pinName !== undefined ? `\n          set name of s to "${escapeAppleScript(t.pinName)}"` : '';
       return `        if sid is "${t.sessionId}" then${pin}
-          set out to out & sid & tab & ((is processing of s) as string) & linefeed
+          set out to out & sid & tabchar & ((is processing of s) as string) & linefeed
         end if`;
     })
     .join('\n');
-  return `tell application "iTerm2"
+  return `set tabchar to tab
+tell application "iTerm2"
   set out to ""
   repeat with w in windows
     repeat with t in tabs of w
