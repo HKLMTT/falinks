@@ -588,7 +588,7 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
   const hasDiag = drops || injFails || fastIdle;
 
   // 失联员工警告(roster 驱动:员工一恢复 MCP 调用标志即清,警告行自动消失)。
-  const unresp = roster.filter((a) => a.unresponsive).map((a) => ({ name: a.name, mcpSeen: !!a.mcpSeen }));
+  const unresp = roster.filter((a) => a.unresponsive).map((a) => ({ name: a.name, mcpSeen: !!a.mcpSeen, rule: a.rule }));
 
   return (
     // alt screen 全屏自绘(CC 同款):根盒钉 rows-1 × cols-1(严格小于终端行/列数,

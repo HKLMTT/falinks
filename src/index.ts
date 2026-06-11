@@ -72,7 +72,7 @@ export async function up(configPath: string) {
   };
   // 失联告警:边沿触发(router 标志首转才落盘),花名册 ⚠ 由 /admin/roster 透出、警告行由控制台渲染。
   const alarmUnresponsive = (name: string, rule: 'register-timeout' | 'mute') => {
-    if (!router.markUnresponsive(name)) return;
+    if (!router.markUnresponsive(name, rule)) return;
     try { appendDiag(launchCwd, { kind: 'agent-unresponsive', name, rule, ts: Date.now() }); } catch { /* 诊断落盘失败不致命 */ }
   };
   const historyCap = cfg.historyCap ?? MESSAGE_LOG_CAP;

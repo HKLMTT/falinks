@@ -129,6 +129,7 @@ export class Router {
     if (!a) return;
     a.lastMcpAt = this.deps.now();
     a.unresponsive = false;
+    a.unresponsiveRule = undefined;
     a.muteStreak = 0;
   }
 
@@ -152,11 +153,12 @@ export class Router {
     if (a) a.muteStreak = 0;
   }
 
-  /** 标失联嫌疑。返回是否为新标记(边沿触发:调用方据此只落一次诊断)。虚拟成员排除(boss 从不调 MCP 工具)。 */
-  markUnresponsive(name: AgentName): boolean {
+  /** 标失联嫌疑(rule 记录触发规则,决定警告文案分流)。返回是否为新标记(边沿触发:调用方据此只落一次诊断)。虚拟成员排除(boss 从不调 MCP 工具)。 */
+  markUnresponsive(name: AgentName, rule: 'register-timeout' | 'mute'): boolean {
     const a = this.agents.get(name);
     if (!a || a.virtual || a.unresponsive) return false;
     a.unresponsive = true;
+    a.unresponsiveRule = rule;
     return true;
   }
 
@@ -168,6 +170,7 @@ export class Router {
     a.handling = undefined;
     a.handlingFrom = undefined;
     a.unresponsive = false;
+    a.unresponsiveRule = undefined;
     a.muteStreak = 0;
     a.lastMcpAt = undefined;
     a.lastMcpHttpAt = undefined;

@@ -13,16 +13,18 @@ function mkRouter() {
   return { r, delivered, setNow: (v: number) => { now = v; } };
 }
 
-test('touchMcp 记录时间戳并清 unresponsive 与哑巴计数', () => {
+test('touchMcp 记录时间戳并清 unresponsive(含 rule)与哑巴计数', () => {
   const { r, setNow } = mkRouter();
   r.addAgent('alice');
   r.bumpMute('alice');
-  r.markUnresponsive('alice');
+  r.markUnresponsive('alice', 'mute');
+  expect(r.get('alice')!.unresponsiveRule).toBe('mute'); // rule 随标记存入
   setNow(2000);
   r.touchMcp('alice');
   const a = r.get('alice')!;
   expect(a.lastMcpAt).toBe(2000);
   expect(a.unresponsive).toBe(false);
+  expect(a.unresponsiveRule).toBeUndefined(); // 自愈连 rule 一起清
   expect(a.muteStreak).toBe(0);
 });
 
@@ -59,18 +61,20 @@ test('clearMute 清零哑巴计数,未知名宽容', () => {
   expect(() => r.clearMute('ghost')).not.toThrow();
 });
 
-test('markUnresponsive 边沿触发:首次 true,再标 false', () => {
+test('markUnresponsive 边沿触发:首次 true 并存 rule,再标 false', () => {
   const { r } = mkRouter();
   r.addAgent('alice');
-  expect(r.markUnresponsive('alice')).toBe(true);
-  expect(r.markUnresponsive('alice')).toBe(false);
-  expect(r.markUnresponsive('ghost')).toBe(false);
+  expect(r.markUnresponsive('alice', 'register-timeout')).toBe(true);
+  expect(r.get('alice')!.unresponsiveRule).toBe('register-timeout');
+  expect(r.markUnresponsive('alice', 'mute')).toBe(false);
+  expect(r.get('alice')!.unresponsiveRule).toBe('register-timeout'); // 边沿触发:重复标记不覆盖首因
+  expect(r.markUnresponsive('ghost', 'mute')).toBe(false);
 });
 
 test('markUnresponsive 对虚拟成员返回 false(boss 从不调 MCP 工具)', () => {
   const { r } = mkRouter();
   r.addVirtual('boss');
-  expect(r.markUnresponsive('boss')).toBe(false);
+  expect(r.markUnresponsive('boss', 'mute')).toBe(false);
 });
 
 test('markLaunching 保留 inbox、状态回 launching、清失联痕迹及 MCP 时间戳', () => {
@@ -80,7 +84,7 @@ test('markLaunching 保留 inbox、状态回 launching、清失联痕迹及 MCP 
   r.send('boss-x', 'alice', 'one');   // 投出 → busy(发件人未知名也能送:send 只校验目标)
   r.send('boss-x', 'alice', 'two');   // 排队
   r.bumpMute('alice');
-  r.markUnresponsive('alice');
+  r.markUnresponsive('alice', 'mute');
   setNow(5000);
   r.touchMcp('alice');
   r.touchMcpHttp('alice');
@@ -89,6 +93,7 @@ test('markLaunching 保留 inbox、状态回 launching、清失联痕迹及 MCP 
   expect(a.status).toBe('launching');
   expect(a.inbox.length).toBe(1);     // 排队消息保留
   expect(a.unresponsive).toBe(false);
+  expect(a.unresponsiveRule).toBeUndefined(); // 重启清 rule(新进程从零观察)
   expect(a.muteStreak).toBe(0);
   expect(a.handling).toBeUndefined();
   expect(a.handlingFrom).toBeUndefined();

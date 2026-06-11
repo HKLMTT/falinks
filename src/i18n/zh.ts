@@ -33,11 +33,11 @@ export const zh = {
   restartOk: (n: string) => `已重启 ${n}(等它重新报到)`,
   restartFailed: '重启失败',
   restartBusy: (n: string) => `${n} 正在重启/清空中,稍后再试`,
-  // 失联警告行:按"是否连过 MCP"分流两种病因文案。
-  unresponsiveWarn: (items: { name: string; mcpSeen: boolean }[]) =>
+  // 失联警告行:先按触发规则分流(mute=有活无声),register-timeout 再按"是否连过 MCP"分流两种病因文案。
+  unresponsiveWarn: (items: { name: string; mcpSeen: boolean; rule?: string }[]) =>
     '⚠ ' +
-    items.map((i) => `${i.name}${i.mcpSeen ? '(MCP 连过但未报到,会话可能瘫痪)' : '(CLI 可能没挂 falinks 工具,手动重启过?)'}`).join('、') +
-    ' —— 试试 /restart <名字> [fresh]',
+    items.map((i) => `${i.name}${i.rule === 'mute' ? '(收到消息却全程零工具调用——会话可能瘫痪,如上下文耗尽)' : i.mcpSeen ? '(MCP 连过但未报到,会话可能瘫痪)' : '(CLI 可能没挂 falinks 工具,手动重启过?)'}`).join('、') +
+    (items.some((i) => i.rule === 'mute') ? ' —— 试试 /restart <名字> fresh' : ' —— 试试 /restart <名字> [fresh]'),
   clearAll: '全员',
   clearNone: '无',
   clearJoiner: '、',
@@ -52,7 +52,7 @@ export const zh = {
   wizardCliSuffix: ' — 选择 CLI（↑↓ 选 · Enter 下一步 · Esc 取消）',
   wizardExperimental: '  (实验)',
   wizardModelSuffix: ' — 模型（Enter 下一步 · 留空=CLI 默认 · Esc 取消）',
-  wizardModelHint: '例：claude-opus-4-8 / claude-fable-5。留空用 CLI 全局默认；填错会启动失败并触发 ⚠ 未报到告警。',
+  wizardModelHint: '例：claude-opus-4-8 / claude-opus-4-8[1m]（1M 上下文）。留空用 CLI 全局默认；填错会启动失败并触发 ⚠ 未报到告警。',
   wizardRoleSuffix: ' — 角色/职责（Enter 下一步 · Esc 取消）',
   wizardRoleExample: '例：负责后端开发 / 审查代码 / 调研查证。留空=通用员工。',
   wizardDefaultRole: '员工',

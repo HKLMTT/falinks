@@ -35,10 +35,10 @@ export const en: typeof zh = {
   restartOk: (n: string) => `restarted ${n} (waiting for it to re-register)`,
   restartFailed: 'restart failed',
   restartBusy: (n: string) => `${n} is restarting/clearing, try again later`,
-  unresponsiveWarn: (items: { name: string; mcpSeen: boolean }[]) =>
+  unresponsiveWarn: (items: { name: string; mcpSeen: boolean; rule?: string }[]) =>
     '⚠ ' +
-    items.map((i) => `${i.name}${i.mcpSeen ? ' (MCP connected but never registered; session may be wedged)' : ' (CLI likely missing falinks MCP config; manually restarted?)'}`).join(', ') +
-    ' — try /restart <name> [fresh]',
+    items.map((i) => `${i.name}${i.rule === 'mute' ? ' (got messages but made zero tool calls — session may be wedged, e.g. context exhausted)' : i.mcpSeen ? ' (MCP connected but never registered; session may be wedged)' : ' (CLI likely missing falinks MCP config; manually restarted?)'}`).join(', ') +
+    (items.some((i) => i.rule === 'mute') ? ' — try /restart <name> fresh' : ' — try /restart <name> [fresh]'),
   clearAll: 'everyone',
   clearNone: 'none',
   clearJoiner: ', ',
@@ -53,7 +53,7 @@ export const en: typeof zh = {
   wizardCliSuffix: ' — pick a CLI (↑↓ select · Enter next · Esc cancel)',
   wizardExperimental: '  (experimental)',
   wizardModelSuffix: ' — model (Enter next · blank = CLI default · Esc cancel)',
-  wizardModelHint: 'e.g. claude-opus-4-8 / claude-fable-5. Blank = CLI global default; a wrong name fails to launch and trips the ⚠ no-register alarm.',
+  wizardModelHint: 'e.g. claude-opus-4-8 / claude-opus-4-8[1m] (1M context). Blank = CLI global default; a wrong name fails to launch and trips the ⚠ no-register alarm.',
   wizardRoleSuffix: ' — role/duties (Enter next · Esc cancel)',
   wizardRoleExample: 'e.g. backend dev / code review / research. Leave empty = generic worker.',
   wizardDefaultRole: 'worker',

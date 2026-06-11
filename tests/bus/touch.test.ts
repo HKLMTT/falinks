@@ -56,11 +56,12 @@ test('未知名调用不炸总线', async () => {
   expect(r.roster).toBeDefined();
 });
 
-test('/admin/roster 透出 unresponsive 与 mcpSeen', async () => {
-  router.markUnresponsive('alice');
+test('/admin/roster 透出 unresponsive、rule 与 mcpSeen', async () => {
+  router.markUnresponsive('alice', 'mute');
   const res = await fetch(`http://127.0.0.1:${bus.port}/admin/roster`);
   const { roster } = await res.json() as any;
   const a = roster.find((x: any) => x.name === 'alice');
   expect(a.unresponsive).toBe(true);
+  expect(a.rule).toBe('mute');
   expect(a.mcpSeen).toBe(false);
 });

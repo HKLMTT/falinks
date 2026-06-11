@@ -194,7 +194,7 @@ export async function startBus(deps: BusDeps, port: number, opts?: BusOptions): 
         return sendJson(identity);
       }
       if (req.method === 'GET' && url.pathname === '/admin/roster') {
-        return sendJson({ roster: router.roster().map((a) => ({ name: a.name, role: a.role, status: a.status, virtual: !!a.virtual, lead: !!a.lead, unresponsive: !!a.unresponsive, mcpSeen: a.lastMcpHttpAt != null })) });
+        return sendJson({ roster: router.roster().map((a) => ({ name: a.name, role: a.role, status: a.status, virtual: !!a.virtual, lead: !!a.lead, unresponsive: !!a.unresponsive, rule: a.unresponsiveRule, mcpSeen: a.lastMcpHttpAt != null })) });
       }
       if (req.method === 'GET' && url.pathname === '/admin/log') {
         const queued = router.queuedMessageIds();

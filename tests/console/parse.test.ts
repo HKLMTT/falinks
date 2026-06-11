@@ -88,8 +88,8 @@ test('/lead with arg -> error (no args accepted)', () => {
 test('[图片N] 开头按回复处理(不被当命令);命令判定基于原始输入而非展开后的 /路径', () => {
   expect(parseConsoleInput('[图片1]')).toEqual({ kind: 'reply', message: '[图片1]' });
   expect(parseConsoleInput('[图片1] 看这个')).toEqual({ kind: 'reply', message: '[图片1] 看这个' });
-  // 反例:若误把展开后的路径拿去解析,就会被当成(未知)命令
-  expect(parseConsoleInput('/var/folders/x/clip.png 看这个').kind).toBe('error');
+  // 路径文本本身也不再被当命令(parse 的路径守卫;另一入口:iTerm 原生粘贴直接给出 /var/... 文本)
+  expect(parseConsoleInput('/var/folders/x/clip.png 看这个').kind).toBe('reply');
 });
 
 test('empty input -> noop', () => {
@@ -124,4 +124,10 @@ test('parses /restart with optional fresh flag', () => {
   expect(parseConsoleInput('/restart lead')).toEqual({ kind: 'restart', name: 'lead', fresh: false });
   expect(parseConsoleInput('/restart @lead fresh')).toEqual({ kind: 'restart', name: 'lead', fresh: true });
   expect(parseConsoleInput('/restart')).toMatchObject({ kind: 'error' });
+});
+
+test('以路径开头的文本不当命令(粘贴文件路径/绝对路径)', () => {
+  expect(parseConsoleInput('/var/folders/0s/x_00000gp/T/falinks-clip-1.png 看下这张图')).toEqual({ kind: 'reply', message: '/var/folders/0s/x_00000gp/T/falinks-clip-1.png 看下这张图' });
+  expect(parseConsoleInput('/a/b')).toEqual({ kind: 'reply', message: '/a/b' });
+  expect(parseConsoleInput('/bogus')).toMatchObject({ kind: 'error' }); // 单词未知命令仍报错
 });

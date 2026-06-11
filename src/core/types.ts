@@ -30,5 +30,6 @@ export interface AgentRuntime {
   lastMcpAt?: number; // 最近一次该员工经 MCP 调用任意工具的时刻(服务端事实;失联检测的核心信号)
   lastMcpHttpAt?: number; // 最近一次命中该员工 MCP 端点的 HTTP 请求(CLI 启动 initialize 即有;只用于告警文案分流)
   unresponsive?: boolean; // 失联嫌疑(报到超时/有活无声):花名册 ⚠;收到任意 MCP 调用自愈
+  unresponsiveRule?: 'register-timeout' | 'mute'; // 触发 ⚠ 的规则(决定警告文案:未报到 vs 有活无声)
   muteStreak?: number; // 连续"有活无声"次数(投递后自动降闲且零 MCP 调用);touchMcp 清零
 }

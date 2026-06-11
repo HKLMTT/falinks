@@ -22,6 +22,10 @@ export function parseConsoleInput(line: string): ConsoleAction {
   if (!s) return { kind: 'noop' };
 
   if (s.startsWith('/')) {
+    // 路径不是命令:首 token 里还有第二个 "/"(如 /var/folders/... 或 /a/b)→ 按普通文本走回复,
+    // 别让粘贴的文件路径/绝对路径吃「未知命令」。真命令(/todo、/restart…)首 token 不含第二个斜杠。
+    const firstTok = s.slice(1).split(/\s+/, 1)[0] ?? '';
+    if (firstTok.includes('/')) return { kind: 'reply', message: s };
     const [cmd, ...args] = s.slice(1).split(/\s+/);
     if (cmd === 'help') return { kind: 'help' };
     if (cmd === 'lang') {
