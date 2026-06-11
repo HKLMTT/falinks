@@ -216,3 +216,55 @@ test('start 拒绝非法巡查间隔(0/负/NaN/小数)', () => {
   expect(e.start(2.5, true).ok).toBe(false);
   expect(e.start(2, true).ok).toBe(true);
 });
+
+// —— plan(批量建单,lead 经 MCP 调用)——
+test('plan:空 idle 直接建,seq 连续,一次 persist,返回 seqs', () => {
+  const { e, calls } = mk();
+  const before = calls.persist;
+  const r = e.plan(['a', 'b', 'c'], false);
+  expect(r).toEqual({ ok: true, seqs: [1, 2, 3] });
+  expect(e.state().tasks.map((t) => t.status)).toEqual(['pending', 'pending', 'pending']);
+  expect(calls.persist).toBe(before + 1); // 原子:整批一次落盘
+});
+
+test('plan:空数组/空白条目原子拒绝,不部分写入', () => {
+  const { e } = mk();
+  expect(e.plan([], false).ok).toBe(false);
+  expect(e.plan(['a', '   ', 'c'], false).ok).toBe(false);
+  expect(e.state().tasks).toEqual([]); // 一条都没进
+});
+
+test('plan:running/paused 拒绝', () => {
+  const { e } = mk();
+  e.add('x'); e.start(undefined, true);
+  expect(e.plan(['a'], false).ok).toBe(false);
+  e.stop();
+  expect(e.plan(['a'], false).ok).toBe(false);
+});
+
+test('plan:finished 自动清旧账后建(与 add 语义一致)', () => {
+  const { e } = mk();
+  e.add('x'); e.start(undefined, true); e.taskdone(1, 'done', 'ok'); // → finished
+  const r = e.plan(['a', 'b'], false);
+  expect(r.ok).toBe(true);
+  expect(e.state().state).toBe('idle');
+  expect(e.state().tasks.map((t) => t.body)).toEqual(['a', 'b']); // 旧账清掉
+});
+
+test('plan:idle 非空默认拒绝(防覆盖 boss 手动单),replace:true 清空后建', () => {
+  const { e } = mk();
+  e.add('boss 手动加的');
+  const rejected = e.plan(['a'], false);
+  expect(rejected.ok).toBe(false);
+  expect((rejected as { ok: false; error: string }).error).toMatch(/replace/);
+  const r = e.plan(['a', 'b'], true);
+  expect(r.ok).toBe(true);
+  expect(e.state().tasks.map((t) => t.body)).toEqual(['a', 'b']);
+});
+
+test('plan:replace 后 seq 仍单调不复用', () => {
+  const { e } = mk();
+  e.add('x'); // seq 1
+  const r = e.plan(['a'], true);
+  expect(r).toEqual({ ok: true, seqs: [2] });
+});

@@ -55,6 +55,30 @@ export class TodoEngine {
     return { ok: true, seq: task.seq };
   }
 
+  /** 批量建单(lead 经 MCP todoplan 调用):整单原子——任一条不合法则整体拒绝,不部分写入。
+   *  冲突矩阵:running/paused 拒绝;finished 清旧账(同 add);idle 非空默认拒绝(防覆盖 boss 手动单),
+   *  replace=true 时清空后建(lead 修订自己刚建的清单的正路)。 */
+  plan(tasks: string[], replace: boolean): { ok: true; seqs: number[] } | { ok: false; error: string } {
+    if (this.st.state === 'running' || this.st.state === 'paused')
+      return { ok: false, error: 'todolist is running/paused — cannot replan now' };
+    if (tasks.length === 0 || tasks.some((b) => !b.trim()))
+      return { ok: false, error: 'tasks must be a non-empty list of non-blank strings' };
+    if (this.st.state === 'finished') { // 跑完续单:清旧账(汇总已入消息流)
+      this.st.tasks = [];
+      this.st.state = 'idle';
+    } else if (this.st.tasks.length > 0) {
+      if (!replace) return { ok: false, error: 'todolist already has tasks — pass replace:true to rebuild, or ask boss to /todo clear' };
+      this.st.tasks = [];
+    }
+    const seqs = tasks.map((body) => {
+      const task: TodoTask = { seq: ++this.seqCounter, body, status: 'pending' };
+      this.st.tasks.push(task);
+      return task.seq;
+    });
+    this.cb.persist(this.st);
+    return { ok: true, seqs };
+  }
+
   rm(seq: number): TodoResult {
     const t = this.st.tasks.find((x) => x.seq === seq);
     if (!t) return { ok: false, error: `no task #${seq}` };
