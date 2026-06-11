@@ -8,18 +8,23 @@ export function shQuote(s: string): string {
   return `'${s.replace(/'/g, `'\\''`)}'`;
 }
 
-/** 执行一段 AppleScript（经 osascript stdin），返回 trim 后的 stdout。 */
+/** 执行一段 AppleScript(经 osascript stdin),返回 trim 后的 stdout。
+ *  15s 超时强杀:iTerm 主线程拥堵时挂死的调用不再永久占位(调用方按"探测失败"兜底)。 */
+const OSASCRIPT_TIMEOUT_MS = 15_000;
 function osascript(script: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const p = spawn('osascript', ['-']);
     let out = '';
     let err = '';
+    const timer = setTimeout(() => { p.kill(); reject(new Error('osascript timeout')); }, OSASCRIPT_TIMEOUT_MS);
     p.stdout.on('data', (d) => (out += d.toString()));
     p.stderr.on('data', (d) => (err += d.toString()));
-    p.on('error', reject);
-    p.on('close', (code) =>
-      code === 0 ? resolve(out.trim()) : reject(new Error(err.trim() || `osascript exit ${code}`)),
-    );
+    p.on('error', (e) => { clearTimeout(timer); reject(e); });
+    p.on('close', (code) => {
+      clearTimeout(timer);
+      if (code === 0) resolve(out.trim());
+      else reject(new Error(err.trim() || `osascript exit ${code}`));
+    });
     p.stdin.write(script);
     p.stdin.end();
   });
@@ -146,4 +151,47 @@ end tell`;
     const r = await osascript(onSession(sessionId, 'return (is processing of s) as string'));
     return r.trim() === 'true';
   }
+
+  async pollPanes(targets: { sessionId: string; pinName?: string }[]): Promise<Map<string, { processing: boolean }>> {
+    if (targets.length === 0) return new Map();
+    return parsePollOutput(await osascript(buildPollScript(targets)));
+  }
+}
+
+/** 生成批量轮询脚本:单次遍历全部 sessions,对命中的目标收集 is processing(一行 `id<TAB>bool`),
+ *  带 pinName 的顺带 set name(写进同一脚本,不另起调用)。导出供单测。 */
+export function buildPollScript(targets: { sessionId: string; pinName?: string }[]): string {
+  const branches = targets
+    .map((t) => {
+      const pin = t.pinName !== undefined ? `\n          set name of s to "${escapeAppleScript(t.pinName)}"` : '';
+      return `        if sid is "${t.sessionId}" then${pin}
+          set out to out & sid & tab & ((is processing of s) as string) & linefeed
+        end if`;
+    })
+    .join('\n');
+  return `tell application "iTerm2"
+  set out to ""
+  repeat with w in windows
+    repeat with t in tabs of w
+      repeat with s in sessions of t
+        set sid to (id of s)
+${branches}
+      end repeat
+    end repeat
+  end repeat
+  return out
+end tell`;
+}
+
+/** 解析批量轮询输出:每行 `id<TAB>true|false`;不合格式的行忽略(容错)。 */
+export function parsePollOutput(out: string): Map<string, { processing: boolean }> {
+  const m = new Map<string, { processing: boolean }>();
+  for (const line of out.split('\n')) {
+    const i = line.indexOf('\t');
+    if (i <= 0) continue;
+    const flag = line.slice(i + 1).trim();
+    if (flag !== 'true' && flag !== 'false') continue;
+    m.set(line.slice(0, i), { processing: flag === 'true' });
+  }
+  return m;
 }

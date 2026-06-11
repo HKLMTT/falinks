@@ -24,6 +24,9 @@ export interface TerminalDriver {
   setBackgroundColor(sessionId: string, hex: string): Promise<void>;
   /** pane 是否“正在处理”——iTerm2 原生信号:最近约 2 秒内收到过输出(干活的 CLI 持续刷 spinner=持续有输出)。 */
   isProcessing(sessionId: string): Promise<boolean>;
+  /** 批量轮询:单次遍历采集每个目标 pane 的存在性与 is processing;带 pinName 的顺带钉标题。
+   *  返回 Map,**缺席的 id = pane 已不存在**。一办公室一轮一次调用,替代逐 pane 的 paneExists/isProcessing/setName 风暴。 */
+  pollPanes(targets: { sessionId: string; pinName?: string }[]): Promise<Map<string, { processing: boolean }>>;
 }
 
 /** 测试替身：记录所有 inject、可设定 readScreen 返回值。 */
@@ -83,6 +86,16 @@ export class FakeDriver implements TerminalDriver {
 
   async isProcessing(sessionId: string): Promise<boolean> {
     return this.processing.get(sessionId) ?? false;
+  }
+
+  async pollPanes(targets: { sessionId: string; pinName?: string }[]): Promise<Map<string, { processing: boolean }>> {
+    const m = new Map<string, { processing: boolean }>();
+    for (const t of targets) {
+      if (!this.windows.has(t.sessionId)) continue;
+      if (t.pinName !== undefined) this.names.set(t.sessionId, t.pinName);
+      m.set(t.sessionId, { processing: this.processing.get(t.sessionId) ?? false });
+    }
+    return m;
   }
 
   setProcessing(sessionId: string, v: boolean): void {
