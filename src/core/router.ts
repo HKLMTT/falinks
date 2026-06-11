@@ -229,6 +229,25 @@ export class Router {
     return { ok: false };
   }
 
+  /** 把一条仍在排队的消息提升为插队直送(按 id 全员查找):出队、补标 urgent、立即投递。
+   *  已投出/不存在 → ok:false;目标 launching(pane 未就绪,直送会丢)也 ok:false、消息留队。
+   *  注:流水与 inbox 持同一对象引用,补标即生效;持久化历史在发送时已落盘,事后补的 urgent
+   *  标不回写(重启后历史不显示 ⚡,可接受——只是显示标记)。 */
+  promoteQueued(id: string): { ok: boolean; to?: AgentName } {
+    for (const a of this.agents.values()) {
+      const i = a.inbox.findIndex((m) => m.id === id);
+      if (i >= 0) {
+        if (a.status === 'launching' || a.status === 'dead') return { ok: false };
+        const msg = a.inbox[i];
+        a.inbox.splice(i, 1);
+        msg.urgent = true;
+        this.deliverUrgent(a, msg);
+        return { ok: true, to: a.name };
+      }
+    }
+    return { ok: false };
+  }
+
   /** 若 agent 空闲且 inbox 非空，取出一条投递并标 busy。 */
   private pump(a: AgentRuntime): void {
     if (a.status !== 'idle') return;
