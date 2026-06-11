@@ -486,95 +486,106 @@ export async function up(configPath: string) {
                               // 2 次(≈3s)+ is processing 自带 2s 衰减 ≈ 真正停手后约 5s 降闲。
   const SUSPECT_FAST_IDLE_MS = 8000; // 投递后这么快就被自动降 idle 视为"可疑(可能没回完)",落盘诊断
   const DEBUG_BUSY = !!process.env.FALINKS_DEBUG_BUSY; // 开则逐轮询把判忙信号+决策落盘(排查闪烁)
+  // 健康轮询(≥1.5s):批量采集 + 重入护栏。改造动机见 docs/superpowers/specs/2026-06-11-iterm-poll-storm-fix-design.md:
+  // 旧实现每员工每轮 3-4 次全遍历 AppleScript,多办公室叠加把 iTerm 主线程灌死(实测 23+ 并发 osascript)。
+  // 现在:每轮一个批量脚本(存在性+is processing+顺带钉名),读屏只给"busy 且不在生成"的员工做降闲裁决。
+  const NAME_PIN_EVERY = 10; // 每 10 轮随批量脚本钉一次标题(≈15s),代替逐轮无条件写
+  let pollInFlight = false;  // 重入护栏:上一轮未归本轮跳过——pane 极多时轮询自动变慢,而不是叠加冻死 iTerm
+  let pollRound = 0;
   setInterval(() => {
+    if (pollInFlight) return;
+    pollInFlight = true;
     void (async () => {
-      for (const [name, sid] of [...sessions]) {
+      try {
+        pollRound++;
+        const pin = pollRound % NAME_PIN_EVERY === 0;
+        const targets = [...sessions].filter(([nm]) => !restarting.has(nm)); // 重启中:旧 pane 已关属预期,跳过
+        let statuses: Map<string, { processing: boolean }>;
         try {
-          if (restarting.has(name)) continue; // 重启中:旧 pane 已关属预期,跳过下线判定与状态校准
-          if (!(await driver.paneExists(sid))) {
-            const n = (missStreak.get(name) ?? 0) + 1;
-            missStreak.set(name, n);
-            if (n < 3) continue; // 还没连续 3 次，可能是瞬时误报，先不下线
-            sessions.delete(name);
-            if (sid === lastRight) lastRight = consoleSid; // 下线的正是当前锚点 → 复位,别留野指针
-            router.removeAgent(name);
-            forgetAgentState(name);
-            if (!inProcessConsole) console.log(t().workerWindowClosed(name));
-            continue;
-          }
-          missStreak.delete(name); // 探到了，清零
-          await driver.setName(sid, name); // 持续把 pane 标题钉成员工名（覆盖 CLI 自改的标题）
-
-          // 清空中（/clear）跳过状态校准：否则会把排队消息投进正在清空的 pane。
-          if (clearing.has(name)) continue;
-
-          // A-1 报到超时:bootstrap 交付后限期内必须出现任意 MCP 调用,否则告警(工具没挂/会话瘫痪)。
-          const exp = expectRegister.get(name);
-          if (exp) {
-            const verdict = checkRegisterTimeout({ now: Date.now(), by: exp.by, since: exp.since, lastMcpAt: router.get(name)?.lastMcpAt });
-            if (verdict === 'satisfied') expectRegister.delete(name);
-            else if (verdict === 'timeout') { expectRegister.delete(name); alarmUnresponsive(name, 'register-timeout'); }
-          }
-
-          // 按 pane 实况校准花名册：pane 在生成却显示 idle → 升 busy（修"干活却显示空闲"）；
-          // busy 但 pane 已空闲、过宽限、连续 IDLE_STREAK 次不忙 → 降 idle 并 pump 排队消息。
-          // 判忙主信号 = iTerm2 `is processing`(最近~2s 有输出;干活的 CLI 持续刷 spinner=持续有输出),
-          // 远比截屏正则可靠(新版 Claude 底部常驻 `bypass permissions on` 会让旧截屏永远判不忙→工作中被误降)。
-          // 截屏 isPaneBusy 作廉价兜底(给非 Claude/缓冲输出的 CLI);proc 为真时短路、不读屏。读失败保守判忙。
-          const a = router.get(name);
-          if (a && (a.status === 'busy' || a.status === 'idle')) {
-            let proc = false;
-            let scrapeBusy = false;
-            let paneBusy: boolean;
-            let bottom = '';
-            try {
-              proc = await driver.isProcessing(sid);
-              if (!proc || DEBUG_BUSY) {
-                const screen = await driver.readScreen(sid);
-                scrapeBusy = isPaneBusy(screen);
-                if (DEBUG_BUSY) bottom = screen.split('\n').map((l) => l.replace(/\s+$/, '')).filter(Boolean).slice(-2).join(' ⏎ ');
-              }
-              paneBusy = proc || scrapeBusy;
-            } catch {
-              paneBusy = true; // 探测失败按"忙"处理,别误降 idle
-            }
-            const grace = Date.now() - (lastDeliverAt.get(name) ?? 0) > IDLE_GRACE_MS;
-            const streak = paneBusy ? 0 : (idleStreak.get(name) ?? 0) + 1;
-            idleStreak.set(name, streak);
-            const action = reconcilePaneStatus({
-              status: a.status,
-              paneBusy,
-              gracePassed: grace,
-              idleStreak: streak,
-              idleThreshold: IDLE_STREAK,
-            });
-            // 逐轮询调试(FALINKS_DEBUG_BUSY=1 开):落盘每次的信号与决策,定位"工作中一瞬切空闲又切回"。
-            if (DEBUG_BUSY) {
-              try { appendDiag(launchCwd, { kind: 'poll', name, status: a.status, proc, scrape: scrapeBusy, paneBusy, grace, streak, action, bottom, ts: Date.now() }); } catch { /* ignore */ }
-            }
-            if (action === 'mark-idle') {
-              // 只记"投递后异常快就被降 idle"的可疑情形(接近宽限下限):正常长任务结束的 since 很大、不记,避免刷屏。
-              // 若反复卡死时这里频繁出现,佐证"还没回完就被降 idle、下条排队消息叠注入打断上一轮"。
-              const since = Date.now() - (lastDeliverAt.get(name) ?? 0);
-              if (since < SUSPECT_FAST_IDLE_MS) {
-                try { appendDiag(launchCwd, { kind: 'auto-idle', name, sinceDeliverMs: since, ts: Date.now() }); } catch { /* 诊断落盘失败不致命 */ }
-              }
-              // A-2 有活无声:走到这=自动降闲(不是它自己调 idle 工具)。投递过却全程零 MCP 调用 → 哑巴嫌疑。
-              const mv = judgeAutoIdleSilence({ deliveredAt: lastDeliverAt.get(name), countedAt: muteCountedAt.get(name) ?? 0, lastMcpAt: a.lastMcpAt });
-              muteCountedAt.set(name, mv.countedAt);
-              if (mv.reset) router.clearMute(name);
-              if (mv.count && router.bumpMute(name) >= MUTE_THRESHOLD) alarmUnresponsive(name, 'mute');
-              router.onIdle(name);
-            }
-            else if (action === 'mark-busy') router.observeBusy(name);
-          }
+          statuses = await driver.pollPanes(targets.map(([nm, sid]) => ({ sessionId: sid, pinName: pin ? nm : undefined })));
         } catch {
-          /* 探测失败忽略，下一轮再试 */
+          return; // 批量探测整体失败(超时/iTerm 忙):本轮全员维持现状,护栏顺延下一轮再试
         }
+        for (const [name, sid] of targets) {
+          try {
+            const st = statuses.get(sid);
+            if (!st) {
+              const n = (missStreak.get(name) ?? 0) + 1;
+              missStreak.set(name, n);
+              if (n < 3) continue; // 连续 3 次缺席才下线(瞬时误报去抖)
+              sessions.delete(name);
+              if (sid === lastRight) lastRight = consoleSid;
+              router.removeAgent(name);
+              forgetAgentState(name);
+              missStreak.delete(name);
+              if (!inProcessConsole) console.log(t().workerWindowClosed(name));
+              continue;
+            }
+            missStreak.delete(name);
+
+            if (clearing.has(name)) continue;
+
+            // —— 以下与旧实现逐行同语义:A-1 报到超时 → 状态校准(reconcile)→ A-2 有活无声 ——
+            const exp = expectRegister.get(name);
+            if (exp) {
+              const verdict = checkRegisterTimeout({ now: Date.now(), by: exp.by, since: exp.since, lastMcpAt: router.get(name)?.lastMcpAt });
+              if (verdict === 'satisfied') expectRegister.delete(name);
+              else if (verdict === 'timeout') { expectRegister.delete(name); alarmUnresponsive(name, 'register-timeout'); }
+            }
+
+            const a = router.get(name);
+            if (a && (a.status === 'busy' || a.status === 'idle')) {
+              const proc = st.processing;
+              let scrapeBusy = false;
+              let bottom = '';
+              // 读屏收窄:只给"busy 且不在生成"的员工做降闲裁决(空闲员工逐轮全屏读是批量化后最大残余流量;
+              // 判忙主信号 is processing 已覆盖一切有输出的活动,读屏对空闲员工几乎无增量)。DEBUG 时维持旧行为。
+              if ((!proc && a.status === 'busy') || DEBUG_BUSY) {
+                try {
+                  const screen = await driver.readScreen(sid);
+                  scrapeBusy = isPaneBusy(screen);
+                  if (DEBUG_BUSY) bottom = screen.split('\n').map((l) => l.replace(/\s+$/, '')).filter(Boolean).slice(-2).join(' ⏎ ');
+                } catch {
+                  scrapeBusy = true; // 探测失败按"忙"处理,别误降 idle
+                }
+              }
+              const paneBusy = proc || scrapeBusy;
+              const grace = Date.now() - (lastDeliverAt.get(name) ?? 0) > IDLE_GRACE_MS;
+              const streak = paneBusy ? 0 : (idleStreak.get(name) ?? 0) + 1;
+              idleStreak.set(name, streak);
+              const action = reconcilePaneStatus({
+                status: a.status,
+                paneBusy,
+                gracePassed: grace,
+                idleStreak: streak,
+                idleThreshold: IDLE_STREAK,
+              });
+              if (DEBUG_BUSY) {
+                try { appendDiag(launchCwd, { kind: 'poll', name, status: a.status, proc, scrape: scrapeBusy, paneBusy, grace, streak, action, bottom, ts: Date.now() }); } catch { /* ignore */ }
+              }
+              if (action === 'mark-idle') {
+                const since = Date.now() - (lastDeliverAt.get(name) ?? 0);
+                if (since < SUSPECT_FAST_IDLE_MS) {
+                  try { appendDiag(launchCwd, { kind: 'auto-idle', name, sinceDeliverMs: since, ts: Date.now() }); } catch { /* 诊断落盘失败不致命 */ }
+                }
+                const mv = judgeAutoIdleSilence({ deliveredAt: lastDeliverAt.get(name), countedAt: muteCountedAt.get(name) ?? 0, lastMcpAt: a.lastMcpAt });
+                muteCountedAt.set(name, mv.countedAt);
+                if (mv.reset) router.clearMute(name);
+                if (mv.count && router.bumpMute(name) >= MUTE_THRESHOLD) alarmUnresponsive(name, 'mute');
+                router.onIdle(name);
+              } else if (action === 'mark-busy') router.observeBusy(name);
+            }
+          } catch {
+            /* 单员工处理失败忽略,下一轮再试 */
+          }
+        }
+
+        // todolist 巡查驱动:全员(非虚拟)无人 busy 视为空闲;lead 存活与否决定挂起/恢复。
+        const rs = router.roster();
+        todo.tick(rs.some((x) => !x.virtual && x.status === 'busy'), rs.some((x) => x.lead && x.status !== 'dead'));
+      } finally {
+        pollInFlight = false;
       }
-      // todolist 巡查驱动:全员(非虚拟)无人 busy 视为空闲;lead 存活与否决定挂起/恢复。
-      const rs = router.roster();
-      todo.tick(rs.some((x) => !x.virtual && x.status === 'busy'), rs.some((x) => x.lead && x.status !== 'dead'));
     })();
   }, 1500);
 
