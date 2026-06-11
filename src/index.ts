@@ -192,22 +192,29 @@ export async function up(configPath: string) {
     // 员工就绪后自己 register，花名册会从 [launching] 自动变 [idle]。pane 已建好，sid 立即可返回。
     void (async () => {
       try {
+        // fresh 启动即布防 A-1:bootstrap 交付失败(ready 检测超时/注入失败)也要在 90s 内亮 ⚠,
+        // 不能让"准备流程死了"变成无告警的永久 launching。注入成功员工照常 register 自愈。
+        if (!resuming) armRegisterExpectation(a.name);
         let sid2 = sessionId;
         if (needsBootstrapInject) {
           // claude：信任对话→就绪。首启注入 bootstrap；恢复则什么都不注入（避免 CLI 重放旧任务再做一遍），仅服务端登记。
           for (let i = 0; i < 30; i++) {
             await sleep(700);
-            const state = detectScreenState(await driver.readScreen(sid));
+            let state: ReturnType<typeof detectScreenState>;
+            try {
+              state = detectScreenState(await driver.readScreen(sid));
+            } catch {
+              continue; // 读屏失败(iTerm 拥堵/超时):本次跳过,下一轮再探——绝不能让单次抖动杀死整个准备流程
+            }
             if (state === 'trust-dialog') { await driver.inject(sid, '', true); continue; }
             if (state === 'ready') {
-              if (!resuming) { await driver.inject(sid, fullBootstrap, true); armRegisterExpectation(a.name); }
+              if (!resuming) { await driver.inject(sid, fullBootstrap, true); }
               break;
             }
           }
         } else {
           // codex：首启 bootstrap 作为命令位置参数；恢复则命令不带 prompt。盲发 Enter 接受信任目录对话。
           // codex:bootstrap 是启动参数,进程一起即可能调工具——期限从启动起算,防快手 register 落在盲窗里。
-          if (!resuming) armRegisterExpectation(a.name);
           await sleep(2500);
           await driver.inject(sid, '', true);
           await sleep(1500);
@@ -233,7 +240,10 @@ export async function up(configPath: string) {
         if (sid2) store.agents[a.name] = { cli: a.cli, sessionId: sid2 };
         else delete store.agents[a.name];
         saveStore(launchCwd, store);
-      } catch { /* 后台准备失败忽略，员工仍可手动用 */ }
+      } catch (e: any) {
+        // 后台准备失败(pane 没了/注入炸了):落盘诊断;A-1 已布防,90s 内会亮 ⚠
+        try { appendDiag(launchCwd, { kind: 'bootstrap-fail', name: a.name, error: String(e?.message ?? e), ts: Date.now() }); } catch { /* 诊断落盘失败不致命 */ }
+      }
     })();
 
     return sid;
