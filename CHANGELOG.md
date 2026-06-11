@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.12.0
+
+- **todo 模式协作流(lead 自主建单)**:与组长沟通需求时明确说"用 todo 模式执行",组长拆解定稿后会自己用新 MCP 工具 `todoplan(tasks, replace?)` 把任务批量建成清单(原子:任一条不合法整单拒绝),再用 ask 选择题向 boss 确认(选项含巡查间隔),boss 点选同意后组长调 `todostart(nudgeMinutes?)` 启动——之后进入 0.11.0 的既有执行流(taskdone 上报/空闲巡查/汇总)。
+- **控制权与留痕**:两个新工具仅组长可调;建单成功系统消息留痕(`falinks → boss`,带建单人名字);控制台进度行新增「📋 N 条待开跑」(清单建好未启动时常驻);rm/clear/stop/resume 仍为 boss 专属命令,boss 也可直接 `/todo start`。"先 ask 征得同意才可 todostart"写入组长工作法与工具描述,boss 随时 `/todo stop` 兜底。
+- **修订正路**:boss 看完清单要求调整时,组长用 `todoplan(…, replace:true)` 重建(非运行态);默认拒绝覆盖已有清单,防误删 boss 手动建的单。
+- 组长工作法(coordinatorRules)追加第 ④ 条:todoplan → ask 确认 → todostart → taskdone 循环的完整协议(中英)。
+
 ## 0.11.0
 
 - **todolist 无人值守任务清单**:`/todo add <内容>`(支持多行)逐条建单 → `/todo start [巡查分钟]` 后系统自动把任务按序下发给组长,组长用新 MCP 工具 `taskdone(seq, done|failed, result)` 上报完结,系统才下发下一条;**双机制保送达**——组长主动上报 + 空闲巡查(全员空闲满 N 分钟自动询问组长,默认 10 分钟,**追问不止**)。单条失败记录后继续不中断(夜间批量不被堵),跑完 `falinks → boss` 出汇总(x 成 y 败 + 各条结果)。清单落盘 `~/.falinks/todos/`,falinks 重启后降为暂停态、控制台提示 `/todo resume` 续跑(重发当前条,防组长失忆)。配套:`/todo list` 浮层、`/todo rm/clear/stop/resume`、子命令补全、活区 `📋 k/n` 进度常驻行;运行中无组长自动挂起告警、`/lead` 指定后自动续;`taskdone` 仅组长可调且 seq 必须匹配当前条(防模型连调两次误结下一条)。
