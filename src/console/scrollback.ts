@@ -47,6 +47,27 @@ function cpWidth(cp: number): number {
     (cp >= 0x1f300 && cp <= 0x1faff) || // emoji
     (cp >= 0x20000 && cp <= 0x3fffd) // CJK 扩展
   ) return 2;
+  // Unicode East Asian Wide(EAW=W)的 BMP 符号单字(⌚⏳✅❌⭐ 等 emoji 表现型):
+  // Ink 的 string-width 与 iTerm 都按 2 列渲染,漏算会让 wrapSegs 超额打包出真实超宽行
+  // (→ 物理折行 → 顶滚残影)。只列 EAW=W 的显式区段,不可把 2300-27BF 整段按宽算——
+  // 同区的 ⚠(26A0)/▶(25B6)等 EAW=N/A 字符 iTerm 默认渲 1 列。
+  if (
+    cp === 0x231a || cp === 0x231b ||                                   // ⌚⌛
+    (cp >= 0x23e9 && cp <= 0x23ec) || cp === 0x23f0 || cp === 0x23f3 || // ⏩-⏬ ⏰ ⏳
+    cp === 0x25fd || cp === 0x25fe ||                                   // ◽◾
+    cp === 0x2614 || cp === 0x2615 ||                                   // ☔☕
+    (cp >= 0x2648 && cp <= 0x2653) ||                                   // 星座 ♈-♓
+    cp === 0x267f || cp === 0x2693 || cp === 0x26a1 ||                  // ♿⚓⚡
+    cp === 0x26aa || cp === 0x26ab || cp === 0x26bd || cp === 0x26be || // ⚪⚫⚽⚾
+    cp === 0x26c4 || cp === 0x26c5 || cp === 0x26ce || cp === 0x26d4 || // ⛄⛅⛎⛔
+    cp === 0x26ea || cp === 0x26f2 || cp === 0x26f3 || cp === 0x26f5 || // ⛪⛲⛳⛵
+    cp === 0x26fa || cp === 0x26fd ||                                   // ⛺⛽
+    cp === 0x2705 || cp === 0x270a || cp === 0x270b || cp === 0x2728 || // ✅✊✋✨
+    cp === 0x274c || cp === 0x274e ||                                   // ❌❎
+    (cp >= 0x2753 && cp <= 0x2755) || cp === 0x2757 ||                  // ❓❔❕❗
+    (cp >= 0x2795 && cp <= 0x2797) || cp === 0x27b0 || cp === 0x27bf || // ➕➖➗➰➿
+    cp === 0x2b1b || cp === 0x2b1c || cp === 0x2b50 || cp === 0x2b55    // ⬛⬜⭐⭕
+  ) return 2;
   return 1;
 }
 
@@ -55,6 +76,22 @@ export function dispWidth(s: string): number {
   let w = 0;
   for (const ch of s) w += cpWidth(ch.codePointAt(0)!);
   return w;
+}
+
+/** 按显示列宽截断:超出 width 时截到 width-1 列并补 "…"(不劈半个宽字)。
+ *  用于"中段可截、尾部提示必须保住"的单行 UI(如等送达行的 Esc 提示)——
+ *  Ink 的 wrap="truncate-end" 只能截行尾,保不住后缀。 */
+export function clipDisp(s: string, width: number): string {
+  if (width <= 0 || dispWidth(s) <= width) return s;
+  let out = '';
+  let used = 0;
+  for (const ch of s) {
+    const w = cpWidth(ch.codePointAt(0)!);
+    if (used + w > width - 1) break;
+    out += ch;
+    used += w;
+  }
+  return out + '…';
 }
 
 /**

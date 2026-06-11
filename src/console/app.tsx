@@ -8,7 +8,7 @@ import { CLIS, dirSuggestions, fsListDirs } from './wizard.js';
 import { nameColor, formatTime, NAME_COLORS, statusGlyph, SPINNER_FRAMES } from './log-format.js';
 import { renderMarkdown } from './markdown.js';
 import { decodeKey, wheelBurst, type KeyEvent } from './keys.js';
-import { appendCommitted, pendingCounts, wrapSegs, sliceView, clampOffset, type StyledSeg } from './scrollback.js';
+import { appendCommitted, pendingCounts, wrapSegs, sliceView, clampOffset, clipDisp, dispWidth, type StyledSeg } from './scrollback.js';
 import { saveClipboardImage, expandImageTokens } from './clipboard.js';
 import { t, setLocale } from '../i18n/index.js';
 
@@ -83,7 +83,8 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
   useEffect(() => { setRawMode?.(true); }, [setRawMode]);
   const { stdout } = useStdout();
 
-  // 终端尺寸跟踪:alt screen 全屏自绘,根盒钉 rows-1 × cols(严格小于终端行数,防最后一行换行顶滚)。
+  // 终端尺寸跟踪:alt screen 全屏自绘,根盒钉 rows-1 × cols-1(严格小于终端行/列数:
+  // 行少 1 防末行换行顶滚;列少 1 防恰满宽行触发终端行尾 pending-wrap/物理折行)。
   // 用 || 不用 ??:无 tty/pty 异常时 rows/columns 可能是 0,0 也要落到默认值;再加下限防极端小窗。
   const readDims = () => ({ rows: Math.max(6, stdout?.rows || 24), cols: Math.max(20, stdout?.columns || 80) });
   const [dims, setDims] = useState(readDims);
@@ -590,10 +591,12 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
   const unresp = roster.filter((a) => a.unresponsive).map((a) => ({ name: a.name, mcpSeen: !!a.mcpSeen }));
 
   return (
-    // alt screen 全屏自绘(CC 同款):根盒钉 rows-1 行(严格小于终端行数,防末行换行顶滚)。
+    // alt screen 全屏自绘(CC 同款):根盒钉 rows-1 × cols-1(严格小于终端行/列数,
+    // 防末行换行顶滚;宽度留 1 列余量,Ink 的截断边界变成 cols-1,决不产出恰满宽行——
+    // =cols 的行会让 iTerm 进入行尾 pending-wrap,>cols 直接物理折行,都会顶滚出残影)。
     // 历史区贴底渲染+overflow 裁顶:渲染行数恒给足 rows-1 行(≥视口容量),实际可见高度由 flex 决定,
     // 溢出的从顶部裁掉——无需精确计算活区高度。底部活区 flexShrink=0 钉死,滚动只动历史区切片。
-    <Box flexDirection="column" height={rows - 1} width={cols}>
+    <Box flexDirection="column" height={rows - 1} width={cols - 1}>
       <Box flexDirection="column" flexGrow={1} overflow="hidden" justifyContent="flex-end">
         {sliceView(flatLines, scrollOff, rows - 1).map((segs, i) => (
           // 每行套 flexShrink=0 盒钉 1 行高:不钉的话 yoga 会把超高内容**压缩**(隔行丢失)而不是裁顶。
@@ -607,11 +610,13 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
         ))}
       </Box>
 
-      {/* 活区:回看提示 + 花名册 statusline + 等送达 + 诊断 + 输入/浮层 + 状态行 */}
+      {/* 活区:回看提示 + 花名册 statusline + 等送达 + 诊断 + 输入/浮层 + 状态行。
+          所有单行 UI <Text> 一律 wrap="truncate-end":1 UI 行=1 屏幕行是活区高度
+          (viewHRef 测量)与"帧高 ≤ rows-1"不变式的前提,长行截断绝不折行。 */}
       <Box ref={bottomBoxRef} flexDirection="column" flexShrink={0}>
-        {scrollOff > 0 ? <Text color="yellow">{t().browseHint(scrollOff)}</Text> : null}
+        {scrollOff > 0 ? <Text color="yellow" wrap="truncate-end">{t().browseHint(scrollOff)}</Text> : null}
         {roster.length ? (
-          <Text>
+          <Text wrap="truncate-end">
             {roster.map((a, i) => (
               <Text key={a.name}>
                 {i ? <Text dimColor> · </Text> : null}
@@ -623,44 +628,48 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
             ))}
           </Text>
         ) : null}
-        {pending.length ? (
-          <Text color="yellow">{t().pendingDeliver(pending.map((p) => '→ ' + p.to + (p.n > 1 ? ' ×' + p.n : '')).join(' · '))}</Text>
-        ) : null}
-        {unresp.length ? <Text color="red">{t().unresponsiveWarn(unresp)}</Text> : null}
-        {hasDiag ? <Text color="yellow">{t().diagWarn(drops, injFails, fastIdle)}</Text> : null}
+        {pending.length ? (() => {
+          // 目标名单按显示宽预截(clipDisp),保住行尾 "Esc 取消排队" 操作提示——
+          // 交给 truncate-end 截行尾的话,超长名单会把提示顶没。truncate-end 仍留作兜底。
+          const budget = Math.max(8, cols - 1 - dispWidth(t().pendingDeliver('')));
+          const targets = pending.map((p) => '→ ' + p.to + (p.n > 1 ? ' ×' + p.n : '')).join(' · ');
+          return <Text color="yellow" wrap="truncate-end">{t().pendingDeliver(clipDisp(targets, budget))}</Text>;
+        })() : null}
+        {unresp.length ? <Text color="red" wrap="truncate-end">{t().unresponsiveWarn(unresp)}</Text> : null}
+        {hasDiag ? <Text color="yellow" wrap="truncate-end">{t().diagWarn(drops, injFails, fastIdle)}</Text> : null}
         {/* todolist 进度常驻行:running/paused 时显示 已完成+当前/总数 与当前任务首行 */}
         {todoState && (todoState.state === 'running' || todoState.state === 'paused') ? (() => {
           const cur = todoState.tasks.find((x: any) => x.status === 'current');
           const k = todoState.tasks.filter((x: any) => x.status === 'done' || x.status === 'failed').length + (cur ? 1 : 0);
-          return <Text color="cyan">{t().todoProgressLine(k, todoState.tasks.length, cur ? String(cur.body).split('\n')[0].slice(0, 60) : '-', todoState.state === 'paused')}</Text>;
+          return <Text color="cyan" wrap="truncate-end">{t().todoProgressLine(k, todoState.tasks.length, cur ? String(cur.body).split('\n')[0].slice(0, 60) : '-', todoState.state === 'paused')}</Text>;
         })() : todoState && todoState.state === 'idle' && todoState.tasks.length > 0 ? (
-          <Text color="cyan">{t().todoPendingLine(todoState.tasks.length)}</Text>
+          <Text color="cyan" wrap="truncate-end">{t().todoPendingLine(todoState.tasks.length)}</Text>
         ) : null}
 
         {confirmExit ? (
           <Box marginTop={1}>
-            <Text color="yellow">{t().exitConfirmTitle}</Text>
-            <Text bold>{t().exitConfirmKeys}</Text>
+            <Text color="yellow" wrap="truncate-end">{t().exitConfirmTitle}</Text>
+            <Text bold wrap="truncate-end">{t().exitConfirmKeys}</Text>
           </Box>
         ) : langPick !== null ? (
           <Box flexDirection="column" marginTop={1}>
-            <Text color="yellow">{t().langPickTitle}</Text>
+            <Text color="yellow" wrap="truncate-end">{t().langPickTitle}</Text>
             {LANG_OPTS.map((o, i) => (
-              <Text key={o.v} inverse={i === langPick}>  {o.label}</Text>
+              <Text key={o.v} inverse={i === langPick} wrap="truncate-end">  {o.label}</Text>
             ))}
           </Box>
         ) : leadPick !== null ? (
           <Box flexDirection="column" marginTop={1}>
-            <Text color="yellow">{t().leadCmdPickTitle}</Text>
+            <Text color="yellow" wrap="truncate-end">{t().leadCmdPickTitle}</Text>
             {leadOpts.length === 0 ? (
-              <Text dimColor>  {t().leadPickEmpty}</Text>
+              <Text dimColor wrap="truncate-end">  {t().leadPickEmpty}</Text>
             ) : leadOpts.map((nm, i) => (
-              <Text key={nm} inverse={i === leadPick}>  <Text color={colorFor(nm)} bold>{nm}</Text></Text>
+              <Text key={nm} inverse={i === leadPick} wrap="truncate-end">  <Text color={colorFor(nm)} bold>{nm}</Text></Text>
             ))}
           </Box>
         ) : qCancel !== null ? (
           <Box flexDirection="column" marginTop={1}>
-            <Text color="yellow">{t().qcancelTitle(queuedMsgs.length)}</Text>
+            <Text color="yellow" wrap="truncate-end">{t().qcancelTitle(queuedMsgs.length)}</Text>
             {queuedMsgs.map((m: any, i: number) => (
               <Text key={m.id} inverse={i === Math.min(qCancel, Math.max(0, queuedMsgs.length - 1))} wrap="truncate-end">
                 {'  → '}<Text color={colorFor(m.to)} bold>{m.to}</Text>{'  '}{String(m.body).replace(/\s+/g, ' ').slice(0, 60)}
@@ -669,42 +678,42 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
           </Box>
         ) : todoView ? (
           <Box flexDirection="column" marginTop={1}>
-            <Text color="yellow">{t().todoListTitle}</Text>
+            <Text color="yellow" wrap="truncate-end">{t().todoListTitle}</Text>
             {!todoState || todoState.tasks.length === 0 ? (
-              <Text dimColor>  {t().todoListEmpty}</Text>
+              <Text dimColor wrap="truncate-end">  {t().todoListEmpty}</Text>
             ) : todoState.tasks.map((x: any) => (
-              <Text key={x.seq}>  {x.status === 'done' ? '✅' : x.status === 'failed' ? '❌' : x.status === 'current' ? '▶' : '·'} #{x.seq} {String(x.body).split('\n')[0].slice(0, 70)}{x.result ? ` — ${String(x.result).slice(0, 40)}` : ''}</Text>
+              <Text key={x.seq} wrap="truncate-end">  {x.status === 'done' ? '✅' : x.status === 'failed' ? '❌' : x.status === 'current' ? '▶' : '·'} #{x.seq} {String(x.body).split('\n')[0].slice(0, 70)}{x.result ? ` — ${String(x.result).slice(0, 40)}` : ''}</Text>
             ))}
           </Box>
         ) : wizard ? (
           <Box flexDirection="column" marginTop={1}>
             {wizard.step === 'cli' ? (
               <>
-                <Text>{t().wizardAddPrefix}<Text bold>{wizard.name}</Text>{t().wizardCliSuffix}</Text>
+                <Text wrap="truncate-end">{t().wizardAddPrefix}<Text bold>{wizard.name}</Text>{t().wizardCliSuffix}</Text>
                 {CLIS.map((c, i) => (
-                  <Text key={c} inverse={i === wizard.sel}>  {c}{c === 'codex' ? t().wizardExperimental : ''}</Text>
+                  <Text key={c} inverse={i === wizard.sel} wrap="truncate-end">  {c}{c === 'codex' ? t().wizardExperimental : ''}</Text>
                 ))}
               </>
             ) : wizard.step === 'model' ? (
               <>
-                <Text>{t().wizardAddPrefix}<Text bold>{wizard.name}</Text> [{wizard.cli}]{t().wizardModelSuffix}</Text>
-                <Box><Text color="green">› </Text><Text>{wizard.modelText}</Text><Text inverse> </Text></Box>
-                <Text dimColor>{t().wizardModelHint}</Text>
+                <Text wrap="truncate-end">{t().wizardAddPrefix}<Text bold>{wizard.name}</Text> [{wizard.cli}]{t().wizardModelSuffix}</Text>
+                <Box><Text color="green">› </Text><Text wrap="truncate-end">{wizard.modelText}</Text><Text inverse> </Text></Box>
+                <Text dimColor wrap="truncate-end">{t().wizardModelHint}</Text>
               </>
             ) : wizard.step === 'role' ? (
               <>
-                <Text>{t().wizardAddPrefix}<Text bold>{wizard.name}</Text> [{wizard.cli}{wizard.model ? '·' + wizard.model : ''}]{t().wizardRoleSuffix}</Text>
-                <Box><Text color="green">› </Text><Text>{wizard.roleText}</Text><Text inverse> </Text></Box>
-                <Text dimColor>{t().wizardRoleExample}</Text>
+                <Text wrap="truncate-end">{t().wizardAddPrefix}<Text bold>{wizard.name}</Text> [{wizard.cli}{wizard.model ? '·' + wizard.model : ''}]{t().wizardRoleSuffix}</Text>
+                <Box><Text color="green">› </Text><Text wrap="truncate-end">{wizard.roleText}</Text><Text inverse> </Text></Box>
+                <Text dimColor wrap="truncate-end">{t().wizardRoleExample}</Text>
               </>
             ) : (
               <>
-                <Text>{t().wizardAddPrefix}<Text bold>{wizard.name}</Text> [{wizard.cli}·{wizard.role}]{t().wizardCwdSuffix}</Text>
-                <Box><Text color="green">› </Text><Text>{wizard.path}</Text><Text inverse> </Text></Box>
+                <Text wrap="truncate-end">{t().wizardAddPrefix}<Text bold>{wizard.name}</Text> [{wizard.cli}·{wizard.role}]{t().wizardCwdSuffix}</Text>
+                <Box><Text color="green">› </Text><Text wrap="truncate-end">{wizard.path}</Text><Text inverse> </Text></Box>
                 {dirSuggestions(wizard.path, fsListDirs).map((d, i) => (
-                  <Text key={d} inverse={i === wizard.sel}>  {d}</Text>
+                  <Text key={d} inverse={i === wizard.sel} wrap="truncate-end">  {d}</Text>
                 ))}
-                <Text dimColor>{t().wizardCwdDefault}</Text>
+                <Text dimColor wrap="truncate-end">{t().wizardCwdDefault}</Text>
               </>
             )}
           </Box>
@@ -712,18 +721,20 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
           <>
             {answering && pendingQ ? (
               <Box flexDirection="column" marginTop={1}>
-                <Text color="yellow">{t().questionAsk(pendingQ.from, pendingQ.question)}</Text>
+                <Text color="yellow" wrap="truncate-end">{t().questionAsk(pendingQ.from, pendingQ.question)}</Text>
                 {pendingQ.options.map((o: string, i: number) => (
-                  <Text key={i} inverse={i === qSelClamped}>  {i + 1}. {o}</Text>
+                  <Text key={i} inverse={i === qSelClamped} wrap="truncate-end">  {i + 1}. {o}</Text>
                 ))}
-                <Text inverse={onCustomSlot} dimColor={!onCustomSlot}>  {t().answerCustom}</Text>
+                <Text inverse={onCustomSlot} dimColor={!onCustomSlot} wrap="truncate-end">  {t().answerCustom}</Text>
                 {customAns !== null ? (
-                  <Text>{t().answerCustomPrompt}<Text color="green">{customAns}</Text><Text inverse> </Text></Text>
+                  <Text wrap="truncate-end">{t().answerCustomPrompt}<Text color="green">{customAns}</Text><Text inverse> </Text></Text>
                 ) : (
-                  <Text dimColor>{t().answerKeys}{questions.length > 1 ? t().answerMore(questions.length - 1) : ''}{t().answerOrType}</Text>
+                  <Text dimColor wrap="truncate-end">{t().answerKeys}{questions.length > 1 ? t().answerMore(questions.length - 1) : ''}{t().answerOrType}</Text>
                 )}
               </Box>
             ) : null}
+            {/* 输入行例外:多行输入(Shift+Enter)+长输入折行是功能,故保默认 wrap;
+                折出的物理行数由 measureElement 计入活区高度,几何不变式仍成立。 */}
             <Box marginTop={1}>
               <Text>
                 {inputDest.mode === 'cmd' ? <Text color="magenta" bold>⌘ </Text>
@@ -739,15 +750,15 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
             {active ? (
               <Box flexDirection="column">
                 {items.map((it, i) => (
-                  <Text key={it.label} inverse={i === selClamped}>  {it.label}{it.hint ? '   ' + it.hint : ''}</Text>
+                  <Text key={it.label} inverse={i === selClamped} wrap="truncate-end">  {it.label}{it.hint ? '   ' + it.hint : ''}</Text>
                 ))}
               </Box>
             ) : (
-              <Text dimColor>{t().inputHint(replyTarget ?? t().noReplyTargetShort)}</Text>
+              <Text dimColor wrap="truncate-end">{t().inputHint(replyTarget ?? t().noReplyTargetShort)}</Text>
             )}
           </>
         )}
-        {status ? <Text dimColor>{status}</Text> : null}
+        {status ? <Text dimColor wrap="truncate-end">{status}</Text> : null}
       </Box>
     </Box>
   );

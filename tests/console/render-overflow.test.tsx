@@ -12,38 +12,35 @@ import { startBus, type Bus } from '../../src/bus/server.js';
 import { setLocale } from '../../src/i18n/index.js';
 
 /**
- * 渲染残影(宽符号溢出)复现 —— 全部为 **预期失败** 测试(test.fails:测试断言今天必红,
- * vitest 反转后 CI 仍绿;一旦修复落地这些用例会转"意外通过"而报错,提醒把 .fails 摘掉)。
+ * 渲染残影(宽符号溢出)回归测试 —— 锁定 alt-screen 自绘方案的几何不变式:
+ * **每屏幕行真实显示宽 ≤ cols-1,活区 1 UI 行=1 屏幕行**。打破任意一条 → 帧物理高度
+ * 超 rows-1 → 顶滚 → log-update 擦除错位 → 残影逐帧累积(实机同一行 ×35)。
  *
- * 机理(Phase-1 验证结论):
- * 1. scrollback.ts cpWidth() 宽字符表漏了 East Asian Wide 的符号区
- *    (U+2300-23FF / U+2600-27BF 中的 emoji 表现型单字:⏳ U+23F3、✅ U+2705、❌ U+274C 等)
- *    ——cpWidth 算 1,而 Ink 的 string-width(7.x)与 iTerm 都算 2。
- * 2. 历史区 flatLines 用 wrapSegs(cpWidth)打包到 cols-1:含 ⏳✅❌ 的行被**超额打包**,
- *    真实 string-width 可达 cols+Δ(Δ=此类字符个数)。Ink 的 wrap="truncate-end" 兜底截断,
- *    但截到的是行盒宽度 cols(根盒 width={cols}),不是设计余量 cols-1 ——
- *    产出**恰好满屏宽(=cols)的行**,打破整个 alt-screen 自绘方案"每行 ≤ cols-1、
- *    决不触发终端物理折行/顶滚"的几何不变式(app.tsx:259 取 cols-1 正是为此)。
- * 3. 底部活区行(pendingDeliver/roster statusline/unresponsiveWarn 等)没有 wrap 属性,
- *    Ink 默认 wrap:长 pending 行折成 2+ 物理行,同样可顶出恰满宽行,且"1 UI 行=1 屏幕行"
- *    的活区高度假设失效。
+ * 修复(对应 Phase-1 结论的三件套):
+ * 1. scrollback.ts cpWidth() 补齐 East Asian Wide 的 BMP 符号单字区段
+ *    (⏳ U+23F3、✅ U+2705、❌ U+274C 等)——与 Ink string-width/iTerm 对齐按 2 算,
+ *    wrapSegs 不再超额打包。
+ * 2. 根盒宽度收到 cols-1:Ink 的截断边界=cols-1,决不产出恰满屏宽(=cols)的行
+ *    (=cols 触发 iTerm 行尾 pending-wrap,>cols 直接物理折行)。
+ * 3. 底部活区所有单行 UI <Text> 统一 wrap="truncate-end";pendingDeliver 的目标名单
+ *    先按显示宽 clipDisp 预截,保住行尾 "Esc 取消排队" 操作提示。
  */
 
 // ── 纯单测:宽度表本身(确定性,CI 也跑) ──────────────────────────────
 
-test.fails('dispWidth:East Asian Wide 符号区(⏳✅❌)应为 2——cpWidth 漏表(预期失败)', () => {
-  expect(dispWidth('⏳')).toBe(2); // U+23F3 EAW=W;今天 cpWidth 返回 1
+test('dispWidth:East Asian Wide 符号区(⏳✅❌)应为 2', () => {
+  expect(dispWidth('⏳')).toBe(2); // U+23F3 EAW=W
   expect(dispWidth('✅')).toBe(2); // U+2705 EAW=W
   expect(dispWidth('❌')).toBe(2); // U+274C EAW=W
 });
 
-test.fails('wrapSegs:打包出的每一屏幕行真实 string-width 不得超过给定宽度(预期失败)', () => {
+test('wrapSegs:打包出的每一屏幕行真实 string-width 不得超过给定宽度', () => {
   // todolist 汇总消息风格的真实场景正文(✅❌⏳ + 中文)
   const body = '汇总:✅任务一完成 ❌任务二失败 ✅任务三完成 ⏳任务四等待中 ✅任务五完成 ❌任务六失败 ✅任务七完成 中文中文中文中文';
   const width = 77; // cols=80 时历史区正文宽度:cols-1-2(缩进)
   for (const row of wrapSegs([{ text: body }], width)) {
     const text = row.map((s) => s.text).join('');
-    // cpWidth 低估 ⏳✅❌(各 -1)→ 首行真实宽度 82 > 77,Ink/iTerm 视角已超宽
+    // cpWidth 若低估 ⏳✅❌(各 -1)会把首行打包到真实宽 82 > 77 —— 修复后必须吻合
     expect(stringWidth(text)).toBeLessThanOrEqual(width);
   }
 });
@@ -97,9 +94,9 @@ afterEach(async () => { await bus.close(); });
 // 渲染层 e2e 同 app-e2e:headless CI 时序不稳,仅本地跑。
 const renderE2E = test.skipIf(!!process.env.CI);
 
-renderE2E.fails('e2e:含 ✅❌⏳ 消息下任何帧的任何行 string-width ≤ cols-1(防物理折行顶滚;预期失败)', async () => {
+renderE2E('e2e:含 ✅❌⏳ 消息下任何帧的任何行 string-width ≤ cols-1(防物理折行顶滚)', async () => {
   const COLS = 80, ROWS = 20;
-  // 历史区:wrapSegs(cpWidth) 超额打包 → truncate-end 截到 cols=80(恰满屏宽,> 设计余量 79)
+  // 历史区回归点:wrapSegs(cpWidth) 曾超额打包 → truncate-end 截到 cols=80(恰满屏宽,> 设计余量 79)
   router.send('boss', 'frontend', '汇总:✅任务一完成 ❌任务二失败 ✅任务三完成 ⏳任务四等待中 ✅任务五完成 ❌任务六失败 ✅任务七完成 中文中文中文中文');
 
   const stdout = fakeStdout(COLS, ROWS);
@@ -117,9 +114,9 @@ renderE2E.fails('e2e:含 ✅❌⏳ 消息下任何帧的任何行 string-width �
   }
 });
 
-renderE2E.fails('e2e:pendingDeliver 长名单必须保持单物理行(今天被 Ink 默认 wrap 折两行;预期失败)', async () => {
+renderE2E('e2e:pendingDeliver 长名单必须保持单物理行,且行尾操作提示可见', async () => {
   const COLS = 80, ROWS = 20;
-  // 每人 1 条占住(busy)+ 3 条排队 → 6 目标 ×N 的长 pending 行(真实 string-width 114 > 80)
+  // 每人 1 条占住(busy)+ 3 条排队 → 6 目标 ×N 的长 pending 行(完整 string-width 114 > 80)
   for (const nm of NAMES) router.send('boss', nm, '占住-' + nm);
   for (const nm of NAMES) for (let i = 0; i < 3; i++) router.send('boss', nm, `排队-${nm}-${i}`);
 
@@ -129,9 +126,11 @@ renderE2E.fails('e2e:pendingDeliver 长名单必须保持单物理行(今天被 
   try {
     await waitFor(() => lastFrame().includes('等送达'));
     const line = lastFrame().split('\n').find((l) => l.includes('等送达'))!;
-    // app.tsx:626-628 的 <Text> 无 wrap 属性 → 默认 wrap 折行,行尾的 “Esc 取消排队” 掉到下一物理行,
-    // 活区"1 UI 行=1 屏幕行"假设失效(也意味着该行可顶出恰满宽片段)。应 truncate-end 单行兜底。
+    // 回归点 1:曾被 Ink 默认 wrap 折两行,行尾 "Esc 取消排队" 掉到下一物理行,
+    // 活区"1 UI 行=1 屏幕行"假设失效。现在目标名单按显示宽 clipDisp 预截,提示保住。
     expect(line).toContain('取消排队');
+    // 回归点 2:单行且 ≤ cols-1(truncate-end + 根盒 cols-1 兜底)。
+    expect(stringWidth(line)).toBeLessThanOrEqual(COLS - 1);
   } finally {
     inst.unmount();
   }
