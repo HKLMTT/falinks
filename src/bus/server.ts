@@ -230,8 +230,13 @@ export async function startBus(deps: BusDeps, port: number, opts?: BusOptions): 
         return sendJson({ ok: true });
       }
       if (req.method === 'POST' && url.pathname === '/admin/say') {
-        const msg = router.send('boss', String(abody.to), String(abody.message));
+        const msg = router.send('boss', String(abody.to), String(abody.message), { urgent: abody.urgent === true });
         return sendJson(msg ? { ok: true, id: msg.id } : { ok: false, error: 'unknown or dropped' });
+      }
+      if (req.method === 'POST' && url.pathname === '/admin/promote') {
+        // 把排队消息提升为插队直送;失败原因透传(gone=已投出/不存在,not-ready=目标未就绪留队,dead=目标已死留队)。
+        const r = router.promoteQueued(String(abody.id));
+        return sendJson(r.ok ? { ok: true, to: r.to } : { ok: false, error: r.reason ?? 'not queued' });
       }
       if (req.method === 'POST' && url.pathname === '/admin/cancel') {
         // 撤销仍在排队的消息;已投出/不存在 → ok:false(控制台提示"可能已送达")。
@@ -242,7 +247,7 @@ export async function startBus(deps: BusDeps, port: number, opts?: BusOptions): 
         const sent: string[] = [];
         for (const a of router.roster()) {
           if (a.virtual || a.status === 'dead' || a.name === 'boss') continue;
-          if (router.send('boss', a.name, String(abody.message))) sent.push(a.name);
+          if (router.send('boss', a.name, String(abody.message), { urgent: abody.urgent === true })) sent.push(a.name);
         }
         return sendJson({ sent });
       }
