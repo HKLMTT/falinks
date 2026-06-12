@@ -95,6 +95,7 @@ export class Router {
       }
     }
 
+    // 虚拟成员只记日志、从不投递,⚡ urgent 标记无意义 → 不标;
     // launching 的 pane 还没就绪,直送会注进启动中的 shell 而丢失 → 退化为正常排队(不标 urgent,控制台如实显示排队)。
     const urgent = !!opts?.urgent && !a.virtual && a.status !== 'launching';
     const msg: Message = { id: this.deps.genId(), from, to: target, body, ts: this.deps.now(), thread, ...(urgent ? { urgent: true } : {}) };

@@ -77,9 +77,10 @@ test('urgent 仍受限流护栏约束', () => {
   expect(delivered.map((m) => m.body)).toEqual(['first']);
 });
 
-test('urgent 发给虚拟成员(boss):只记日志,带 urgent 标但不投递', () => {
+test('urgent 发给虚拟成员(boss):只记日志不投递,不标 urgent', () => {
   const { r, delivered } = makeRouter();
   const m = r.send('dev', 'boss', 'report', { urgent: true })!;
   expect(m).toBeDefined();
+  expect(m.urgent).toBeUndefined();
   expect(delivered).toEqual([]);
 });
