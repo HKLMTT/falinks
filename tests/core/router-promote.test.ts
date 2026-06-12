@@ -41,19 +41,51 @@ test('promoteQueued:目标空闲时(理论不该有排队,防御路径)等价 pu
   expect(delivered.map((m) => m.body)).toEqual(['task-1', 'queued-1']);
 });
 
-test('promoteQueued:已投出/不存在 → ok:false', () => {
+test('promoteQueued:已投出/不存在 → ok:false + reason gone', () => {
   const { r } = makeRouter();
   const m1 = r.send('boss', 'dev', 'first')!; // 即时投递,不在队列
-  expect(r.promoteQueued(m1.id)).toEqual({ ok: false });
-  expect(r.promoteQueued('nope')).toEqual({ ok: false });
+  expect(r.promoteQueued(m1.id)).toEqual({ ok: false, reason: 'gone' });
+  expect(r.promoteQueued('nope')).toEqual({ ok: false, reason: 'gone' });
   expect(r.messages().find((m) => m.id === m1.id)?.urgent).toBeUndefined();
 });
 
-test('promoteQueued:目标 launching → ok:false,消息留在队列', () => {
+test('promoteQueued:目标 launching → ok:false + reason not-ready,消息留在队列', () => {
   const { r, delivered } = makeRouter();
   r.addAgent('newbie'); // launching
   const m = r.send('boss', 'newbie', 'early')!;
-  expect(r.promoteQueued(m.id)).toEqual({ ok: false });
+  expect(r.promoteQueued(m.id)).toEqual({ ok: false, reason: 'not-ready' });
   expect(r.queuedMessageIds().has(m.id)).toBe(true); // 没被吞,register 后照常投
   expect(delivered).toEqual([]);
+});
+
+test('promoteQueued:目标 hold(/clear 保护窗口) → ok:false + reason not-ready,留队,register 后照常 pump', () => {
+  const { r, delivered } = makeRouter();
+  r.send('boss', 'dev', 'task-1');               // dev busy(真忙)
+  const q = r.send('boss', 'dev', 'queued-1')!;  // 排队
+  r.hold('dev');                                 // /clear 保护窗口
+  expect(r.promoteQueued(q.id)).toEqual({ ok: false, reason: 'not-ready' });
+  expect(r.queuedMessageIds().has(q.id)).toBe(true);          // 留队,没被吞
+  expect(delivered.map((m) => m.body)).toEqual(['task-1']);   // 没注进清空中的 pane
+  r.register('dev', 's2');                                    // 清完重新报到 → 自动 pump
+  expect(delivered.map((m) => m.body)).toEqual(['task-1', 'queued-1']);
+});
+
+test('promoteQueued:目标 dead → ok:false + reason dead,消息留在队列', () => {
+  const { r, delivered } = makeRouter();
+  r.send('boss', 'dev', 'task-1');               // dev busy
+  const q = r.send('boss', 'dev', 'queued-1')!;  // 排队
+  r.markDead('dev');
+  expect(r.promoteQueued(q.id)).toEqual({ ok: false, reason: 'dead' });
+  expect(r.queuedMessageIds().has(q.id)).toBe(true);
+  expect(delivered.map((m) => m.body)).toEqual(['task-1']);
+});
+
+test('promoteQueued:目标 stuck → 直送成功且保持 stuck', () => {
+  const { r, delivered } = makeRouter();
+  r.send('boss', 'dev', 'task-1');               // dev busy
+  const q = r.send('boss', 'dev', 'queued-1')!;  // 排队
+  r.markStuck('dev');
+  expect(r.promoteQueued(q.id)).toEqual({ ok: true, to: 'dev' });
+  expect(delivered.map((m) => m.body)).toEqual(['task-1', 'queued-1']);
+  expect(r.get('dev')!.status).toBe('stuck');    // 卡死视同忙,不动状态机
 });

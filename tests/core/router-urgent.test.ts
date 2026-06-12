@@ -64,6 +64,17 @@ test('urgent+目标 launching:退化为正常排队,消息不带 urgent 标', ()
   expect(delivered.map((m2) => m2.body)).toEqual(['early']);
 });
 
+test('urgent+目标 hold(/clear 保护窗口):退化为正常排队,不标 urgent,register 后照常 pump', () => {
+  const { r, delivered } = makeRouter();
+  r.hold('dev'); // /clear 保护窗口:假 busy,禁直送
+  const m = r.send('boss', 'dev', 'cut-in', { urgent: true })!;
+  expect(m.urgent).toBeUndefined();                  // 没直送就别标 ⚡
+  expect(delivered).toEqual([]);                     // 不能注进正在清空的 pane
+  expect(r.queuedMessageIds().has(m.id)).toBe(true);
+  r.register('dev', 's2');                           // 清完重新报到
+  expect(delivered.map((m2) => m2.body)).toEqual(['cut-in']);
+});
+
 test('urgent+目标 dead:拒绝(返回 undefined)', () => {
   const { r } = makeRouter();
   r.markDead('dev');

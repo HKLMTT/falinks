@@ -58,6 +58,7 @@ export class Router {
     const a = this.must(name);
     a.sessionId = sessionId;
     a.status = 'idle';
+    a.holding = undefined;
     this.pump(a);
   }
 
@@ -96,8 +97,8 @@ export class Router {
     }
 
     // 虚拟成员只记日志、从不投递,⚡ urgent 标记无意义 → 不标;
-    // launching 的 pane 还没就绪,直送会注进启动中的 shell 而丢失 → 退化为正常排队(不标 urgent,控制台如实显示排队)。
-    const urgent = !!opts?.urgent && !a.virtual && a.status !== 'launching';
+    // launching 的 pane 还没就绪、holding(/clear 等保护窗口)的 pane 正在清空,直送都会注丢 → 退化为正常排队(不标 urgent,控制台如实显示排队)。
+    const urgent = !!opts?.urgent && !a.virtual && a.status !== 'launching' && !a.holding;
     const msg: Message = { id: this.deps.genId(), from, to: target, body, ts: this.deps.now(), thread, ...(urgent ? { urgent: true } : {}) };
     this.messageLog.push(msg);
     const cap = this.deps.logCap ?? 300;
@@ -115,6 +116,7 @@ export class Router {
     if (a.status === 'busy' || a.status === 'stuck') a.status = 'idle';
     a.handling = undefined;
     a.handlingFrom = undefined;
+    a.holding = undefined;
     this.pump(a);
   }
 
@@ -178,6 +180,7 @@ export class Router {
     a.muteStreak = 0;
     a.lastMcpAt = undefined;
     a.lastMcpHttpAt = undefined;
+    a.holding = undefined;
   }
 
   /**
@@ -186,7 +189,7 @@ export class Router {
    */
   hold(name: AgentName): void {
     const a = this.agents.get(name);
-    if (a && a.status !== 'dead') { a.status = 'busy'; a.handling = undefined; a.handlingFrom = undefined; }
+    if (a && a.status !== 'dead') { a.status = 'busy'; a.holding = true; a.handling = undefined; a.handlingFrom = undefined; }
   }
 
   /**
@@ -231,14 +234,17 @@ export class Router {
   }
 
   /** 把一条仍在排队的消息提升为插队直送(按 id 全员查找):出队、补标 urgent、立即投递。
-   *  已投出/不存在 → ok:false;目标 launching(pane 未就绪,直送会丢)也 ok:false、消息留队。
+   *  拒绝时带 reason:已投出/不存在 → 'gone';目标 launching(pane 未就绪)或 holding(/clear 等
+   *  保护窗口,pane 正在清空)→ 'not-ready',消息留队等 register 后照常 pump;目标 dead → 'dead',
+   *  消息留队(与 cancelQueued 配合由调用方善后)。
    *  注:流水与 inbox 持同一对象引用,补标即生效;持久化历史在发送时已落盘,事后补的 urgent
    *  标不回写(重启后历史不显示 ⚡,可接受——只是显示标记)。 */
-  promoteQueued(id: string): { ok: boolean; to?: AgentName } {
+  promoteQueued(id: string): { ok: boolean; to?: AgentName; reason?: 'gone' | 'not-ready' | 'dead' } {
     for (const a of this.agents.values()) {
       const i = a.inbox.findIndex((m) => m.id === id);
       if (i >= 0) {
-        if (a.status === 'launching' || a.status === 'dead') return { ok: false };
+        if (a.status === 'launching' || a.holding) return { ok: false, reason: 'not-ready' };
+        if (a.status === 'dead') return { ok: false, reason: 'dead' };
         const msg = a.inbox[i];
         a.inbox.splice(i, 1);
         msg.urgent = true;
@@ -246,7 +252,7 @@ export class Router {
         return { ok: true, to: a.name };
       }
     }
-    return { ok: false };
+    return { ok: false, reason: 'gone' };
   }
 
   /** 若 agent 空闲且 inbox 非空，取出一条投递并标 busy。 */
@@ -260,12 +266,13 @@ export class Router {
     this.deliverer.deliver(a, msg);
   }
 
-  /** 插队直送:闲时等价 pump(置 busy、记 handling);忙/卡时不动状态机——别把在办线程的跟踪改写成插队消息的。 */
+  /** 插队直送:闲时插到队首走 pump(置 busy、记 handling——"闲时等价 pump"由复用保证);
+   *  忙/卡时直接 deliver、不动状态机——别把在办线程的跟踪改写成插队消息的。 */
   private deliverUrgent(a: AgentRuntime, msg: Message): void {
     if (a.status === 'idle') {
-      a.status = 'busy';
-      a.handling = msg.thread;
-      a.handlingFrom = msg.from;
+      a.inbox.unshift(msg);
+      this.pump(a);
+      return;
     }
     this.deliverer.deliver(a, msg);
   }

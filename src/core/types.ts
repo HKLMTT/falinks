@@ -33,4 +33,5 @@ export interface AgentRuntime {
   unresponsive?: boolean; // 失联嫌疑(报到超时/有活无声):花名册 ⚠;收到任意 MCP 调用自愈
   unresponsiveRule?: 'register-timeout' | 'mute'; // 触发 ⚠ 的规则(决定警告文案:未报到 vs 有活无声)
   muteStreak?: number; // 连续"有活无声"次数(投递后自动降闲且零 MCP 调用);touchMcp 清零
+  holding?: boolean; // /clear 等保护窗口(hold()):pane 正在清空,禁直送(urgent/promote 退化排队);register/onIdle/markLaunching 清除
 }
