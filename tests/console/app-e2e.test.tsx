@@ -134,7 +134,7 @@ renderE2E('e2e:Esc 开取消排队浮层,Enter 取消选中条 → 等送达计�
     await waitFor(() => lastFrame().includes('等送达') && lastFrame().includes('×2'));
 
     stdin.emit('data', '\x1b'); // Esc → 取消排队浮层
-    await waitFor(() => lastFrame().includes('取消排队消息'));
+    await waitFor(() => lastFrame().includes('排队消息(共'));
     expect(lastFrame()).toContain('排队-甲');
     expect(lastFrame()).toContain('排队-乙');
 
@@ -149,7 +149,33 @@ renderE2E('e2e:Esc 开取消排队浮层,Enter 取消选中条 → 等送达计�
     await waitFor(() => lastFrame().includes('✗已取消')); // 历史行标记
 
     stdin.emit('data', '\x1b'); // Esc 关浮层(若仍开着)
-    await waitFor(() => !lastFrame().includes('取消排队消息('));
+    await waitFor(() => !lastFrame().includes('排队消息(共'));
+  } finally {
+    inst.unmount();
+  }
+});
+
+renderE2E('e2e:浮层按 ! 提升排队消息直送 → 等送达消失、历史标 ⚡直送', { timeout: 15000 }, async () => {
+  router.send('boss', 'alice', '占住-alice');   // 即时投递 → alice busy
+  router.send('boss', 'alice', '排队-丙');      // 排队
+
+  const stdout = fakeStdout(100, 30);
+  const stdin = fakeStdin();
+  const inst = render(<App port={bus.port} />, { stdout, stdin, exitOnCtrlC: false, patchConsole: false });
+  const lastFrame = () => (stdout.frames as string[]).map(strip).filter((x) => x.trim()).at(-1) ?? '';
+  try {
+    await waitFor(() => lastFrame().includes('等送达'));
+
+    stdin.emit('data', '\x1b'); // Esc → 排队浮层
+    await waitFor(() => lastFrame().includes('排队消息(共'));
+    expect(lastFrame()).toContain('排队-丙');
+
+    const before = driver.injections.length;
+    stdin.emit('data', '!');    // ! 提升直送
+    await waitFor(() => lastFrame().includes('已插队直送'));
+    expect(driver.injections.length).toBeGreaterThan(before); // 真注入了(没等 alice 空闲)
+    await waitFor(() => !lastFrame().includes('等送达'));      // 排队计数清零
+    await waitFor(() => lastFrame().includes('⚡直送'));        // 历史行标记
   } finally {
     inst.unmount();
   }

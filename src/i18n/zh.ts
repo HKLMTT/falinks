@@ -18,12 +18,14 @@ export const zh = {
     '7×24 AI 牛马，永不摸鱼（大概）',
     '老板一句话，牛马忙到趴',
   ] as string[],
-  helpStatus: '@名字 私聊 · @all 群发 · 纯文本=回复上次对话目标 · /add 加员工 · /remove 删员工 · /clear [名字] 清空上下文 · /restart 重启员工 · /todo 任务清单 · /lead 选组长',
+  helpStatus: '@名字 私聊 · @all 群发 · 纯文本=回复上次对话目标 · /add 加员工 · /remove 删员工 · /clear [名字] 清空上下文 · /restart 重启员工 · /todo 任务清单 · /lead 选组长 · !消息 插队直送(全角！也行)',
   guardrailBlocked: '被护栏拦截',
   sayUndelivered: (to: string, err: string) => `未送达 ${to}：${err}`,
   sayOk: (to: string) => `→ ${to}`,
   broadcastOk: '→ 全员',
   replyOk: (to: string) => `→ ${to}（回复）`,
+  urgentOk: (to: string) => `⚡ → ${to}(直送)`,
+  urgentBroadcastOk: '⚡ 已群发(直送)',
   noReplyTarget: '没有上次对话目标，请 @某人 私聊 或 @all 群发',
   addOk: (name: string) => `＋ ${name}`,
   removeOk: (name: string) => `－ ${name}`,
@@ -94,11 +96,15 @@ export const zh = {
   /** 底部活区"等送达"行:仍在对方 inbox 排队、尚未投出的目标聚合(targets 形如 `→ qa ×2 · → backend`)。空则不显示。 */
   pendingDeliver: (targets: string) => `⏳ 等送达: ${targets} · Esc 取消排队`,
   /** 取消排队浮层 */
-  qcancelTitle: (n: number) => `取消排队消息(共 ${n} 条)（↑↓ 选 · Enter 取消该条 · Esc 关闭）`,
+  qcancelTitle: (n: number) => `排队消息(共 ${n} 条)（↑↓ 选 · Enter 取消 · ! 插队直送 · Esc 关闭）`,
   qcancelOk: (to: string) => `✗ 已取消 1 条排队消息(→ ${to})`,
   qcancelFailed: '取消失败(可能刚已送达)',
+  qpromoteOk: (to: string) => `⚡ 已插队直送 1 条(→ ${to})`,
+  qpromoteFailed: '插队失败(可能刚已送达、员工未就绪或已下线)',
   /** 历史里被撤销消息的标记 */
   canceledMark: ' ✗已取消',
+  /** 历史里插队直送消息的标记 */
+  urgentMark: ' ⚡直送',
   /** 回看态提示:offset=距最新多少行。 */
   browseHint: (offset: number) => `↑ 回看中(距最新 ${offset} 行)· 滚轮/↑↓ 移动 · PgUp/PgDn 翻页 · Esc 或输入回到最新`,
   langAuto: '跟随系统',

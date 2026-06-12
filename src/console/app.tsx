@@ -173,13 +173,13 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
       if (a.kind === 'add-start') { setWizard({ name: a.name, step: 'cli', sel: 0 }); return; }
       if (a.kind === 'lang-start') { setLangPick(0); return; }
       if (a.kind === 'lead-start') { setLeadPick(0); return; }
-      if (a.kind === 'say') { const r = await admin(port, 'POST', '/admin/say', { to: a.to, message: expand(a.message) }); setStatus(r.ok ? t().sayOk(a.to) : '⚠ ' + t().sayUndelivered(a.to, r.error ?? t().guardrailBlocked)); return; }
-      if (a.kind === 'broadcast') { await admin(port, 'POST', '/admin/broadcast', { message: expand(a.message) }); setStatus(t().broadcastOk); return; }
+      if (a.kind === 'say') { const r = await admin(port, 'POST', '/admin/say', { to: a.to, message: expand(a.message), urgent: a.urgent }); setStatus(r.ok ? (a.urgent ? t().urgentOk(a.to) : t().sayOk(a.to)) : '⚠ ' + t().sayUndelivered(a.to, r.error ?? t().guardrailBlocked)); return; }
+      if (a.kind === 'broadcast') { await admin(port, 'POST', '/admin/broadcast', { message: expand(a.message), urgent: a.urgent }); setStatus(a.urgent ? t().urgentBroadcastOk : t().broadcastOk); return; }
       if (a.kind === 'reply') {
         const target = lastReplyTarget(log);
         if (!target) { setStatus(t().noReplyTarget); return; }
-        const r = await admin(port, 'POST', '/admin/say', { to: target, message: expand(a.message) });
-        setStatus(r.ok ? t().replyOk(target) : '⚠ ' + t().sayUndelivered(target, r.error ?? t().guardrailBlocked));
+        const r = await admin(port, 'POST', '/admin/say', { to: target, message: expand(a.message), urgent: a.urgent });
+        setStatus(r.ok ? (a.urgent ? t().urgentOk(target) : t().replyOk(target)) : '⚠ ' + t().sayUndelivered(target, r.error ?? t().guardrailBlocked));
         return;
       }
       if (a.kind === 'add') { const r = await admin(port, 'POST', '/admin/add', a.spec); setStatus(r.ok ? t().addOk(a.spec.name) : '⚠ ' + (r.error ?? t().addFailed)); return; }
@@ -277,6 +277,7 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
         { text: String(m.to), color: colorFor(m.to), bold: true },
       );
       if (liveById.get(m.id)?.canceled) header.push({ text: t().canceledMark, color: 'red', dim: true });
+      if (liveById.get(m.id)?.urgent) header.push({ text: t().urgentMark, color: 'yellow' });
       for (const row of wrapSegs(header, width)) out.push(row);
       for (const line of renderMarkdown(String(m.body)))
         for (const row of wrapSegs(line, width - 2)) out.push([{ text: '  ' }, ...row]);
@@ -432,6 +433,21 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
           if (r.ok) {
             // 本地即时把该条标记非排队(不等下轮轮询),列表/等送达计数立刻缩。
             const nl = log.map((m: any) => (m.id === target.id ? { ...m, queued: false, canceled: true } : m));
+            setLog(nl);
+            setPending(pendingCounts(nl));
+          }
+        })();
+        return;
+      }
+      if (ev.type === 'text' && ev.text === '!') {
+        const target = queuedMsgs[selIdx];
+        if (!target) { setQCancel(null); return; }
+        void (async () => {
+          const r = await admin(port, 'POST', '/admin/promote', { id: target.id });
+          setStatus(r.ok ? t().qpromoteOk(target.to) : '⚠ ' + t().qpromoteFailed);
+          if (r.ok) {
+            // 本地即时翻状态(不等下轮轮询):排队列表立刻缩、历史行立刻标 ⚡。
+            const nl = log.map((m: any) => (m.id === target.id ? { ...m, queued: false, urgent: true } : m));
             setLog(nl);
             setPending(pendingCounts(nl));
           }
