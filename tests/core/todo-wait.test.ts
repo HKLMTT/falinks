@@ -21,6 +21,7 @@ function mk(initial?: TodoState) {
     announceSuspended: () => {},
     announceSendFailing: () => {},
     announceWaiting: (t, minutes, reason) => { calls.waiting.push({ seq: t.seq, minutes, reason }); },
+    announceStalled: () => {},
     removedByBossText: () => 'removed',
     persist: () => { calls.persist++; },
   }, initial);

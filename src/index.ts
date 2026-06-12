@@ -104,10 +104,10 @@ export async function up(configPath: string) {
       if (!lead) return undefined;
       return router.send('boss', lead, t().todoDispatchMsg(task.seq, pos, total, task.body, isResend))?.id;
     },
-    nudge: (task, pos, total) => {
+    nudge: (task, pos, total, info) => {
       const lead = currentLead();
       if (!lead) return false;
-      return !!router.send('boss', lead, t().todoNudgeMsg(task.seq, pos, total, task.body, todo.state().nudgeMinutes));
+      return !!router.send('boss', lead, t().todoNudgeMsg(task.seq, pos, total, task.body, info.nextMinutes, info.fruitless >= 1));
     },
     cancelQueued: (id) => { router.cancelQueued(id); },
     announceSummary: (tasks: TodoTask[]) => {
@@ -124,6 +124,10 @@ export async function up(configPath: string) {
     },
     announceWaiting: (task, minutes, reason) => {
       router.send('falinks', 'boss', t().todoWaitingMsg(task.seq, minutes, reason));
+    },
+    announceStalled: (task, n, intervalMinutes) => {
+      router.send('falinks', 'boss', t().todoStalledMsg(task.seq, n, intervalMinutes));
+      try { appendDiag(launchCwd, { kind: 'todo-stalled', seq: task.seq, n, ts: Date.now() }); } catch { /* 诊断落盘失败不致命 */ }
     },
     removedByBossText: () => t().todoRemovedByBoss,
     persist: (st) => { try { saveTodo(launchCwd, st); } catch { /* 落盘失败不致命,内存继续 */ } },

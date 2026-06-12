@@ -256,9 +256,13 @@ export const zh = {
 
   // —— todolist 消息模板(下发/巡查以 boss 名义、自包含;汇总以 falinks 名义入流水)——
   todoDispatchMsg: (seq: number, pos: number, total: number, body: string, isResend: boolean) =>
-    `【任务 #${seq}·第 ${pos}/${total} 条】${isResend ? '(重发)' : ''}${body}\n完成后调用 taskdone(seq:${seq}, status:"done"|"failed", result:"…")上报,系统才会下发下一条;勿用 sendmsg 回复本条,过程中可照常与团队/boss 沟通。`,
-  todoNudgeMsg: (seq: number, pos: number, total: number, body: string, n: number) =>
-    `【任务 #${seq}(第 ${pos}/${total} 条)进度巡查】全员已空闲 ${n} 分钟仍未收到上报。任务内容:${body}\n已完成请调 taskdone(seq:${seq}, status:"done"|"failed", result:"…");仍在推进则继续即可,本提醒每 ${n} 分钟一次。`,
+    `【任务 #${seq}·第 ${pos}/${total} 条】${isResend ? '(重发)' : ''}${body}\n完成后调用 taskdone(seq:${seq}, status:"done"|"failed", result:"…")上报,系统才会下发下一条;如需等待长时间脚本/外部过程,调 taskwait(seq:${seq}, minutes:预计分钟, reason:"…")声明等待,期间暂停巡查。勿用 sendmsg 回复本条,过程中可照常与团队/boss 沟通。`,
+  todoNudgeMsg: (seq: number, pos: number, total: number, body: string, nextMinutes: number, escalated: boolean) =>
+    `【任务 #${seq}(第 ${pos}/${total} 条)进度巡查】全员空闲已久仍未收到上报。任务内容:${body}\n` +
+    (escalated
+      ? `若该任务实际已完成,说明 #${seq} 仍未关闭——请立即调 taskdone(seq:${seq}, status:"done"|"failed", result:"…")上报;`
+      : `已完成请调 taskdone(seq:${seq}, status:"done"|"failed", result:"…");`) +
+    `仍在推进则继续即可;如在等待长时间脚本/外部过程,调 taskwait(seq:${seq}, minutes:预计分钟, reason:"…")声明等待。勿因本提醒向队友发起额外沟通。未上报则 ${nextMinutes} 分钟后再次巡查。`,
   todoSummaryTitle: (done: number, failed: number, total: number) => `【todolist 跑完】共 ${total} 条:✅ ${done} 成 · ❌ ${failed} 败`,
   todoSummaryLine: (seq: number, ok: boolean, body: string, result: string) => `${ok ? '✅' : '❌'} #${seq} ${body} — ${result}`,
   todoPlannedMsg: (from: string, n: number) => `【todo 模式】组长 ${from} 已建 ${n} 条任务清单,/todo list 查看;待 boss 确认后由组长启动(或你直接 /todo start)。`,
@@ -266,6 +270,8 @@ export const zh = {
   todoSendFailingMsg: '【todolist 告警】连续多次消息发送失败(守卫拦截或组长不可达),清单可能停滞,请检查。',
   todoWaitingMsg: (seq: number, minutes: number, reason: string) =>
     `【todolist】组长声明等待外部过程${reason ? `:${reason}` : ''},任务 #${seq} 巡查暂停 ${minutes} 分钟。`,
+  todoStalledMsg: (seq: number, n: number, intervalMinutes: number) =>
+    `【todolist 告警】任务 #${seq} 连续 ${n} 次巡查无上报——疑似已完成但未关闭,或已停滞;巡查间隔已退避至 ${intervalMinutes} 分钟。请 /todo list 检查,可提醒组长 taskdone 或 /todo stop。`,
   todoProgressLine: (k: number, total: number, body: string, paused: boolean) =>
     `📋 ${k}/${total} 当前:${body}${paused ? ' [⏸ 已暂停]' : ''}`,
   todoPendingLine: (n: number) => `📋 ${n} 条待开跑(/todo list 查看)`,

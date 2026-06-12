@@ -250,9 +250,13 @@ export const en: typeof zh = {
 
   // —— todolist message templates (dispatch/nudge sent as boss; summary sent as falinks) ——
   todoDispatchMsg: (seq: number, pos: number, total: number, body: string, isResend: boolean) =>
-    `[task #${seq} · ${pos}/${total}]${isResend ? ' (resend)' : ''} ${body}\nWhen done, call taskdone(seq:${seq}, status:"done"|"failed", result:"…") to report — the system won't dispatch the next task until you do. Don't reply to this message via sendmsg; you can still communicate with the team/boss as usual.`,
-  todoNudgeMsg: (seq: number, pos: number, total: number, body: string, n: number) =>
-    `[task #${seq} (${pos}/${total}) progress check] Everyone has been idle for ${n} minutes with no taskdone report. Task: ${body}\nIf done, call taskdone(seq:${seq}, status:"done"|"failed", result:"…"); if still in progress just continue — this reminder repeats every ${n} minutes.`,
+    `[Task #${seq} · ${pos}/${total}]${isResend ? ' (resend)' : ''} ${body}\nCall taskdone(seq:${seq}, status:"done"|"failed", result:"…") when finished — the next task is only dispatched after that. If you are waiting on a long script/external process, call taskwait(seq:${seq}, minutes:est, reason:"…") to pause nudges. Do not reply to this via sendmsg; normal team/boss communication is fine meanwhile.`,
+  todoNudgeMsg: (seq: number, pos: number, total: number, body: string, nextMinutes: number, escalated: boolean) =>
+    `[Task #${seq} (${pos}/${total}) progress check] Everyone has been idle for a while with no report. Task: ${body}\n` +
+    (escalated
+      ? `If this task is actually finished, #${seq} is still open — call taskdone(seq:${seq}, status:"done"|"failed", result:"…") NOW;`
+      : `If finished, call taskdone(seq:${seq}, status:"done"|"failed", result:"…");`) +
+    ` if still in progress, carry on; if waiting on a long script/external process, call taskwait(seq:${seq}, minutes:est, reason:"…"). Do not message teammates just because of this reminder. Next check in ${nextMinutes} min if unreported.`,
   todoSummaryTitle: (done: number, failed: number, total: number) => `[todolist finished] ${total} tasks: ✅ ${done} succeeded · ❌ ${failed} failed`,
   todoSummaryLine: (seq: number, ok: boolean, body: string, result: string) => `${ok ? '✅' : '❌'} #${seq} ${body} — ${result}`,
   todoPlannedMsg: (from: string, n: number) => `[todo mode] lead ${from} created a ${n}-task list — /todo list to review; the lead will start it after your approval (or run /todo start yourself).`,
@@ -260,6 +264,8 @@ export const en: typeof zh = {
   todoSendFailingMsg: '[todolist warning] Message delivery has failed repeatedly (guardrail or lead unreachable) — the list may be stalled, please investigate.',
   todoWaitingMsg: (seq: number, minutes: number, reason: string) =>
     `[todolist] lead declared an external wait${reason ? `: ${reason}` : ''}; nudges for task #${seq} paused for ${minutes} min.`,
+  todoStalledMsg: (seq: number, n: number, intervalMinutes: number) =>
+    `[todolist alert] Task #${seq}: ${n} consecutive checks with no report — likely finished-but-unclosed, or stalled; check interval backed off to ${intervalMinutes} min. Review /todo list; remind the lead to taskdone, or /todo stop.`,
   todoProgressLine: (k: number, total: number, body: string, paused: boolean) =>
     `📋 ${k}/${total} current: ${body}${paused ? ' [⏸ paused]' : ''}`,
   todoPendingLine: (n: number) => `📋 ${n} task(s) queued, not started (/todo list to review)`,

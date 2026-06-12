@@ -11,8 +11,9 @@ export interface TodoCallbacks {
   /**
    * 巡查询问(模板自包含任务内容,同时就是下发失败的重试);返回是否发送成功。
    * pos: 显示用位置(1-based);seq: taskdone 指令用 id。
+   * info.fruitless: 本次之前的连续无果次数(≥1 时模板升级措辞);info.nextMinutes: 下次巡查间隔(分钟,模板告知)。
    */
-  nudge(task: TodoTask, pos: number, total: number): boolean;
+  nudge(task: TodoTask, pos: number, total: number, info: { fruitless: number; nextMinutes: number }): boolean;
   /** 撤掉仍在 inbox 排队的旧下发(重发防叠两份)。 */
   cancelQueued(msgId: string): void;
   announceSummary(tasks: TodoTask[]): void;
@@ -20,6 +21,8 @@ export interface TodoCallbacks {
   announceSendFailing(): void;
   /** lead 经 taskwait 声明等待外部过程:向 boss 公告(消息流可见,知道为什么安静)。 */
   announceWaiting(task: TodoTask, minutes: number, reason: string): void;
+  /** 连续 STALL_ANNOUNCE_AT 次无果巡查:疑似任务已完成未关闭或停滞,向 boss 告警(边沿一次)。 */
+  announceStalled(task: TodoTask, n: number, intervalMinutes: number): void;
   removedByBossText(): string;
   persist(st: TodoState): void;
 }
@@ -29,6 +32,8 @@ export type TodoResult = { ok: boolean; error?: string };
 const MIN_MS = 60_000;
 const FAIL_ANNOUNCE_AT = 3; // 连续发送失败这么多次 → 边沿公告一次
 const WAIT_CAP_MIN = 120; // taskwait 单次等待上限(分钟):防 lead 一句声明把巡查睡死
+const BACKOFF_CAP_MIN = 60;   // 无果退避封顶(分钟);nudgeMinutes 配得更长时取后者
+const STALL_ANNOUNCE_AT = 3;  // 连续无果巡查达此次数 → 边沿告警一次(疑似已完成未关闭/停滞)
 
 export class TodoEngine {
   private st: TodoState;
@@ -38,6 +43,7 @@ export class TodoEngine {
   private suspended = false;       // 运行时瞬态:无 lead 挂起
   private failStreak = 0;
   private failAnnounced = false;
+  private fruitlessNudges = 0; // 自上次进度信号(taskdone/taskwait/下发)以来的无果巡查次数:驱动指数退避
 
   constructor(private cb: TodoCallbacks, initial?: TodoState) {
     this.st = initial ?? { state: 'idle', nudgeMinutes: 10, tasks: [] };
@@ -175,6 +181,7 @@ export class TodoEngine {
       return { ok: false, error: `minutes must be an integer in 1..${WAIT_CAP_MIN}` };
     this.st.waitUntil = this.cb.now() + minutes * MIN_MS;
     this.st.waitReason = reason.trim() || undefined;
+    this.fruitlessNudges = 0; // 等待声明=进度信号,退避归零
     this.cb.persist(this.st);
     this.cb.announceWaiting(cur, minutes, reason.trim());
     return { ok: true };
@@ -203,16 +210,28 @@ export class TodoEngine {
       this.st.waitUntil = undefined; this.st.waitReason = undefined; this.cb.persist(this.st); // 过期清除
     }
     if (this.idleSince === undefined) { this.idleSince = now; return; }
-    if (now - this.idleSince >= this.st.nudgeMinutes * MIN_MS) {
+    if (now - this.idleSince >= this.nudgeIntervalMin(this.fruitlessNudges) * MIN_MS) {
       const pos = this.st.tasks.indexOf(cur) + 1; // 显示用位置(1-based);cur 必在列表中
-      if (this.cb.nudge(cur, pos, this.st.tasks.length)) { this.noteSendOk(); this.idleSince = now; } // 发出即重置(每满 N 一问)
-      else this.noteSendFail(); // 失败不重置:下一 tick 立刻重试
+      const info = { fruitless: this.fruitlessNudges, nextMinutes: this.nudgeIntervalMin(this.fruitlessNudges + 1) };
+      if (this.cb.nudge(cur, pos, this.st.tasks.length, info)) {
+        this.noteSendOk();
+        this.fruitlessNudges++;
+        if (this.fruitlessNudges === STALL_ANNOUNCE_AT)
+          this.cb.announceStalled(cur, this.fruitlessNudges, this.nudgeIntervalMin(this.fruitlessNudges));
+        this.idleSince = now; // 发出即重置(下一轮按退避后的间隔)
+      } else this.noteSendFail(); // 失败不重置:下一 tick 立刻重试
     }
+  }
+
+  /** 无果 n 次后的巡查间隔(分钟):nudgeMinutes×2^n,封顶 max(60, nudgeMinutes)。 */
+  private nudgeIntervalMin(n: number): number {
+    return Math.min(this.st.nudgeMinutes * 2 ** n, Math.max(BACKOFF_CAP_MIN, this.st.nudgeMinutes));
   }
 
   /** 推进:current 完结后取下一条 pending 下发;没有了 → finished+汇总。 */
   private dispatchNext(isResend: boolean): void {
     if (this.st.waitUntil !== undefined) { this.st.waitUntil = undefined; this.st.waitReason = undefined; } // 等待声明随旧任务作废
+    this.fruitlessNudges = 0; // 新一轮下发=进度信号,退避归零
     let task = this.st.tasks.find((t) => t.status === 'current');
     if (!task) {
       task = this.st.tasks.find((t) => t.status === 'pending');

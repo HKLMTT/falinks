@@ -23,6 +23,7 @@ function mk(initial?: TodoState) {
     announceSuspended: () => { calls.suspended++; },
     announceSendFailing: () => { calls.sendFailing++; },
     announceWaiting: () => {},
+    announceStalled: () => {},
     removedByBossText: () => 'removed',
     persist: () => { calls.persist++; },
   }, initial);
@@ -82,17 +83,17 @@ test('stop→resume 时 current 未完结:撤旧排队再重发(防叠两份)', 
   expect(calls.dispatch).toEqual([{ seq: 1, pos: 1, isResend: false }, { seq: 1, pos: 1, isResend: true }]);
 });
 
-test('巡查:无人忙满 N 触发 nudge 并重置;有人忙/下发/巡查后计时重置;永不放弃', () => {
+test('巡查:无人忙满 N 触发 nudge 并重置;有人忙/下发/巡查后计时重置;永不放弃(无果后间隔退避)', () => {
   const { e, calls, setNow } = mk();
   e.add('a'); e.start(undefined, true); // N 默认 10 分钟
   setNow(5 * MIN); e.tick(false, true);
   expect(calls.nudge.length).toBe(0); // 未满 N(下发时刻重置过)
   setNow(10 * MIN + 1); e.tick(false, true);
   expect(calls.nudge).toEqual([{ seq: 1, pos: 1 }]);   // 满 N 巡查
-  setNow(15 * MIN); e.tick(true, true);   // 有人忙 → 重置
-  setNow(24 * MIN); e.tick(false, true);  // 距重置 9 分钟,未满
+  setNow(15 * MIN); e.tick(true, true);   // 有人忙 → 重置(已 1 次无果,间隔退避为 20)
+  setNow(34 * MIN); e.tick(false, true);  // 距重置 19 分钟,未满 20
   expect(calls.nudge.length).toBe(1);
-  setNow(25 * MIN + 1); e.tick(false, true);
+  setNow(35 * MIN + 1); e.tick(false, true);
   expect(calls.nudge).toEqual([{ seq: 1, pos: 1 }, { seq: 1, pos: 1 }]); // 永不放弃,再问
 });
 
