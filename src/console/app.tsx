@@ -219,15 +219,19 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
   const replyTarget = lastReplyTarget(log);
   // 输入目标(随输入实时变,做成提示符前的彩色 chip,让"这条会发给谁"一眼可见):
   // / 命令 → 无目标;@all → 全员群发;@名字 → 私聊该人;否则纯文本=回复上次目标(没有则提示先 @ 某人)。
-  const inputDest: { mode: 'cmd' | 'broadcast' | 'to' | 'none'; to?: string } = (() => {
-    const s = input.replace(/^\s+/, '');
-    if (s.startsWith('/')) return { mode: 'cmd' };
+  const inputDest: { mode: 'cmd' | 'broadcast' | 'to' | 'none'; to?: string; urgent?: boolean } = (() => {
+    let s = input.replace(/^\s+/, '');
+    // 句首 !/！ = 插队:剥掉后按原逻辑判目标,chip 加 ⚡ 让"这条会插队"一眼可见(与 parse 的剥前缀规则一致)。
+    // 剥后余文以 / 开头时 parse 实际会报错,chip 仍按 cmd 显示即可,发送时自有报错,不在此过度设计。
+    const urgent = s.startsWith('!') || s.startsWith('！');
+    if (urgent) s = s.slice(1).replace(/^\s+/, '');
+    if (s.startsWith('/')) return { mode: 'cmd', urgent };
     if (s.startsWith('@')) {
       const name = s.slice(1).split(/\s/)[0];
-      if (name === 'all') return { mode: 'broadcast' };
-      if (name) return { mode: 'to', to: name };
+      if (name === 'all') return { mode: 'broadcast', urgent };
+      if (name) return { mode: 'to', to: name, urgent };
     }
-    return replyTarget ? { mode: 'to', to: replyTarget } : { mode: 'none' };
+    return replyTarget ? { mode: 'to', to: replyTarget, urgent } : { mode: 'none', urgent };
   })();
   const cmd = commandState(input);
   const todoSub = todoSubState(input); // "/todo <部分子命令>":commandState 出现空格即失活,子命令补全单独接
@@ -778,8 +782,8 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
             <Box marginTop={1}>
               <Text>
                 {inputDest.mode === 'cmd' ? <Text color="magenta" bold>⌘ </Text>
-                 : inputDest.mode === 'broadcast' ? <Text color="yellow" bold>📢 {t().clearAll} </Text>
-                 : inputDest.mode === 'to' ? <Text><Text dimColor>→ </Text><Text color={colorFor(inputDest.to!)} bold>{inputDest.to}</Text><Text> </Text></Text>
+                 : inputDest.mode === 'broadcast' ? <Text>{inputDest.urgent ? <Text color="yellow" bold>⚡ </Text> : null}<Text color="yellow" bold>📢 {t().clearAll} </Text></Text>
+                 : inputDest.mode === 'to' ? <Text>{inputDest.urgent ? <Text color="yellow" bold>⚡ </Text> : null}<Text dimColor>→ </Text><Text color={colorFor(inputDest.to!)} bold>{inputDest.to}</Text><Text> </Text></Text>
                  : <Text color="yellow" bold>{t().noReplyTargetShort} </Text>}
                 <Text color="green">› </Text>
                 {input.slice(0, cursor)}
