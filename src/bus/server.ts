@@ -236,6 +236,7 @@ export async function startBus(deps: BusDeps, port: number, opts?: BusOptions): 
       if (req.method === 'POST' && url.pathname === '/admin/promote') {
         // 把排队消息提升为插队直送;失败原因透传(gone=已投出/不存在,not-ready=目标未就绪留队,dead=目标已死留队)。
         const r = router.promoteQueued(String(abody.id));
+        // 'not queued' fallback 仅防御:promoteQueued 失败必带 reason(类型上 reason 可选才留此兜底)。
         return sendJson(r.ok ? { ok: true, to: r.to } : { ok: false, error: r.reason ?? 'not queued' });
       }
       if (req.method === 'POST' && url.pathname === '/admin/cancel') {

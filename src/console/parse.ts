@@ -21,11 +21,13 @@ export function parseConsoleInput(line: string): ConsoleAction {
   const s = line.trim();
   if (!s) return { kind: 'noop' };
 
-  // 句首 ! = boss 插队直送:剥掉后按原逻辑解析余文,只有消息类(say/broadcast/reply)能插队,命令不行。
+  // 句首 ! / 全角 ！ = boss 插队直送:剥掉后按原逻辑解析余文,只有消息类(say/broadcast/reply)能插队,命令不行。
   // 路径守卫在递归里照常生效:"!/var/x.png 描述" → reply → urgent。
-  if (s.startsWith('!')) {
+  if (s.startsWith('!') || s.startsWith('！')) {
     const rest = s.slice(1).trim();
     if (!rest) return { kind: 'error', message: t().usageUrgent };
+    // 余文仍以 !/！ 开头:当字面文本走插队回复,不再递归(防吞字面 ! + 防超长前导 ! 递归爆栈)
+    if (rest.startsWith('!') || rest.startsWith('！')) return { kind: 'reply', message: rest, urgent: true };
     const inner = parseConsoleInput(rest);
     if (inner.kind === 'say' || inner.kind === 'broadcast' || inner.kind === 'reply') return { ...inner, urgent: true };
     if (inner.kind === 'error') return inner; // 余文本身格式错(如 !@lead 缺消息体):报那个更具体的错

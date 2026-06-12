@@ -160,3 +160,27 @@ test('! 前缀:单独一个 ! → error', () => {
 test('! 前缀:!@名字(无消息体)→ error(沿用 usageMention 检查)', () => {
   expect(parseConsoleInput('!@lead').kind).toBe('error');
 });
+
+test('! 前缀:!! 开头保留字面 !(不递归吞字符)', () => {
+  expect(parseConsoleInput('!!分割线')).toEqual({ kind: 'reply', message: '!分割线', urgent: true });
+});
+
+test('! 前缀:超长前导 ! 不递归爆栈,仍是 urgent reply', () => {
+  const input = '!'.repeat(10000) + 'x';
+  let r: ReturnType<typeof parseConsoleInput>;
+  expect(() => { r = parseConsoleInput(input); }).not.toThrow();
+  expect(r!.kind).toBe('reply');
+  expect((r! as { urgent?: boolean }).urgent).toBe(true);
+});
+
+test('全角 ！ 别名:！@名字 → urgent say', () => {
+  expect(parseConsoleInput('！@lead 改方向')).toEqual({ kind: 'say', to: 'lead', message: '改方向', urgent: true });
+});
+
+test('全角 ！ 别名:！！x → urgent reply,保留字面全角 ！', () => {
+  expect(parseConsoleInput('！！x')).toEqual({ kind: 'reply', message: '！x', urgent: true });
+});
+
+test('全角 ！ 别名:单独一个 ！ → error', () => {
+  expect(parseConsoleInput('！').kind).toBe('error');
+});
