@@ -268,6 +268,7 @@ export const en: typeof zh = {
     `[todolist alert] Task #${seq}: ${n} consecutive checks with no report — likely finished-but-unclosed, or stalled; check interval backed off to ${intervalMinutes} min. Review /todo list; remind the lead to taskdone, or /todo stop.`,
   todoProgressLine: (k: number, total: number, body: string, paused: boolean) =>
     `📋 ${k}/${total} current: ${body}${paused ? ' [⏸ paused]' : ''}`,
+  todoWaitSeg: (reason: string, until: string) => ` ⏳ waiting${reason ? `: ${reason}` : ''} (until ${until})`,
   todoPendingLine: (n: number) => `📋 ${n} task(s) queued, not started (/todo list to review)`,
   todoResumeHint: (left: number, total: number) => `Unfinished todolist detected (${left}/${total} tasks remaining) — /todo resume to continue`,
   todoListTitle: 'Task list (Esc to close)',

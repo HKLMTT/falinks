@@ -677,7 +677,9 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
         {todoState && (todoState.state === 'running' || todoState.state === 'paused') ? (() => {
           const cur = todoState.tasks.find((x: any) => x.status === 'current');
           const k = todoState.tasks.filter((x: any) => x.status === 'done' || x.status === 'failed').length + (cur ? 1 : 0);
-          return <Text color="cyan" wrap="truncate-end">{t().todoProgressLine(k, todoState.tasks.length, cur ? String(cur.body).split('\n')[0].slice(0, 60) : '-', todoState.state === 'paused')}</Text>;
+          const waiting = typeof todoState.waitUntil === 'number' && todoState.waitUntil > Date.now()
+            ? t().todoWaitSeg(todoState.waitReason ?? '', formatTime(todoState.waitUntil)) : '';
+          return <Text color="cyan" wrap="truncate-end">{t().todoProgressLine(k, todoState.tasks.length, cur ? String(cur.body).split('\n')[0].slice(0, 60) : '-', todoState.state === 'paused')}{waiting}</Text>;
         })() : todoState && todoState.state === 'idle' && todoState.tasks.length > 0 ? (
           <Text color="cyan" wrap="truncate-end">{t().todoPendingLine(todoState.tasks.length)}</Text>
         ) : null}

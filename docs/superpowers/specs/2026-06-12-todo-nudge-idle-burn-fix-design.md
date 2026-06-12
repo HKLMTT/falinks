@@ -59,3 +59,11 @@
 - 不把「团队 MCP 活动」算进度信号(pane busy 已覆盖生成瞬间,增量小,YAGNI);
 - 不做熔断停巡(真停滞整晚卡死,违背无人值守初衷);
 - 不动单次唤起的上下文大小(CLI 会话所有权在用户,falinks 只能控次数)。
+
+## 实现后记(2026-06-12)
+
+- waitUntil/waitReason 随 TodoState 落盘但 loadTodo 不恢复——重启后清单必经 paused→resume 重发,旧等待声明随旧会话作废(比"过期戳无害"更干净)。
+- 退避清零点收敛为两处:taskwait 成功、dispatchNext(taskdone 推进/start/resume/换 lead 重发都经它);anyBusy 只重置计时锚点不清计数(忙过≠有上报)。
+- nudge 模板的"下次间隔"用退避后的 nextMinutes 告知(替代原"每 N 分钟一次"的固定说法)。
+- 审查跟进:clearWait() 统一清等待声明(taskdone-paused/rm-current-paused/dispatchNext 三处)——防完结任务的等待声明残留在 /admin/todo 快照里被控制台展示;停滞告警"第 3 次发送失败→重试"边沿有专门测试钉住。
+- taskwait 的 zod inputSchema 收紧为 int().min(1).max(120),工具层提前暴露约束(引擎校验保留作第二道防线)。

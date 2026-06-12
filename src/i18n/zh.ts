@@ -274,6 +274,7 @@ export const zh = {
     `【todolist 告警】任务 #${seq} 连续 ${n} 次巡查无上报——疑似已完成但未关闭,或已停滞;巡查间隔已退避至 ${intervalMinutes} 分钟。请 /todo list 检查,可提醒组长 taskdone 或 /todo stop。`,
   todoProgressLine: (k: number, total: number, body: string, paused: boolean) =>
     `📋 ${k}/${total} 当前:${body}${paused ? ' [⏸ 已暂停]' : ''}`,
+  todoWaitSeg: (reason: string, until: string) => ` ⏳等外部${reason ? `:${reason}` : ''}(至 ${until})`,
   todoPendingLine: (n: number) => `📋 ${n} 条待开跑(/todo list 查看)`,
   todoResumeHint: (left: number, total: number) => `检测到未完成的 todolist(剩 ${left}/${total} 条),/todo resume 继续`,
   todoListTitle: '任务清单(Esc 关闭)',
