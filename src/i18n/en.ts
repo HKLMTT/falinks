@@ -131,6 +131,7 @@ export const en: typeof zh = {
   usageLead: 'Usage: /lead (pick from the menu)',
   unknownCommand: (cmd: string) => `unknown command: /${cmd}`,
   usageMention: 'usage: @<name> <message> or @all <message>',
+  usageUrgent: 'Urgent send: !@name msg · !msg (urgent reply) · !@all msg — skips the queue, delivered immediately; commands cannot be urgent',
   unknownError: 'unknown error',
   langFailed: 'lang switch failed',
   usageTodo: 'usage: /todo add <content> | list | rm <seq> | clear | start [nudge-minutes] | stop | resume',

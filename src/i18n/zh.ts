@@ -136,6 +136,7 @@ export const zh = {
   usageLead: '用法: /lead（按提示选组长）',
   unknownCommand: (cmd: string) => `未知命令: /${cmd}`,
   usageMention: '用法: @<name> <message> 或 @all <message>',
+  usageUrgent: '插队直送用法:!@名字 消息 · !消息(插队回复) · !@all 消息——跳过排队直接送达;命令不可插队',
   unknownError: '未知错误',
   langFailed: 'lang 失败',
   usageTodo: '用法: /todo add <内容> | list | rm <序号> | clear | start [巡查分钟] | stop | resume',

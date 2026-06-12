@@ -131,3 +131,32 @@ test('以路径开头的文本不当命令(粘贴文件路径/绝对路径)', ()
   expect(parseConsoleInput('/a/b')).toEqual({ kind: 'reply', message: '/a/b' });
   expect(parseConsoleInput('/bogus')).toMatchObject({ kind: 'error' }); // 单词未知命令仍报错
 });
+
+test('! 前缀:!@名字 → urgent say', () => {
+  expect(parseConsoleInput('!@lead 改方向')).toEqual({ kind: 'say', to: 'lead', message: '改方向', urgent: true });
+});
+
+test('! 前缀:!纯文本 → urgent reply', () => {
+  expect(parseConsoleInput('!停下先别动')).toEqual({ kind: 'reply', message: '停下先别动', urgent: true });
+});
+
+test('! 前缀:!@all → urgent broadcast', () => {
+  expect(parseConsoleInput('!@all 全员暂停')).toEqual({ kind: 'broadcast', message: '全员暂停', urgent: true });
+});
+
+test('! 前缀:!+路径 → 路径守卫照常生效,得 urgent reply', () => {
+  expect(parseConsoleInput('!/var/folders/x/shot.png 看这张图')).toEqual({ kind: 'reply', message: '/var/folders/x/shot.png 看这张图', urgent: true });
+});
+
+test('! 前缀:命令不可插队(!/todo list)→ error', () => {
+  expect(parseConsoleInput('!/todo list').kind).toBe('error');
+});
+
+test('! 前缀:单独一个 ! → error', () => {
+  expect(parseConsoleInput('!').kind).toBe('error');
+  expect(parseConsoleInput('!  ').kind).toBe('error');
+});
+
+test('! 前缀:!@名字(无消息体)→ error(沿用 usageMention 检查)', () => {
+  expect(parseConsoleInput('!@lead').kind).toBe('error');
+});
