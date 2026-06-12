@@ -122,6 +122,9 @@ export async function up(configPath: string) {
       router.send('falinks', 'boss', t().todoSendFailingMsg);
       try { appendDiag(launchCwd, { kind: 'todo-send-failing', ts: Date.now() }); } catch { /* 诊断落盘失败不致命 */ }
     },
+    announceWaiting: (task, minutes, reason) => {
+      router.send('falinks', 'boss', t().todoWaitingMsg(task.seq, minutes, reason));
+    },
     removedByBossText: () => t().todoRemovedByBoss,
     persist: (st) => { try { saveTodo(launchCwd, st); } catch { /* 落盘失败不致命,内存继续 */ } },
   }, loadTodo(launchCwd));
@@ -408,6 +411,7 @@ export async function up(configPath: string) {
     },
     todo: {
       taskdone: (seq, status, result) => todo.taskdone(seq, status, result),
+      taskwait: (seq, minutes, reason) => todo.taskwait(seq, minutes, reason),
       plan: (tasks, replace, from) => {
         const r = todo.plan(tasks, replace);
         if (r.ok) router.send('falinks', 'boss', t().todoPlannedMsg(from, tasks.length)); // 系统留痕:boss 在消息流可见

@@ -18,6 +18,8 @@ export interface TodoCallbacks {
   announceSummary(tasks: TodoTask[]): void;
   announceSuspended(): void;
   announceSendFailing(): void;
+  /** lead 经 taskwait 声明等待外部过程:向 boss 公告(消息流可见,知道为什么安静)。 */
+  announceWaiting(task: TodoTask, minutes: number, reason: string): void;
   removedByBossText(): string;
   persist(st: TodoState): void;
 }
@@ -26,6 +28,7 @@ export type TodoResult = { ok: boolean; error?: string };
 
 const MIN_MS = 60_000;
 const FAIL_ANNOUNCE_AT = 3; // 连续发送失败这么多次 → 边沿公告一次
+const WAIT_CAP_MIN = 120; // taskwait 单次等待上限(分钟):防 lead 一句声明把巡查睡死
 
 export class TodoEngine {
   private st: TodoState;
@@ -161,6 +164,22 @@ export class TodoEngine {
     return { ok: true };
   }
 
+  /** lead 声明"任务推进中,等待外部过程(长脚本/CI),X 分钟内暂停巡查"。
+   *  仅 running 且 seq 必须是 current——等待是当前任务的属性;到期由 tick 自动清除并恢复正常节奏。 */
+  taskwait(seq: number, minutes: number, reason: string): TodoResult {
+    if (this.st.state !== 'running') return { ok: false, error: 'no running todolist' };
+    const cur = this.st.tasks.find((t) => t.status === 'current');
+    if (!cur) return { ok: false, error: 'no current task' };
+    if (cur.seq !== seq) return { ok: false, error: `current task is #${cur.seq}, not #${seq}` };
+    if (!Number.isInteger(minutes) || minutes <= 0 || minutes > WAIT_CAP_MIN)
+      return { ok: false, error: `minutes must be an integer in 1..${WAIT_CAP_MIN}` };
+    this.st.waitUntil = this.cb.now() + minutes * MIN_MS;
+    this.st.waitReason = reason.trim() || undefined;
+    this.cb.persist(this.st);
+    this.cb.announceWaiting(cur, minutes, reason.trim());
+    return { ok: true };
+  }
+
   /** 健康轮询(≈1.5s)驱动:lead 缺失挂起/恢复、空闲巡查。仅 running 生效。 */
   tick(anyBusy: boolean, hasLead: boolean): void {
     if (this.st.state !== 'running') return;
@@ -177,6 +196,12 @@ export class TodoEngine {
     if (!cur) return;
     const now = this.cb.now();
     if (anyBusy) { this.idleSince = now; return; } // 有人在干活,计时重置(锚定在本次事件时刻)
+    if (this.st.waitUntil !== undefined) {
+      if (now < this.st.waitUntil) { this.idleSince = now; return; } // 等待期:不巡查,锚点持续推进
+      // 到期:锚点至少从到期时刻起算(等待期内可能没有 tick 推进锚点),再正常计满 nudgeMinutes 才巡查
+      this.idleSince = Math.max(this.idleSince ?? this.st.waitUntil, this.st.waitUntil);
+      this.st.waitUntil = undefined; this.st.waitReason = undefined; this.cb.persist(this.st); // 过期清除
+    }
     if (this.idleSince === undefined) { this.idleSince = now; return; }
     if (now - this.idleSince >= this.st.nudgeMinutes * MIN_MS) {
       const pos = this.st.tasks.indexOf(cur) + 1; // 显示用位置(1-based);cur 必在列表中
@@ -187,6 +212,7 @@ export class TodoEngine {
 
   /** 推进:current 完结后取下一条 pending 下发;没有了 → finished+汇总。 */
   private dispatchNext(isResend: boolean): void {
+    if (this.st.waitUntil !== undefined) { this.st.waitUntil = undefined; this.st.waitReason = undefined; } // 等待声明随旧任务作废
     let task = this.st.tasks.find((t) => t.status === 'current');
     if (!task) {
       task = this.st.tasks.find((t) => t.status === 'pending');

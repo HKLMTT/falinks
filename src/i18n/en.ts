@@ -228,6 +228,7 @@ export const en: typeof zh = {
   toolDescTaskdone: '[todolist only · lead only] report the current task finished: taskdone(seq, status:"done"|"failed", result). The system records it and dispatches the next task; report failures too — the list never stops.',
   toolDescTodoplan: '[todo mode · lead only] when boss explicitly asks for todo-mode execution, batch-create the finalized task breakdown: todoplan(tasks:[one per task], replace?). You MUST get boss approval via ask(to:"boss") before todostart; pass replace:true to revise a list you just created.',
   toolDescTodostart: '[todo mode · lead only] start the prepared task list: todostart(nudgeMinutes?). Requires explicit boss approval via ask first; resuming a paused list is the boss\'s call (/todo resume), not this tool.',
+  toolDescTaskwait: '(lead only) Declare the current task is waiting on an external process (long script/CI/background tests); idle nudges pause for `minutes` (1-120). `reason` is shown to the boss. Still call taskdone when actually finished.',
 
   // —— templates.ts ——
   roleBootstrap: (role: string) => `Your duties: ${role}. Keep it concise, no fluff.`,
@@ -257,6 +258,8 @@ export const en: typeof zh = {
   todoPlannedMsg: (from: string, n: number) => `[todo mode] lead ${from} created a ${n}-task list — /todo list to review; the lead will start it after your approval (or run /todo start yourself).`,
   todoSuspendedMsg: '[todolist suspended] No lead assigned — task dispatch paused. Assign a lead with /lead and it will resume automatically.',
   todoSendFailingMsg: '[todolist warning] Message delivery has failed repeatedly (guardrail or lead unreachable) — the list may be stalled, please investigate.',
+  todoWaitingMsg: (seq: number, minutes: number, reason: string) =>
+    `[todolist] lead declared an external wait${reason ? `: ${reason}` : ''}; nudges for task #${seq} paused for ${minutes} min.`,
   todoProgressLine: (k: number, total: number, body: string, paused: boolean) =>
     `📋 ${k}/${total} current: ${body}${paused ? ' [⏸ paused]' : ''}`,
   todoPendingLine: (n: number) => `📋 ${n} task(s) queued, not started (/todo list to review)`,

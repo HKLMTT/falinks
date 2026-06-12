@@ -14,6 +14,8 @@ export interface TodoState {
   state: 'idle' | 'running' | 'paused' | 'finished';
   nudgeMinutes: number; // 巡查间隔 N(分钟),默认 10
   tasks: TodoTask[];
+  waitUntil?: number;  // taskwait 等待声明截止时刻(ms):等待期内暂停巡查;随档落盘但 loadTodo 不恢复
+  waitReason?: string; // 等待原因(boss 进度行/公告可见)
 }
 
 const EMPTY = (): TodoState => ({ state: 'idle', nudgeMinutes: 10, tasks: [] });
@@ -34,6 +36,7 @@ export function loadTodo(launchCwd: string, root = runtimeDir()): TodoState {
       nudgeMinutes: typeof raw.nudgeMinutes === 'number' && raw.nudgeMinutes > 0 ? raw.nudgeMinutes : 10,
       tasks: Array.isArray(raw.tasks) ? raw.tasks : [],
     };
+    // waitUntil/waitReason 有意不恢复:重启后清单必经 paused→resume 重发,旧等待声明随旧会话作废。
     return st;
   } catch {
     return EMPTY();

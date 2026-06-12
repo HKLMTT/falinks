@@ -51,6 +51,8 @@ export interface BusDeps {
   /** todolist 引擎入口(index.ts 注入):taskdone 上报、op 命令分发、state 只读快照。 */
   todo?: {
     taskdone(seq: number, status: 'done' | 'failed', result: string): { ok: boolean; error?: string };
+    /** lead 声明当前任务等待外部过程(taskwait 工具):minutes 分钟内暂停空闲巡查。 */
+    taskwait(seq: number, minutes: number, reason: string): { ok: boolean; error?: string };
     op(op: string, args: { body?: string; seq?: number; n?: number }): { ok: boolean; error?: string; [k: string]: unknown };
     state(): unknown;
     /** lead 批量建单(todoplan 工具):from=调用者名(通知留痕用)。 */
@@ -162,6 +164,16 @@ function serverForAgent(agentName: string, deps: BusDeps, questions: QuestionSto
     if (!deps.todo) return ok({ ok: false, error: 'todolist not available' });
     if (!router.get(agentName)?.lead) return ok({ ok: false, error: 'only the lead can call todostart' });
     return ok(deps.todo.op('start', { n: nudgeMinutes }));
+  });
+
+  server.registerTool('taskwait', {
+    description: t().toolDescTaskwait,
+    inputSchema: { seq: z.number(), minutes: z.number(), reason: z.string().optional() },
+  }, async ({ seq, minutes, reason }) => {
+    touch();
+    if (!deps.todo) return ok({ ok: false, error: 'todolist not available' });
+    if (!router.get(agentName)?.lead) return ok({ ok: false, error: 'only the lead can call taskwait' });
+    return ok(deps.todo.taskwait(seq, minutes, reason ?? ''));
   });
 
   return server;

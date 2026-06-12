@@ -1,4 +1,4 @@
-// tests/bus/taskdone.test.ts
+// tests/bus/taskwait.test.ts
 import { afterEach, beforeEach, expect, test } from 'vitest';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
@@ -9,15 +9,15 @@ import { startBus, type Bus } from '../../src/bus/server.js';
 
 let bus: Bus;
 let router: Router;
-let tdCalls: any[];
+let twCalls: [number, number, string][];
 
 async function callTool(agent: string, name: string, args: Record<string, unknown> = {}) {
   const url = new URL(`http://127.0.0.1:${bus.port}/agent/${agent}/mcp`);
   const client = new Client({ name: `c-${agent}`, version: '1.0.0' }, { capabilities: {} });
   await client.connect(new StreamableHTTPClientTransport(url));
-  const res: any = await client.callTool({ name, arguments: args });
+  const res = await client.callTool({ name, arguments: args });
   await client.close();
-  return JSON.parse(res.content[0].text);
+  return JSON.parse((res.content as { text: string }[])[0].text);
 }
 
 beforeEach(async () => {
@@ -26,13 +26,13 @@ beforeEach(async () => {
   router = new Router(makeDeliverer(driver), { now: () => 1, genId: () => `m${++n}`, routes: {} });
   router.addAgent('lead', undefined, true); // lead=true
   router.addAgent('dev');
-  tdCalls = [];
+  twCalls = [];
   bus = await startBus({
     router,
     getSessionId: () => undefined,
     todo: {
-      taskdone: (seq: number, status: 'done' | 'failed', result: string) => { tdCalls.push([seq, status, result]); return { ok: true }; },
-      taskwait: (_seq: number, _minutes: number, _reason: string) => ({ ok: true }),
+      taskdone: (_seq: number, _status: 'done' | 'failed', _result: string) => ({ ok: true }),
+      taskwait: (seq: number, minutes: number, reason: string) => { twCalls.push([seq, minutes, reason]); return { ok: true }; },
       op: (op: string, args: { body?: string; seq?: number; n?: number }) => ({ ok: true, op, args }),
       state: () => ({ state: 'running', nudgeMinutes: 10, tasks: [] }),
       plan: (_t: string[], _r: boolean, _f: string) => ({ ok: true }),
@@ -42,34 +42,29 @@ beforeEach(async () => {
 
 afterEach(async () => { await bus.close(); });
 
-test('lead 调 taskdone 透传到钩子', async () => {
-  const r = await callTool('lead', 'taskdone', { seq: 1, status: 'done', result: 'ok' });
+test('lead 调 taskwait 透传到钩子(reason 缺省补空串)', async () => {
+  const r = await callTool('lead', 'taskwait', { seq: 1, minutes: 30, reason: '等 e2e' });
   expect(r.ok).toBe(true);
-  expect(tdCalls).toEqual([[1, 'done', 'ok']]);
+  const r2 = await callTool('lead', 'taskwait', { seq: 2, minutes: 5 });
+  expect(r2.ok).toBe(true);
+  expect(twCalls).toEqual([[1, 30, '等 e2e'], [2, 5, '']]);
 });
 
-test('非 lead 调 taskdone 拒绝', async () => {
-  const r = await callTool('dev', 'taskdone', { seq: 1, status: 'done', result: 'ok' });
+test('非 lead 调 taskwait 拒绝', async () => {
+  const r = await callTool('dev', 'taskwait', { seq: 1, minutes: 30, reason: 'x' });
   expect(r.ok).toBe(false);
   expect(r.error).toMatch(/lead/);
-  expect(tdCalls).toEqual([]);
+  expect(twCalls).toEqual([]);
 });
 
-test('无 todo 钩子时 taskdone 返回不可用', async () => {
+test('无 todo 钩子时 taskwait 返回不可用', async () => {
   const bus2 = await startBus({ router, getSessionId: () => undefined }, 0);
   try {
     const url = new URL(`http://127.0.0.1:${bus2.port}/agent/lead/mcp`);
     const client = new Client({ name: 'c', version: '1.0.0' }, { capabilities: {} });
     await client.connect(new StreamableHTTPClientTransport(url));
-    const res: any = await client.callTool({ name: 'taskdone', arguments: { seq: 1, status: 'done', result: 'x' } });
+    const res = await client.callTool({ name: 'taskwait', arguments: { seq: 1, minutes: 10, reason: 'x' } });
     await client.close();
-    expect(JSON.parse(res.content[0].text).ok).toBe(false);
+    expect(JSON.parse((res.content as { text: string }[])[0].text).ok).toBe(false);
   } finally { await bus2.close(); }
-});
-
-test('GET /admin/todo 返回状态;POST /admin/todo 分发 op', async () => {
-  const g = await (await fetch(`http://127.0.0.1:${bus.port}/admin/todo`)).json() as any;
-  expect(g.todo.state).toBe('running');
-  const p = await (await fetch(`http://127.0.0.1:${bus.port}/admin/todo`, { method: 'POST', body: JSON.stringify({ op: 'add', body: 'x' }) })).json() as any;
-  expect(p.op).toBe('add');
 });

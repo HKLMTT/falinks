@@ -234,6 +234,7 @@ export const zh = {
   toolDescTaskdone: '【todolist 专用·仅组长】上报当前任务完结:taskdone(seq, status:"done"|"failed", result)。系统记录后才会下发下一条;失败也要报,不会中断清单。',
   toolDescTodoplan: '【todo 模式·仅组长】boss 明确要求用 todo 模式执行时,把拆解定稿的任务批量建成清单:todoplan(tasks:[每条一个任务], replace?)。建完必须用 ask(to:"boss") 征得 boss 同意才可 todostart;修订自己刚建的清单传 replace:true。',
   toolDescTodostart: '【todo 模式·仅组长】启动已建好的任务清单:todostart(nudgeMinutes?)。必须先经 ask 获得 boss 明确同意;paused 状态的恢复属 boss 干预权(/todo resume),本工具不可用。',
+  toolDescTaskwait: '(仅组长)声明当前任务在等待外部过程(长脚本/CI/后台测试),minutes(1-120)分钟内暂停空闲巡查;reason 会展示给 boss。任务实际完成时仍须调 taskdone。',
 
   // —— templates.ts ——
   roleBootstrap: (role: string) => `你的职责：${role}。风格简练，少废话。`,
@@ -263,6 +264,8 @@ export const zh = {
   todoPlannedMsg: (from: string, n: number) => `【todo 模式】组长 ${from} 已建 ${n} 条任务清单,/todo list 查看;待 boss 确认后由组长启动(或你直接 /todo start)。`,
   todoSuspendedMsg: '【todolist 挂起】当前没有组长,任务暂停下发;/lead 指定组长后自动继续。',
   todoSendFailingMsg: '【todolist 告警】连续多次消息发送失败(守卫拦截或组长不可达),清单可能停滞,请检查。',
+  todoWaitingMsg: (seq: number, minutes: number, reason: string) =>
+    `【todolist】组长声明等待外部过程${reason ? `:${reason}` : ''},任务 #${seq} 巡查暂停 ${minutes} 分钟。`,
   todoProgressLine: (k: number, total: number, body: string, paused: boolean) =>
     `📋 ${k}/${total} 当前:${body}${paused ? ' [⏸ 已暂停]' : ''}`,
   todoPendingLine: (n: number) => `📋 ${n} 条待开跑(/todo list 查看)`,

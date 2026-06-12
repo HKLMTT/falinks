@@ -34,6 +34,7 @@ beforeEach(async () => {
     getSessionId: () => undefined,
     todo: {
       taskdone: (_seq: number, _status: 'done' | 'failed', _result: string) => ({ ok: true }),
+      taskwait: (_seq: number, _minutes: number, _reason: string) => ({ ok: true }),
       op: (op: string, args: { body?: string; seq?: number; n?: number }) => { opCalls.push({ op, n: args.n }); return { ok: true }; },
       state: () => ({ state: 'idle', nudgeMinutes: 10, tasks: [] }),
       plan: (tasks: string[], replace: boolean, from: string) => { planCalls.push({ tasks, replace, from }); return { ok: true, seqs: [1, 2] }; },

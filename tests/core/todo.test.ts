@@ -22,6 +22,7 @@ function mk(initial?: TodoState) {
     announceSummary: () => { calls.summary++; },
     announceSuspended: () => { calls.suspended++; },
     announceSendFailing: () => { calls.sendFailing++; },
+    announceWaiting: () => {},
     removedByBossText: () => 'removed',
     persist: () => { calls.persist++; },
   }, initial);
