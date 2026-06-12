@@ -100,6 +100,7 @@ export class TodoEngine {
       t.status = 'failed';
       t.result = this.cb.removedByBossText();
       t.ts = this.cb.now();
+      this.clearWait(); // 等待声明随任务移除作废
       if (this.lastDispatchId) this.cb.cancelQueued(this.lastDispatchId); // 旧下发可能还在 inbox 排队:撤掉,防 boss 已移除的任务事后送达
       this.lastDispatchId = undefined;
       // 若移除后已无 pending/current → 退回 idle(无需 resume,直接可重新 start)
@@ -165,8 +166,8 @@ export class TodoEngine {
     cur.result = result;
     cur.ts = this.cb.now();
     this.lastDispatchId = undefined;
-    if (this.st.state === 'running') this.dispatchNext(false); // 内含 persist
-    else this.cb.persist(this.st);                             // paused:只记录,resume 再推进
+    if (this.st.state === 'running') this.dispatchNext(false); // 内含 persist(及 clearWait)
+    else { this.clearWait(); this.cb.persist(this.st); }       // paused:只记录,resume 再推进;等待声明随完结作废
     return { ok: true };
   }
 
@@ -206,7 +207,7 @@ export class TodoEngine {
     if (this.st.waitUntil !== undefined) {
       if (now < this.st.waitUntil) { this.idleSince = now; return; } // 等待期:不巡查,锚点持续推进
       // 到期:锚点至少从到期时刻起算(等待期内可能没有 tick 推进锚点),再正常计满 nudgeMinutes 才巡查
-      this.idleSince = Math.max(this.idleSince ?? this.st.waitUntil, this.st.waitUntil);
+      this.idleSince = Math.max(this.idleSince ?? 0, this.st.waitUntil);
       this.st.waitUntil = undefined; this.st.waitReason = undefined; this.cb.persist(this.st); // 过期清除
     }
     if (this.idleSince === undefined) { this.idleSince = now; return; }
@@ -228,9 +229,15 @@ export class TodoEngine {
     return Math.min(this.st.nudgeMinutes * 2 ** n, Math.max(BACKOFF_CAP_MIN, this.st.nudgeMinutes));
   }
 
+  /** 清等待声明:等待声明是 current 任务的属性,任务完结/移除即作废(不清则 state() 快照会展示已完结任务的等待)。调用方负责 persist。 */
+  private clearWait(): void {
+    this.st.waitUntil = undefined;
+    this.st.waitReason = undefined;
+  }
+
   /** 推进:current 完结后取下一条 pending 下发;没有了 → finished+汇总。 */
   private dispatchNext(isResend: boolean): void {
-    if (this.st.waitUntil !== undefined) { this.st.waitUntil = undefined; this.st.waitReason = undefined; } // 等待声明随旧任务作废
+    this.clearWait(); // 等待声明随旧任务作废
     this.fruitlessNudges = 0; // 新一轮下发=进度信号,退避归零
     let task = this.st.tasks.find((t) => t.status === 'current');
     if (!task) {

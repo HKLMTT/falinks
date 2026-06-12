@@ -39,9 +39,11 @@ test('taskwait:等待期内 tick 不巡查,到期后按正常节奏恢复(到期
   for (let m = 1; m <= 29; m++) { setNow(m * MIN); e.tick(false, true); }
   expect(calls.nudge).toEqual([]); // 等待期 29 分钟全静默
 
+  const persistBefore = calls.persist;
   setNow(35 * MIN); e.tick(false, true); // 到期后 5 分钟:锚点从到期附近起算,还不到 10 分钟
   expect(calls.nudge).toEqual([]);
   expect(e.state().waitUntil).toBeUndefined(); // 过期已清
+  expect(calls.persist).toBe(persistBefore + 1); // 清 wait 必落盘(快照/重启一致)
 
   setNow(45 * MIN); e.tick(false, true); // 到期已 15 分钟 ≥ 10 → 巡查恢复
   expect(calls.nudge.length).toBe(1);
@@ -67,6 +69,26 @@ test('taskwait:taskdone 推进下一条后旧等待声明清除(不压制新任�
   expect(e.state().waitUntil).toBeUndefined();        // 等待声明随旧任务作废
   setNow(16 * MIN); e.tick(false, true);              // #2 下发于 5min,空闲 11 分钟 ≥ 10
   expect(calls.nudge.map((x) => x.seq)).toEqual([2]); // 新任务照常巡查
+});
+
+test('taskwait:paused 态 taskdone 后等待声明清除(快照不展示已完结任务的等待)', () => {
+  const { e } = mk();
+  e.add('a'); e.add('b'); e.start(undefined, true);
+  expect(e.taskwait(1, 60, '等 CI').ok).toBe(true);
+  expect(e.stop().ok).toBe(true); // paused
+  expect(e.taskdone(1, 'done', 'ok').ok).toBe(true); // paused 分支:只记录不推进
+  expect(e.state().waitUntil).toBeUndefined(); // 等待声明随任务完结作废
+  expect(e.state().waitReason).toBeUndefined();
+});
+
+test('taskwait:rm 移除 paused 的 current 后等待声明清除', () => {
+  const { e } = mk();
+  e.add('a'); e.add('b'); e.start(undefined, true);
+  expect(e.taskwait(1, 60, '等 CI').ok).toBe(true);
+  expect(e.stop().ok).toBe(true); // paused
+  expect(e.rm(1).ok).toBe(true);  // 脱困移除卡死的 current
+  expect(e.state().waitUntil).toBeUndefined(); // 等待声明随任务移除作废
+  expect(e.state().waitReason).toBeUndefined();
 });
 
 test('taskwait:anyBusy 与等待窗并存时锚点不漂移(等待期内忙碌不影响到期后的节奏)', () => {

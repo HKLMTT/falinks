@@ -2,7 +2,7 @@
 import { expect, test } from 'vitest';
 import { TodoEngine } from '../../src/core/todo.js';
 
-function mk() {
+function mk(nudgeResult: (callIndex: number) => boolean = () => true) {
   let now = 0;
   let nextId = 0;
   const calls = {
@@ -12,7 +12,7 @@ function mk() {
   const e = new TodoEngine({
     now: () => now,
     dispatch: () => `msg${++nextId}`,
-    nudge: (t, _pos, _total, info) => { calls.nudge.push({ seq: t.seq, fruitless: info.fruitless, nextMinutes: info.nextMinutes }); return true; },
+    nudge: (t, _pos, _total, info) => { calls.nudge.push({ seq: t.seq, fruitless: info.fruitless, nextMinutes: info.nextMinutes }); return nudgeResult(calls.nudge.length - 1); },
     cancelQueued: () => {},
     announceSummary: () => {},
     announceSuspended: () => {},
@@ -45,6 +45,18 @@ test('第 3 次无果边沿告警一次,且只一次', () => {
   e.add('a'); e.start(undefined, true);
   idleUntil(e, setNow, 1, 200);
   expect(calls.stalled).toEqual([{ seq: 1, n: 3, intervalMinutes: 60 }]);
+});
+
+test('第 3 次巡查发送失败:失败不计无果,重试成功后边沿仍恰好触发一次', () => {
+  const { e, calls, setNow } = mk((i) => i !== 2); // 第 3 次(下标 2)返回 false,其余 true
+  e.add('a'); e.start(undefined, true);
+  idleUntil(e, setNow, 1, 200);
+  // 10(fruitless 0)→ 30(1)→ 70(2,发送失败)→ 71(2,立即重试成功)→ 之后按 +60 推进
+  const third = calls.nudge[2], retry = calls.nudge[3];
+  expect(third.fruitless).toBe(2);
+  expect(retry.fruitless).toBe(2); // 发送失败不 ++:重试携带同一无果计数
+  expect(calls.stalled.length).toBe(1); // 重试成功后边沿告警仍只触发一次
+  expect(calls.stalled[0]).toEqual({ seq: 1, n: 3, intervalMinutes: 60 });
 });
 
 test('taskdone 清零退避:新任务从原始节奏起算', () => {

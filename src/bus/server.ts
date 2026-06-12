@@ -168,7 +168,7 @@ function serverForAgent(agentName: string, deps: BusDeps, questions: QuestionSto
 
   server.registerTool('taskwait', {
     description: t().toolDescTaskwait,
-    inputSchema: { seq: z.number(), minutes: z.number(), reason: z.string().optional() },
+    inputSchema: { seq: z.number(), minutes: z.number().int().min(1).max(120), reason: z.string().optional() },
   }, async ({ seq, minutes, reason }) => {
     touch();
     if (!deps.todo) return ok({ ok: false, error: 'todolist not available' });
