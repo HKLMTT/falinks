@@ -35,3 +35,11 @@
 ## 有意不做
 
 - 不做"插队并清空旧队列"(Esc 取消排队已有);不开放给员工;不做优先级分级(YAGNI)。
+
+## 实现后记(2026-06-12)
+
+- 与原设计的偏差(实现时定):① urgent 投递**照常更新** lastDeliverAt——闲时直送依赖投递宽限防过早自动降闲+排队消息交错注入;A-2 误报需连续 2 次且任意 MCP 调用自愈,风险可接受。② 目标 launching 时直送退化为正常排队(消息不标 urgent),promoteQueued 拒绝——pane 未就绪直送必丢。
+- 审查追加的防护:③ `hold()`(/clear 保护窗口)的"假忙"同样禁直送——AgentRuntime 加 `holding` 标志,urgent 退化排队、promote 拒绝(reason not-ready),register/onIdle/markLaunching 清除;④ promoteQueued 返回 `reason: 'gone'|'not-ready'|'dead'` 供透传;⑤ deliverUrgent 闲时路径改为 `inbox.unshift + pump` 复用,"闲时等价 pump"由代码保证。
+- parse 边界(审查发现):剥首个 `!` 后余文仍以 `!` 开头则当字面文本直送(防 `!!文本` 吞字面 ! + 超长前导 ! 递归爆栈崩控制台);全角 `！` 同认(中文输入法应急场景)。
+- 控制台浮层乐观更新改函数式 setLog + 置空 lastSeen 强制重同步(消"在途轮询先落地→旧闭包覆盖→去重卡死陈旧态"竞态,连既有 cancel 分支一并修);pending 改 useMemo 派生;⚡/✗ 标记 liveById 查不到时回退 committed 快照(100 条窗口挤出不丢标)。
+- promote 事后补标的 urgent 不回写持久化历史(重启后旧消息不显示 ⚡)——纯显示标记,可接受。

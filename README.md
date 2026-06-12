@@ -27,6 +27,7 @@ The name comes from the Pokémon **Falinks** (a six-in-a-row formation): one lea
 - **Session resume**: close the window, run `falinks` again in the same directory and pick "continue current team" — each worker comes back with its prior conversation memory (`claude --resume`, `codex resume`). Session records live in `~/.falinks/sessions/`; switching teams starts fresh. Resume is silent (no redoing old tasks).
 - **Persistent message history**: the feed is stored in `~/.falinks/messages/` (rolling cap); history survives restarts. The console message panel is multi-line, per-speaker colored, and timestamped.
 - **No accidental broadcasts**: plain text only replies to "the last party you talked to"; `@all` broadcasts.
+- **Urgent (cut-in) messages**: prefix with `!` to bypass the queue — delivered into the worker's pane immediately even while it's generating; queued messages can be promoted with `!` in the Esc overlay. Boss-only; workers always queue.
 - **Add/remove workers at runtime** (console `/add` wizard), **`/clear` a worker's context** (identity auto-restored after), **auto-offline on window close**, **runaway guards** (turn cap / loop detection / throttle), and a **token-saving collaboration rule** (no pleasantries).
 - **Per-agent model**: each worker can pin its own model (`model` in the config, or the `/add` wizard's model step — leave blank for the CLI default); passed as `claude --model` / `codex -m` and kept across restart/resume. Append Claude Code's `[1m]` suffix (e.g. `claude-opus-4-8[1m]`) for the 1M-context variant.
 - **`/restart <name> [fresh]`**: relaunch a worker's CLI with the correct MCP config (`fresh` = brand-new session) — the right way to restart, instead of manually rerunning a CLI in the pane.
@@ -86,6 +87,7 @@ The console input box on the left (with autocomplete for both `@` and `/`):
 | `@alice take a look at login` | DM a worker |
 | plain text (no `@`) | reply to "the last party you talked to" |
 | `@all sync up everyone` | broadcast to all (**only `@all` broadcasts**, to avoid mistakes) |
+| `!message` / `!@name message` / `!@all message` | **urgent send**: skips the queue and lands in the worker's pane immediately, even mid-generation (the CLI buffers it into the current turn); the feed shows ⚡. In the queued-messages overlay (Esc), press `!` to promote a queued message |
 | `Shift+Enter` or `\` + Enter | newline in the input box (multi-line) |
 | `Ctrl+V` | paste a clipboard screenshot (inserts `[Image N]`, expanded to a path for the worker to read on send) |
 | `/add` | add a worker via wizard: **name → cli → model → role → working directory** (model blank = CLI default) |
