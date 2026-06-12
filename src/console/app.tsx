@@ -43,7 +43,8 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
   // 全量消息历史(只增不改、引用稳定),扁平成屏幕行后由回看视口切片渲染。
   const committedRef = useRef<any[]>([]);
   const [committed, setCommitted] = useState<any[]>([]);
-  const [pending, setPending] = useState<{ to: string; n: number }[]>([]); // 仍在对方 inbox 排队的目标+条数
+  // 仍在对方 inbox 排队的目标+条数:从 log 派生(轮询/乐观更新只改 log,计数自动跟随,无双源失步)。
+  const pending = useMemo(() => pendingCounts(log), [log]);
   const [diag, setDiag] = useState<any[]>([]); // 协作诊断事件(守卫丢消息/注入失败/可疑过早 idle)
   const [input, setInput] = useState('');
   const [cursor, setCursor] = useState(0);
@@ -129,7 +130,6 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
           setLog(fullLog);
           const next = appendCommitted(committedRef.current, fullLog);
           if (next !== committedRef.current) { committedRef.current = next; setCommitted(next); }
-          setPending(pendingCounts(fullLog));
         }
         const q = await admin(port, 'GET', '/admin/questions');
         const qs = JSON.stringify(q.questions ?? []);
@@ -199,7 +199,7 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
           committedRef.current = [];
           setCommitted([]);
           lastSeen.current.log = '';
-          setPending([]);
+          setLog([]); // pending 由 log 派生,清空 log 即清空"等送达"计数
           setScrollOff(0);
         }
         setStatus(r.ok ? t().cleared(a.name ?? t().clearAll, (r.cleared ?? []).join(t().clearJoiner) || t().clearNone) : '⚠ ' + (r.error ?? t().clearFailed));
@@ -276,8 +276,9 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
         { text: ' → ' },
         { text: String(m.to), color: colorFor(m.to), bold: true },
       );
-      if (liveById.get(m.id)?.canceled) header.push({ text: t().canceledMark, color: 'red', dim: true });
-      if (liveById.get(m.id)?.urgent) header.push({ text: t().urgentMark, color: 'yellow' });
+      // 实时态优先,被 100 条窗口挤出 log 的回退到 committed 首见快照(发送时即带的标记不丢)。
+      if ((liveById.get(m.id) ?? m).canceled) header.push({ text: t().canceledMark, color: 'red', dim: true });
+      if ((liveById.get(m.id) ?? m).urgent) header.push({ text: t().urgentMark, color: 'yellow' });
       for (const row of wrapSegs(header, width)) out.push(row);
       for (const line of renderMarkdown(String(m.body)))
         for (const row of wrapSegs(line, width - 2)) out.push([{ text: '  ' }, ...row]);
@@ -432,9 +433,10 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
           setStatus(r.ok ? t().qcancelOk(target.to) : '⚠ ' + t().qcancelFailed);
           if (r.ok) {
             // 本地即时把该条标记非排队(不等下轮轮询),列表/等送达计数立刻缩。
-            const nl = log.map((m: any) => (m.id === target.id ? { ...m, queued: false, canceled: true } : m));
-            setLog(nl);
-            setPending(pendingCounts(nl));
+            // 函数式更新:按键时刻闭包里的 log 可能已被在途轮询响应刷新,整组覆盖会把新数据滚回旧快照。
+            setLog((prev) => prev.map((m: any) => (m.id === target.id ? { ...m, queued: false, canceled: true } : m)));
+            // 清空去重串强制下轮轮询全量重同步:乐观结果与服务端串不同,否则去重会跳过、陈旧态滞留不自愈。
+            lastSeen.current.log = '';
           }
         })();
         return;
@@ -447,9 +449,9 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
           setStatus(r.ok ? t().qpromoteOk(target.to) : '⚠ ' + t().qpromoteFailed);
           if (r.ok) {
             // 本地即时翻状态(不等下轮轮询):排队列表立刻缩、历史行立刻标 ⚡。
-            const nl = log.map((m: any) => (m.id === target.id ? { ...m, queued: false, urgent: true } : m));
-            setLog(nl);
-            setPending(pendingCounts(nl));
+            // 函数式更新+强制重同步,理由同上方 Enter 取消分支。
+            setLog((prev) => prev.map((m: any) => (m.id === target.id ? { ...m, queued: false, urgent: true } : m)));
+            lastSeen.current.log = '';
           }
         })();
         return;

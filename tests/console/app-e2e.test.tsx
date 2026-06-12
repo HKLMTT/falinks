@@ -174,6 +174,10 @@ renderE2E('e2e:浮层按 ! 提升排队消息直送 → 等送达消失、历史
     stdin.emit('data', '!');    // ! 提升直送
     await waitFor(() => lastFrame().includes('已插队直送'));
     expect(driver.injections.length).toBeGreaterThan(before); // 真注入了(没等 alice 空闲)
+    // 钉死注入内容与目标:确实是被提升的那条、注入到 alice 的会话(FakeDriver.inject 单条记录文本+submit)。
+    const inj = driver.injections.at(-1)!;
+    expect(inj.text).toContain('排队-丙');
+    expect(inj.sessionId).toBe(sessions.get('alice'));
     await waitFor(() => !lastFrame().includes('等送达'));      // 排队计数清零
     await waitFor(() => lastFrame().includes('⚡直送'));        // 历史行标记
   } finally {
