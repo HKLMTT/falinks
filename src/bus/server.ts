@@ -44,6 +44,8 @@ export interface BusDeps {
   onShutdown?(closePanes: boolean): Promise<{ ok: boolean }>;
   onLang?(locale: 'zh' | 'en' | 'auto'): Promise<'zh' | 'en'>;
   onSetLead?(name: string): Promise<{ ok: boolean; error?: string }>;
+  /** 运行时改 lead 周期重置配置并写回 config 文件。 */
+  onLeadReset?(p: { enabled?: boolean; every?: number }): Promise<{ ok: boolean; error?: string; enabled?: boolean; every?: number }>;
   /** 重启某员工的 CLI(带正确 MCP 配置;fresh=清会话记录全新开局)。 */
   onRestartAgent?(name: string, fresh: boolean): Promise<{ ok: boolean; error?: string }>;
   /** 返回最近的诊断事件(守卫丢消息/注入失败/可疑自动 idle)；缺省视为无诊断。 */
@@ -350,6 +352,10 @@ export async function startBus(deps: BusDeps, port: number, opts?: BusOptions): 
         } catch (e: any) {
           return sendJson({ ok: false, error: String(e?.message ?? e) });
         }
+      }
+      if (req.method === 'POST' && url.pathname === '/admin/leadreset') {
+        if (!deps.onLeadReset) return sendJson({ ok: false, error: 'not supported' });
+        return sendJson(await deps.onLeadReset({ enabled: abody.enabled, every: abody.every }));
       }
       res.writeHead(404); res.end('unknown admin route');
       return;

@@ -9,6 +9,7 @@ export type ConsoleAction =
   | { kind: 'remove'; name: string }
   | { kind: 'restart'; name: string; fresh: boolean }
   | { kind: 'todo'; op: 'add' | 'list' | 'rm' | 'clear' | 'start' | 'stop' | 'resume'; body?: string; seq?: number; n?: number }
+  | { kind: 'leadreset'; enabled?: boolean; every?: number }
   | { kind: 'clear'; name?: string }
   | { kind: 'lang-start' }
   | { kind: 'lead-start' }
@@ -78,6 +79,14 @@ export function parseConsoleInput(line: string): ConsoleAction {
         const n = Number(arg);
         if (!Number.isInteger(n) || n <= 0) return { kind: 'error', message: t().usageTodoStart };
         return { kind: 'todo', op: 'start', n };
+      }
+      if (sub === 'leadreset') {
+        const arg = rest.trim();
+        if (arg === 'on') return { kind: 'leadreset', enabled: true };
+        if (arg === 'off') return { kind: 'leadreset', enabled: false };
+        const n = Number(arg);
+        if (!Number.isInteger(n) || n <= 0) return { kind: 'error', message: t().usageLeadReset };
+        return { kind: 'leadreset', every: n };
       }
       if (sub === 'list' || sub === 'clear' || sub === 'stop' || sub === 'resume') {
         if (rest.trim()) return { kind: 'error', message: t().usageTodo };

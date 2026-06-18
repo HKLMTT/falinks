@@ -143,6 +143,8 @@ export const en: typeof zh = {
   usageTodoAdd: 'usage: /todo add <task content> (may be multiline)',
   usageTodoRm: 'usage: /todo rm <seq>',
   usageTodoStart: 'usage: /todo start [progress check interval in minutes, positive integer, default 10]',
+  usageLeadReset: 'Usage: /todo leadreset on|off|<positive int> (toggle lead periodic reset / set period K)',
+  leadResetSet: (enabled: boolean, k: number) => `lead periodic reset: ${enabled ? 'on' : 'off'}, every ${k} tasks`,
 
   // —— discovery.ts ——
   busNotFound: 'No running falinks found — is `falinks` running?',

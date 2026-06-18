@@ -149,6 +149,8 @@ export const zh = {
   usageTodoAdd: '用法: /todo add <任务内容>(可多行)',
   usageTodoRm: '用法: /todo rm <序号>',
   usageTodoStart: '用法: /todo start [巡查间隔分钟,正整数,默认10]',
+  usageLeadReset: '用法:/todo leadreset on|off|<正整数>(开关 lead 周期重置 / 设周期 K)',
+  leadResetSet: (enabled: boolean, k: number) => `lead 周期重置:${enabled ? '开' : '关'},每 ${k} 条`,
 
   // —— discovery.ts:按 cwd 寻址运行中的总线 ——
   busNotFound: '找不到运行中的 falinks —— `falinks` 在运行吗？',

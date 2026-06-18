@@ -487,6 +487,20 @@ export async function up(configPath: string) {
       },
     },
     getDiag: () => { try { return loadDiag(launchCwd); } catch { return []; } },
+    onLeadReset: async ({ enabled, every }) => {
+      if (!cfg.todo) cfg.todo = { leadReset: { enabled: true, everyTasks: 5 } };
+      if (enabled !== undefined) cfg.todo.leadReset.enabled = enabled;
+      if (every !== undefined) {
+        if (!Number.isInteger(every) || every <= 0) return { ok: false, error: 'everyTasks must be a positive integer' };
+        cfg.todo.leadReset.everyTasks = every;
+      }
+      try {
+        const raw = JSON.parse(readFileSync(configPath, 'utf8'));
+        raw.todo = { leadReset: { ...cfg.todo.leadReset } };
+        writeFileSync(configPath, JSON.stringify(raw, null, 2));
+      } catch { /* 写回失败不致命,内存已生效 */ }
+      return { ok: true, enabled: cfg.todo.leadReset.enabled, every: cfg.todo.leadReset.everyTasks };
+    },
   }, cfg.busPort ?? 0, {
     identity: { cwd: launchCwd, startedAt: Date.now() },
     onPortFallback: (wanted, got) => { portWarning = t().portFallback(wanted, got); },
