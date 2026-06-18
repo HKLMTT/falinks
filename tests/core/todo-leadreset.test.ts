@@ -49,12 +49,29 @@ test('leadResetEvery 返回 0(关闭)永不重置 lead', () => {
 });
 
 test('nudge 与 resume/redispatch 不触发 resetLead', () => {
-  const { e, order } = mk(1);
-  e.add('a');
-  e.start(undefined, true); // 计数0,首条不重置
+  // K=2, 3 tasks: taskdone #1 → counter=1 (no reset), stop, resume → redispatch must NOT fire resetLead
+  const { e, order } = mk(2);
+  e.add('a'); e.add('b'); e.add('c');
+  e.start(undefined, true); // counter=0, dispatch a
+  e.taskdone(1, 'done', ''); // counter=1, dispatch b (counter<K=2, no resetLead)
   e.stop();
-  e.resume(true);           // redispatch(true):不重置 lead
-  expect(order.filter((x) => x === 'resetLead')).toEqual([]);
+  // Clear recorded order so far, then resume and verify no resetLead added
+  const orderBeforeResume = order.length;
+  e.resume(true); // redispatch(isResend=true): must NOT trigger resetLead
+  expect(order.slice(orderBeforeResume).filter((x) => x === 'resetLead')).toEqual([]);
+
+  // Variant: push counter to exactly K via second taskdone while paused, then resume — still no resetLead from resume itself
+  const { e: e2, order: order2 } = mk(2);
+  e2.add('x'); e2.add('y'); e2.add('z');
+  e2.start(undefined, true);         // counter=0, dispatch x
+  e2.taskdone(1, 'done', '');        // counter=1, dispatch y (no reset)
+  e2.taskdone(2, 'done', '');        // counter=2 → resetLead fires here (dispatchNext isResend=false)
+  e2.stop();                          // now counter=0 (was zeroed after reset), paused
+  // Accumulate one more completion while paused to bring counter back up, but we can't taskdone while paused without running
+  // Instead: confirm the stop→resume path (redispatch=isResend=true) never emits resetLead
+  const beforeResume2 = order2.length;
+  e2.resume(true);
+  expect(order2.slice(beforeResume2).filter((x) => x === 'resetLead')).toEqual([]);
 });
 
 test('clear 触发 wipeLeadMemory 并归零计数', () => {
@@ -64,5 +81,53 @@ test('clear 触发 wipeLeadMemory 并归零计数', () => {
   e.stop();                    // clear 仅 paused/非 running 可用
   e.clear();
   expect(order).toContain('wipeLeadMemory');
-  // 归零通过后续行为间接验证:重新建单跑满 K 才触发(此处仅验回调被调)
+  // 直接断言计数已归零
+  expect(e.state().completedSinceLeadReset).toBe(0);
+});
+
+test('add 续单(finished→idle)归零 lead 重置计数:新批次须满 K 才触发', () => {
+  // Run 1-task list to completion (state→finished, counter=1)
+  // Then add a new task + start; with K=2 the resetLead must NOT fire until 2 NEW completions
+  const { e, order } = mk(2);
+  e.add('first');
+  e.start(undefined, true);       // counter=0, dispatch first
+  e.taskdone(1, 'done', '');      // counter=1 → finished (only 1 task, no more pending)
+  // Verify state is finished and counter is non-zero before add
+  expect(e.state().state).toBe('finished');
+  expect((e.state().completedSinceLeadReset ?? 0)).toBeGreaterThan(0);
+
+  // add() should clear stale count
+  e.add('second');                // finished→idle, must zero completedSinceLeadReset
+  e.start(undefined, true);       // dispatch second (counter=0 after zeroing, no resetLead yet)
+
+  const orderBeforeNew = order.length;
+  e.taskdone(2, 'done', '');      // counter becomes 1 → finished (only 1 task in new batch)
+  // Only 1 completion in new batch (K=2): resetLead must NOT have fired
+  expect(order.slice(orderBeforeNew).filter((x) => x === 'resetLead')).toEqual([]);
+
+  // Now do a fresh batch with 2 tasks to confirm the counter truly starts from 0
+  const { e: e2, order: order2 } = mk(2);
+  e2.add('t1');
+  e2.start(undefined, true);
+  e2.taskdone(1, 'done', '');     // counter=1, state→finished
+  e2.add('t2'); e2.add('t3');    // finished→idle, counter zeroed; add 2 more
+  e2.start(undefined, true);     // dispatch t2 (counter=0)
+  e2.taskdone(2, 'done', '');    // counter=1, dispatch t3 (no reset, 1 < K=2)
+  const beforeReset = order2.length;
+  e2.taskdone(3, 'done', '');    // counter=2 ≥ K → resetLead fires BEFORE dispatch of next (but there's no next → finished)
+  // Actually at this point state→finished (no more pending). The reset fires inside dispatchNext when counter>=K
+  // counter=2>=K=2 but there's no next task after t3 → dispatchNext finds no pending → finished branch runs before reset check
+  // Let's add a 4th task to ensure a dispatchNext with isResend=false is reached
+  const { e: e3, order: order3 } = mk(2);
+  e3.add('a1');
+  e3.start(undefined, true);
+  e3.taskdone(1, 'done', '');    // finished, counter=1
+  // add 3 tasks after finished: counter should be zeroed by add()
+  e3.add('b1'); e3.add('b2'); e3.add('b3');
+  e3.start(undefined, true);     // dispatch b1, counter=0
+  e3.taskdone(2, 'done', '');   // counter=1, dispatch b2
+  const snap = order3.filter((x) => x === 'resetLead');
+  expect(snap).toEqual([]);      // K=2, only 1 new completion so far → no reset yet
+  e3.taskdone(3, 'done', '');   // counter=2 ≥ K → resetLead, then dispatch b3
+  expect(order3.filter((x) => x === 'resetLead')).toEqual(['resetLead']); // exactly one reset, from new batch
 });

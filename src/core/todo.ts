@@ -65,6 +65,7 @@ export class TodoEngine {
     if (this.st.state === 'finished') { // 跑完直接续单:清旧账转 idle(汇总已入消息流不丢信息)
       this.st.tasks = [];
       this.st.state = 'idle';
+      this.st.completedSinceLeadReset = 0; // 续单重启:归零,防旧批次计数偏移新批次重置节奏
     }
     const task: TodoTask = { seq: ++this.seqCounter, body, status: 'pending' };
     this.st.tasks.push(task);
