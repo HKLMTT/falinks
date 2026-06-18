@@ -20,6 +20,8 @@ export interface FalinksConfig {
   busPort?: number; // 缺省 = 启动时自动分配(listen 0)
   historyCap?: number; // 消息流水保留上限(内存+磁盘),缺省由调用方回退默认(MESSAGE_LOG_CAP)
   paneTheme?: boolean; // 给每个员工 pane 按角色染背景色 + 加徽章;缺省视为开,设 false 整体关闭(尊重自定义配色)
+  /** todo 模式 lead 周期性重置 + 记忆开关;缺省 { leadReset: { enabled: true, everyTasks: 5 } }。 */
+  todo?: { leadReset: { enabled: boolean; everyTasks: number } };
   agents: AgentConfig[];
   routes: Record<string, AgentName>;
   guards: GuardConfig;
@@ -34,6 +36,12 @@ export function parseConfig(raw: any): FalinksConfig {
     throw new Error('config.historyCap must be a positive integer');
   if (raw.paneTheme !== undefined && typeof raw.paneTheme !== 'boolean')
     throw new Error('config.paneTheme must be a boolean');
+  const lr = raw.todo?.leadReset ?? {};
+  if (lr.enabled !== undefined && typeof lr.enabled !== 'boolean')
+    throw new Error('config.todo.leadReset.enabled must be a boolean');
+  if (lr.everyTasks !== undefined && (typeof lr.everyTasks !== 'number' || !Number.isInteger(lr.everyTasks) || lr.everyTasks <= 0))
+    throw new Error('config.todo.leadReset.everyTasks must be a positive integer');
+  const todo = { leadReset: { enabled: lr.enabled ?? true, everyTasks: lr.everyTasks ?? 5 } };
   if (!Array.isArray(raw.agents) || raw.agents.length === 0)
     throw new Error('config.agents must have at least one agent');
 
@@ -66,5 +74,5 @@ export function parseConfig(raw: any): FalinksConfig {
     loopWindow: typeof gd.loopWindow === 'number' ? gd.loopWindow : 3,
   };
 
-  return { busPort: raw.busPort, historyCap: raw.historyCap, paneTheme: raw.paneTheme, agents, routes, guards };
+  return { busPort: raw.busPort, historyCap: raw.historyCap, paneTheme: raw.paneTheme, todo, agents, routes, guards };
 }
