@@ -42,7 +42,7 @@
 - `dispatchNext(isResend=false)` 中、`resetWorkers()` **之后**:取 `k = cb.leadResetEvery()`,若 `k > 0 && completedSinceLeadReset >= k` → 调 `resetLead()` 并归零计数。
 - 自然结果:`start` 首条不触发(计数 0);第 K 条 taskdone 后的推进才触发;`nudge`/`redispatch(isResend=true)` 不触发;`enabled=false`(k=0)永不触发。
 - 新回调 `resetLead(): void`(fire-and-forget)。引擎不判断文档是否为空——只管按 K 计数并触发;文档为空时是否真重置由 index 侧安全阀裁决(见⑥)。
-- `completedSinceLeadReset` 归零点:`resetLead` 触发时;`clear()`(弃单)与 `plan()` 重建清单时(新一摊活重新计数)。
+- `completedSinceLeadReset` 归零点:`resetLead` 触发时;`clear()`(弃单)与 `plan()` 重建清单时;`add()` 在 `finished` 后续单(清旧账转 idle)时。
 - `clear()`(对应 `/todo clear`)额外触发文档清除回调(见⑤ `wipeLeadMemory`)。
 
 ### ④ index.ts:`composeBootstrap` + `resetLead` 接线(方案 A 核心)
