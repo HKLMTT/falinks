@@ -27,6 +27,7 @@ import { saveSettings } from './settings.js';
 import { TodoEngine } from './core/todo.js';
 import { loadTodo, saveTodo } from './todo-store.js';
 import type { TodoTask } from './todo-store.js';
+import { loadLeadState, saveLeadState, clearLeadState } from './leadstate-store.js';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -137,9 +138,21 @@ export async function up(configPath: string) {
         .map((a) => a.name);
       void Promise.all(targets.map((nm) => clearOneWorker(nm).catch(() => {}))); // fire-and-forget:引擎不等待
     },
-    resetLead: () => {}, // TODO(Task 5)
-    wipeLeadMemory: () => {}, // TODO(Task 5)
-    leadResetEvery: () => 0, // TODO(Task 5):读 cfg
+    resetLead: () => {
+      const lead = currentLead();
+      if (!cfg.todo?.leadReset.enabled || !lead) return;
+      if (!loadLeadState(launchCwd)) { // 无文档:重置会致失忆,跳过 + 边沿提醒
+        router.send('falinks', 'boss', t().leadResetSkippedNoDoc);
+        return;
+      }
+      void clearOneWorker(lead).catch(() => {}); // 重注入含文档的 bootstrap;下一条任务经 hold 队列在其后落地
+    },
+    wipeLeadMemory: () => {
+      clearLeadState(launchCwd);
+      const lead = currentLead();
+      if (lead) { const spec = cfg.agents.find((x) => x.name === lead); if (spec) bootstraps.set(lead, composeBootstrap(spec)); }
+    },
+    leadResetEvery: () => (cfg.todo?.leadReset.enabled ? cfg.todo.leadReset.everyTasks : 0),
     removedByBossText: () => t().todoRemovedByBoss,
     persist: (st) => { try { saveTodo(launchCwd, st); } catch { /* 落盘失败不致命,内存继续 */ } },
   }, loadTodo(launchCwd));
@@ -150,9 +163,15 @@ export async function up(configPath: string) {
 
   // 组装员工完整 bootstrap:协作规则 + 身份 + 职责;组长额外追加"协调者工作法"(设计优先)。
   // launchInto 与运行时 /lead(onSetLead)共用,保证 /clear 重注入、换 lead 后内容一致。
-  const composeBootstrap = (a: { name: string; role?: string; lead?: boolean; bootstrap?: string }): string =>
-    `${t().houseRules}\n${t().identityLine(a.name, a.role)}${a.bootstrap ?? ''}` +
-    (a.lead ? `\n${t().coordinatorRules}` : '');
+  const composeBootstrap = (a: { name: string; role?: string; lead?: boolean; bootstrap?: string }): string => {
+    let s = `${t().houseRules}\n${t().identityLine(a.name, a.role)}${a.bootstrap ?? ''}`;
+    if (a.lead) {
+      s += `\n${t().coordinatorRules}`;
+      const doc = cfg.todo?.leadReset.enabled ? loadLeadState(launchCwd) : '';
+      if (doc) s += `\n【项目状态(续接用,这是你上一段会话沉淀的记忆)】\n${doc}`;
+    }
+    return s;
+  };
 
   async function launchInto(
     anchor: string,
@@ -346,6 +365,12 @@ export async function up(configPath: string) {
       if (name && restarting.has(name)) return { ok: false, error: t().restartBusy(name) };
       const targets = (name ? [name] : router.roster().filter((a) => !a.virtual).map((a) => a.name))
         .filter((nm) => !restarting.has(nm)); // 全员清时跳过重启中的人:别把 /clear 注进正在关闭的 pane
+      const lead = currentLead();
+      if (lead && targets.includes(lead)) {
+        clearLeadState(launchCwd);
+        const spec = cfg.agents.find((x) => x.name === lead);
+        if (spec) bootstraps.set(lead, composeBootstrap(spec)); // 此刻文档已删 → 不含文档 = 白纸
+      }
       const cleared: string[] = [];
       // 并发清空：每个员工各自 /clear → 等一下 → 重注入 bootstrap，互不阻塞（总耗时≈单个，不再 N 倍）。
       await Promise.all(targets.map(async (nm) => {
@@ -453,6 +478,13 @@ export async function up(configPath: string) {
         }
       },
       state: () => todo.state(),
+      leadstate: (content: string) => {
+        if (!cfg.todo?.leadReset.enabled) return { ok: false, error: t().leadMemoryOff };
+        saveLeadState(launchCwd, content);
+        const lead = currentLead();
+        if (lead) { const spec = cfg.agents.find((x) => x.name === lead); if (spec) bootstraps.set(lead, composeBootstrap(spec)); }
+        return { ok: true };
+      },
     },
     getDiag: () => { try { return loadDiag(launchCwd); } catch { return []; } },
   }, cfg.busPort ?? 0, {

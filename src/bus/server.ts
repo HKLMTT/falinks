@@ -57,6 +57,8 @@ export interface BusDeps {
     state(): unknown;
     /** lead 批量建单(todoplan 工具):from=调用者名(通知留痕用)。 */
     plan(tasks: string[], replace: boolean, from: string): { ok: boolean; error?: string; seqs?: number[] };
+    /** lead 写/换项目状态档(leadstate 工具)。 */
+    leadstate(content: string): { ok: boolean; error?: string };
   };
 }
 
@@ -174,6 +176,16 @@ function serverForAgent(agentName: string, deps: BusDeps, questions: QuestionSto
     if (!deps.todo) return ok({ ok: false, error: 'todolist not available' });
     if (!router.get(agentName)?.lead) return ok({ ok: false, error: 'only the lead can call taskwait' });
     return ok(deps.todo.taskwait(seq, minutes, reason ?? ''));
+  });
+
+  server.registerTool('leadstate', {
+    description: t().toolDescLeadstate,
+    inputSchema: { content: z.string() },
+  }, async ({ content }) => {
+    touch();
+    if (!deps.todo) return ok({ ok: false, error: 'todolist not available' });
+    if (!router.get(agentName)?.lead) return ok({ ok: false, error: 'only the lead can call leadstate' });
+    return ok(deps.todo.leadstate(content));
   });
 
   return server;
