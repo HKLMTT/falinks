@@ -129,6 +129,7 @@ export async function up(configPath: string) {
       router.send('falinks', 'boss', t().todoStalledMsg(task.seq, n, intervalMinutes));
       try { appendDiag(launchCwd, { kind: 'todo-stalled', seq: task.seq, n, ts: Date.now() }); } catch { /* 诊断落盘失败不致命 */ }
     },
+    resetWorkers: () => {}, // TODO(Task 2):替换为真实重置
     removedByBossText: () => t().todoRemovedByBoss,
     persist: (st) => { try { saveTodo(launchCwd, st); } catch { /* 落盘失败不致命,内存继续 */ } },
   }, loadTodo(launchCwd));

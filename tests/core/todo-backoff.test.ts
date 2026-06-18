@@ -19,6 +19,7 @@ function mk(nudgeResult: (callIndex: number) => boolean = () => true) {
     announceSendFailing: () => {},
     announceWaiting: () => {},
     announceStalled: (t, n, intervalMinutes) => { calls.stalled.push({ seq: t.seq, n, intervalMinutes }); },
+    resetWorkers: () => {},
     removedByBossText: () => 'removed',
     persist: () => {},
   });

@@ -23,6 +23,8 @@ export interface TodoCallbacks {
   announceWaiting(task: TodoTask, minutes: number, reason: string): void;
   /** 连续 STALL_ANNOUNCE_AT 次无果巡查:疑似任务已完成未关闭或停滞,向 boss 告警(边沿一次)。 */
   announceStalled(task: TodoTask, n: number, intervalMinutes: number): void;
+  /** todo 模式:推进到新任务时同步调用一次,实现方异步把非 lead 员工重置为全新会话(引擎不等待)。 */
+  resetWorkers(): void;
   removedByBossText(): string;
   persist(st: TodoState): void;
 }
@@ -250,6 +252,7 @@ export class TodoEngine {
       }
       task.status = 'current';
     }
+    if (!isResend) this.cb.resetWorkers(); // 仅新任务推进时重置员工(重发=同一 current,员工可能在干,不清)
     const id = this.cb.dispatch(task, this.st.tasks.indexOf(task) + 1, this.st.tasks.length, isResend);
     if (id) { this.lastDispatchId = id; this.noteSendOk(); }
     else this.noteSendFail(); // 下发被丢:不标已派发,巡查模板自包含,满 N 自然兜底重试
