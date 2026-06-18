@@ -496,7 +496,7 @@ export async function up(configPath: string) {
       }
       try {
         const raw = JSON.parse(readFileSync(configPath, 'utf8'));
-        raw.todo = { leadReset: { ...cfg.todo.leadReset } };
+        raw.todo = { ...raw.todo, leadReset: { ...cfg.todo.leadReset } };
         writeFileSync(configPath, JSON.stringify(raw, null, 2));
       } catch { /* 写回失败不致命,内存已生效 */ }
       return { ok: true, enabled: cfg.todo.leadReset.enabled, every: cfg.todo.leadReset.everyTasks };
