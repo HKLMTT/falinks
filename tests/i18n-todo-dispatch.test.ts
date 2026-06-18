@@ -15,8 +15,8 @@ test('zh 下发:角色锚点始终在,全新会话句仅非重发时出现', () 
 test('en 下发:角色锚点始终在,全新会话句仅非重发时出现', () => {
   const fresh = en.todoDispatchMsg(1, 1, 3, 'do X', false);
   const resend = en.todoDispatchMsg(1, 1, 3, 'do X', true);
-  expect(fresh).toContain('lead');
-  expect(resend).toContain('lead');
+  expect(fresh).toContain('team lead');
+  expect(resend).toContain('team lead'); // 重发也要带角色锚点(防 lead 上下文膨胀忘角色)
   expect(fresh).toContain('brand-new');
   expect(resend).not.toContain('brand-new');
 });
