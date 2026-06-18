@@ -767,9 +767,9 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
           <>
             {answering && pendingQ ? (
               <Box flexDirection="column" marginTop={1}>
-                <Text color="yellow" wrap="truncate-end">{t().questionAsk(pendingQ.from, pendingQ.question)}</Text>
+                <Text color="yellow" wrap="wrap">{t().questionAsk(pendingQ.from, pendingQ.question)}</Text>
                 {pendingQ.options.map((o: string, i: number) => (
-                  <Text key={i} inverse={i === qSelClamped} wrap="truncate-end">  {i + 1}. {o}</Text>
+                  <Text key={i} inverse={i === qSelClamped} wrap="wrap">  {i + 1}. {o}</Text>
                 ))}
                 <Text inverse={onCustomSlot} dimColor={!onCustomSlot} wrap="truncate-end">  {t().answerCustom}</Text>
                 {customAns !== null ? (
