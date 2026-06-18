@@ -24,6 +24,10 @@ function mk(initial?: TodoState) {
     announceSendFailing: () => { calls.sendFailing++; },
     announceWaiting: () => {},
     announceStalled: () => {},
+    resetWorkers: () => {},
+    resetLead: () => {},
+    wipeLeadMemory: () => {},
+    leadResetEvery: () => 0,
     removedByBossText: () => 'removed',
     persist: () => { calls.persist++; },
   }, initial);

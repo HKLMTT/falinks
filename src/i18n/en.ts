@@ -143,6 +143,8 @@ export const en: typeof zh = {
   usageTodoAdd: 'usage: /todo add <task content> (may be multiline)',
   usageTodoRm: 'usage: /todo rm <seq>',
   usageTodoStart: 'usage: /todo start [progress check interval in minutes, positive integer, default 10]',
+  usageLeadReset: 'Usage: /todo leadreset on|off|<positive int> (toggle lead periodic reset / set period K)',
+  leadResetSet: (enabled: boolean, k: number) => `lead periodic reset: ${enabled ? 'on' : 'off'}, every ${k} tasks`,
 
   // —— discovery.ts ——
   busNotFound: 'No running falinks found — is `falinks` running?',
@@ -203,7 +205,8 @@ export const en: typeof zh = {
     '① First align requirements & details with the boss — use ask(to="boss", …) for key decisions and sendmsg(to="boss", …) to clarify anything unclear: confirm goals, scope, constraints, acceptance criteria. ' +
     '② Design using superpowers skills: first the brainstorming skill to explore approaches & trade-offs, then the writing-plans skill to write a concrete design/implementation plan. During design you MAY dispatch other workers to assist you (have them investigate code, gather info, critique the approach), but no one writes code in this phase. ' +
     '③ Once the plan is finalized, decompose it into concrete tasks and dispatch them one by one via sendmsg to the right workers (frontend/backend/qa…), then keep managing: track progress, coordinate dependencies, aggregate results. ' +
-    '④ When boss explicitly asks for todo-mode execution: call todoplan(tasks:[one per task]) to build the list after the plan is finalized → use ask(to:"boss") to confirm whether to start (include nudge intervals in the options, e.g. "start (nudge every 10 min) / start (nudge every 30 min) / not yet") → once boss agrees, call todostart(nudgeMinutes) to launch; after that report each completed task with taskdone(seq, status, result) and the system will dispatch the next one automatically. Never call todostart without boss approval; to revise a list you just built, pass todoplan(…, replace:true). ' +
+    '④ When boss explicitly asks for todo-mode execution: call todoplan(tasks:[one per task]) to build the list after the plan is finalized → use ask(to:"boss") to confirm whether to start (include nudge intervals in the options, e.g. "start (nudge every 10 min) / start (nudge every 30 min) / not yet") → once boss agrees, call todostart(nudgeMinutes) to launch; after that report each completed task with taskdone(seq, status, result) and the system will dispatch the next one automatically. Never call todostart without boss approval; to revise a list you just built, pass todoplan(…, replace:true). In todo mode, each task dispatch resets the other workers to brand-new sessions — brief them fully, and only call taskdone after every dispatched worker has reported back. ' +
+    '⑤ In todo mode you have a "project state doc" as cross-session memory: when advancing tasks the system may reset you to a fresh session and reload this doc, so always refresh it via leadstate(content) alongside each taskdone — goal/key decisions/done/next, kept concise — so a reset or restart resumes seamlessly. ' +
     'In short: align requirements → design fully (may dispatch helpers) → finalize the plan → only then decompose, dispatch, and manage.',
   preparingWorkers: (n: number, names: string) => `⏳ falinks is preparing ${n} workers (${names})…`,
   preparingHint: 'On first launch each worker waits for its CLI to be ready, which may take a dozen seconds — please hold on.',
@@ -229,6 +232,9 @@ export const en: typeof zh = {
   toolDescTodoplan: '[todo mode · lead only] when boss explicitly asks for todo-mode execution, batch-create the finalized task breakdown: todoplan(tasks:[one per task], replace?). You MUST get boss approval via ask(to:"boss") before todostart; pass replace:true to revise a list you just created.',
   toolDescTodostart: '[todo mode · lead only] start the prepared task list: todostart(nudgeMinutes?). Requires explicit boss approval via ask first; resuming a paused list is the boss\'s call (/todo resume), not this tool.',
   toolDescTaskwait: '(lead only) Declare the current task is waiting on an external process (long script/CI/background tests); idle nudges pause for `minutes` (1-120). `reason` is shown to the boss. Still call taskdone when actually finished.',
+  toolDescLeadstate: '[todo mode · lead only] Write/replace your "project state doc": leadstate(content). This is your cross-session memory — it is reloaded after a periodic reset or restart. Refresh it alongside each taskdone; keep it concise and curated (goal/scope, key decisions & rationale, conventions & gotchas, done, next), replacing the whole doc rather than appending a log.',
+  leadResetSkippedNoDoc: '[lead reset skipped] Due for a periodic reset but the lead has no project state doc (leadstate) yet — skipping to avoid amnesia. Prompt the lead to maintain its memory via leadstate.',
+  leadMemoryOff: 'Lead memory is off (config.todo.leadReset.enabled=false); leadstate had no effect.',
 
   // —— templates.ts ——
   roleBootstrap: (role: string) => `Your duties: ${role}. Keep it concise, no fluff.`,
@@ -250,13 +256,16 @@ export const en: typeof zh = {
 
   // —— todolist message templates (dispatch/nudge sent as boss; summary sent as falinks) ——
   todoDispatchMsg: (seq: number, pos: number, total: number, body: string, isResend: boolean) =>
-    `[Task #${seq} · ${pos}/${total}]${isResend ? ' (resend)' : ''} ${body}\nCall taskdone(seq:${seq}, status:"done"|"failed", result:"…") when finished — the next task is only dispatched after that. If you are waiting on a long script/external process, call taskwait(seq:${seq}, minutes:est, reason:"…") to pause nudges. Do not reply to this via sendmsg; normal team/boss communication is fine meanwhile.`,
+    `[Task #${seq} · ${pos}/${total}]${isResend ? ' (resend)' : ''} ${body}\n` +
+    `You are the team lead (coordinator): decompose this task into subtasks and dispatch them via sendmsg to the right workers (frontend/backend/qa…); you only coordinate dependencies, track progress, and aggregate results — do not do the work yourself. ` +
+    (isResend ? '' : '⚠ This round all workers are brand-new sessions with no memory — when dispatching, fully brief them on background, goals, and acceptance criteria. ') +
+    `Done means: only after every worker you dispatched has finished and reported back do you call taskdone(seq:${seq}, status:"done"|"failed", result:"…"); the next task is dispatched only after that — reporting early would cut off their in-progress work. If waiting on a long script/external process, call taskwait(seq:${seq}, minutes:est, reason:"…"). Do not reply to this via sendmsg; normal team/boss communication is fine meanwhile.`,
   todoNudgeMsg: (seq: number, pos: number, total: number, body: string, nextMinutes: number, escalated: boolean) =>
     `[Task #${seq} (${pos}/${total}) progress check] Everyone has been idle for a while with no report. Task: ${body}\n` +
     (escalated
       ? `If this task is actually finished, #${seq} is still open — call taskdone(seq:${seq}, status:"done"|"failed", result:"…") NOW;`
       : `If finished, call taskdone(seq:${seq}, status:"done"|"failed", result:"…");`) +
-    ` if still in progress, carry on; if waiting on a long script/external process, call taskwait(seq:${seq}, minutes:est, reason:"…"). Do not message teammates just because of this reminder. Next check in ${nextMinutes} min if unreported.`,
+    ` if still in progress, carry on; if not yet dispatched, decompose and dispatch to workers; if waiting on a long script/external process, call taskwait(seq:${seq}, minutes:est, reason:"…"). Do not message teammates just because of this reminder. Next check in ${nextMinutes} min if unreported.`,
   todoSummaryTitle: (done: number, failed: number, total: number) => `[todolist finished] ${total} tasks: ✅ ${done} succeeded · ❌ ${failed} failed`,
   todoSummaryLine: (seq: number, ok: boolean, body: string, result: string) => `${ok ? '✅' : '❌'} #${seq} ${body} — ${result}`,
   todoPlannedMsg: (from: string, n: number) => `[todo mode] lead ${from} created a ${n}-task list — /todo list to review; the lead will start it after your approval (or run /todo start yourself).`,

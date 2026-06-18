@@ -44,6 +44,8 @@ export interface BusDeps {
   onShutdown?(closePanes: boolean): Promise<{ ok: boolean }>;
   onLang?(locale: 'zh' | 'en' | 'auto'): Promise<'zh' | 'en'>;
   onSetLead?(name: string): Promise<{ ok: boolean; error?: string }>;
+  /** 运行时改 lead 周期重置配置并写回 config 文件。 */
+  onLeadReset?(p: { enabled?: boolean; every?: number }): Promise<{ ok: boolean; error?: string; enabled?: boolean; every?: number }>;
   /** 重启某员工的 CLI(带正确 MCP 配置;fresh=清会话记录全新开局)。 */
   onRestartAgent?(name: string, fresh: boolean): Promise<{ ok: boolean; error?: string }>;
   /** 返回最近的诊断事件(守卫丢消息/注入失败/可疑自动 idle)；缺省视为无诊断。 */
@@ -57,6 +59,8 @@ export interface BusDeps {
     state(): unknown;
     /** lead 批量建单(todoplan 工具):from=调用者名(通知留痕用)。 */
     plan(tasks: string[], replace: boolean, from: string): { ok: boolean; error?: string; seqs?: number[] };
+    /** lead 写/换项目状态档(leadstate 工具)。 */
+    leadstate(content: string): { ok: boolean; error?: string };
   };
 }
 
@@ -174,6 +178,16 @@ function serverForAgent(agentName: string, deps: BusDeps, questions: QuestionSto
     if (!deps.todo) return ok({ ok: false, error: 'todolist not available' });
     if (!router.get(agentName)?.lead) return ok({ ok: false, error: 'only the lead can call taskwait' });
     return ok(deps.todo.taskwait(seq, minutes, reason ?? ''));
+  });
+
+  server.registerTool('leadstate', {
+    description: t().toolDescLeadstate,
+    inputSchema: { content: z.string() },
+  }, async ({ content }) => {
+    touch();
+    if (!deps.todo) return ok({ ok: false, error: 'todolist not available' });
+    if (!router.get(agentName)?.lead) return ok({ ok: false, error: 'only the lead can call leadstate' });
+    return ok(deps.todo.leadstate(content));
   });
 
   return server;
@@ -338,6 +352,10 @@ export async function startBus(deps: BusDeps, port: number, opts?: BusOptions): 
         } catch (e: any) {
           return sendJson({ ok: false, error: String(e?.message ?? e) });
         }
+      }
+      if (req.method === 'POST' && url.pathname === '/admin/leadreset') {
+        if (!deps.onLeadReset) return sendJson({ ok: false, error: 'not supported' });
+        return sendJson(await deps.onLeadReset({ enabled: abody.enabled, every: abody.every }));
       }
       res.writeHead(404); res.end('unknown admin route');
       return;

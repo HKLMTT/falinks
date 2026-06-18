@@ -67,6 +67,6 @@ test('todoSubState 在 "/todo " 之后给子命令补全', () => {
   const s = todoSubState('/todo st');
   expect(s.active).toBe(true);
   expect(s.matches).toEqual(['start', 'stop']);
-  expect(todoSubState('/todo ').matches.length).toBe(7);
+  expect(todoSubState('/todo ').matches.length).toBe(8);
   expect(todoSubState('/clear x').active).toBe(false);
 });

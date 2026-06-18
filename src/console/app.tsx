@@ -191,6 +191,11 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
         setStatus(r.ok ? (a.op === 'add' && typeof r.seq === 'number' ? t().todoAddOk(r.seq) : t().todoOpOk(a.op)) : '⚠ ' + (r.error ?? t().unknownError));
         return;
       }
+      if (a.kind === 'leadreset') {
+        const r = await admin(port, 'POST', '/admin/leadreset', { enabled: a.enabled, every: a.every });
+        setStatus(r.ok ? t().leadResetSet(r.enabled as boolean, r.every as number) : '⚠ ' + (r.error ?? t().unknownError));
+        return;
+      }
       if (a.kind === 'clear') {
         const r = await admin(port, 'POST', '/admin/clear', { name: a.name });
         // /clear 全员(无名)成功:重置 committed——视口自绘,数据清了屏就清了(alt screen 无 scrollback 残留)。

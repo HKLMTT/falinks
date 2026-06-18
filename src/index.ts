@@ -27,6 +27,7 @@ import { saveSettings } from './settings.js';
 import { TodoEngine } from './core/todo.js';
 import { loadTodo, saveTodo } from './todo-store.js';
 import type { TodoTask } from './todo-store.js';
+import { loadLeadState, saveLeadState, clearLeadState } from './leadstate-store.js';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -129,6 +130,29 @@ export async function up(configPath: string) {
       router.send('falinks', 'boss', t().todoStalledMsg(task.seq, n, intervalMinutes));
       try { appendDiag(launchCwd, { kind: 'todo-stalled', seq: task.seq, n, ts: Date.now() }); } catch { /* 诊断落盘失败不致命 */ }
     },
+    resetWorkers: () => {
+      const lead = currentLead();
+      if (!lead) return; // 无 lead:不清(否则下面 name!==lead 对 undefined 恒真,会误清所有员工)
+      const targets = router.roster()
+        .filter((a) => !a.virtual && a.name !== lead && !restarting.has(a.name) && !clearing.has(a.name))
+        .map((a) => a.name);
+      void Promise.all(targets.map((nm) => clearOneWorker(nm).catch(() => {}))); // fire-and-forget:引擎不等待
+    },
+    resetLead: () => {
+      const lead = currentLead();
+      if (!cfg.todo?.leadReset.enabled || !lead) return;
+      if (!loadLeadState(launchCwd)) { // 无文档:重置会致失忆,跳过 + 边沿提醒
+        router.send('falinks', 'boss', t().leadResetSkippedNoDoc);
+        return;
+      }
+      void clearOneWorker(lead).catch(() => {}); // 重注入含文档的 bootstrap;下一条任务经 hold 队列在其后落地
+    },
+    wipeLeadMemory: () => {
+      clearLeadState(launchCwd);
+      const lead = currentLead();
+      if (lead) { const spec = cfg.agents.find((x) => x.name === lead); if (spec) bootstraps.set(lead, composeBootstrap(spec)); }
+    },
+    leadResetEvery: () => (cfg.todo?.leadReset.enabled ? cfg.todo.leadReset.everyTasks : 0),
     removedByBossText: () => t().todoRemovedByBoss,
     persist: (st) => { try { saveTodo(launchCwd, st); } catch { /* 落盘失败不致命,内存继续 */ } },
   }, loadTodo(launchCwd));
@@ -139,9 +163,15 @@ export async function up(configPath: string) {
 
   // 组装员工完整 bootstrap:协作规则 + 身份 + 职责;组长额外追加"协调者工作法"(设计优先)。
   // launchInto 与运行时 /lead(onSetLead)共用,保证 /clear 重注入、换 lead 后内容一致。
-  const composeBootstrap = (a: { name: string; role?: string; lead?: boolean; bootstrap?: string }): string =>
-    `${t().houseRules}\n${t().identityLine(a.name, a.role)}${a.bootstrap ?? ''}` +
-    (a.lead ? `\n${t().coordinatorRules}` : '');
+  const composeBootstrap = (a: { name: string; role?: string; lead?: boolean; bootstrap?: string }): string => {
+    let s = `${t().houseRules}\n${t().identityLine(a.name, a.role)}${a.bootstrap ?? ''}`;
+    if (a.lead) {
+      s += `\n${t().coordinatorRules}`;
+      const doc = cfg.todo?.leadReset.enabled ? loadLeadState(launchCwd) : '';
+      if (doc) s += `\n【项目状态(续接用,这是你上一段会话沉淀的记忆)】\n${doc}`;
+    }
+    return s;
+  };
 
   async function launchInto(
     anchor: string,
@@ -271,6 +301,24 @@ export async function up(configPath: string) {
     removeInstanceFile(instancePath(launchCwd)); // 确认死了/张冠李戴:清掉尸体
   }
 
+  // 单员工清空序列:/clear → 等待 → 重注入 bootstrap(恢复身份+重新 register)。onClear 与 todo resetWorkers 共用,避免逻辑漂移。
+  async function clearOneWorker(nm: string): Promise<boolean> {
+    const sid = sessions.get(nm);
+    if (!sid) return false;
+    clearing.add(nm);   // 清空期间健康轮询别自动 onIdle
+    router.hold(nm);    // 标忙→发来的消息排队,不投进正在清空的 pane
+    try {
+      await driver.inject(sid, '/clear', true);   // claude/codex 同名:清空上下文、开新会话
+      await sleep(1500);
+      const bs = bootstraps.get(nm);
+      if (bs) armRegisterExpectation(nm); // 先布防再注入:重注入失败(拥堵超时)也要 90s 亮 ⚠
+      if (bs) await driver.inject(sid, bs, true); // 重注入 bootstrap:恢复身份+重新 register
+      return true;
+    } finally {
+      clearing.delete(nm);
+    }
+  }
+
   let portWarning = ''; // 显式端口被占回退时的提示;控制台模式 stderr 会被清屏吞掉,改走首条 status
   bus = await startBus({
     router,
@@ -317,23 +365,16 @@ export async function up(configPath: string) {
       if (name && restarting.has(name)) return { ok: false, error: t().restartBusy(name) };
       const targets = (name ? [name] : router.roster().filter((a) => !a.virtual).map((a) => a.name))
         .filter((nm) => !restarting.has(nm)); // 全员清时跳过重启中的人:别把 /clear 注进正在关闭的 pane
+      const lead = currentLead();
+      if (lead && targets.includes(lead)) {
+        clearLeadState(launchCwd);
+        const spec = cfg.agents.find((x) => x.name === lead);
+        if (spec) bootstraps.set(lead, composeBootstrap(spec)); // 此刻文档已删 → 不含文档 = 白纸
+      }
       const cleared: string[] = [];
       // 并发清空：每个员工各自 /clear → 等一下 → 重注入 bootstrap，互不阻塞（总耗时≈单个，不再 N 倍）。
       await Promise.all(targets.map(async (nm) => {
-        const sid = sessions.get(nm);
-        if (!sid) return;
-        clearing.add(nm);                             // 清空期间健康轮询别自动 onIdle
-        router.hold(nm);                              // 标忙→发来的消息排队，不投进正在清空的 pane
-        try {
-          await driver.inject(sid, '/clear', true);   // claude/codex 同名：清空上下文、开新会话
-          await sleep(1500);
-          const bs = bootstraps.get(nm);
-          if (bs) armRegisterExpectation(nm); // 先布防再注入：重注入失败（拥堵超时）也要 90s 亮 ⚠，不能无告警裸奔
-          if (bs) await driver.inject(sid, bs, true); // 重注入 bootstrap：恢复身份+重新 register（→idle→投出排队消息）
-          cleared.push(nm);
-        } finally {
-          clearing.delete(nm);
-        }
+        if (await clearOneWorker(nm)) cleared.push(nm);
       }));
       // 全员 /clear（未指定 name）：连 boss 的历史对话流水也一并清空（内存 + 持久化）。
       // 指定某个 AI 时只清那一个 pane 的上下文，boss 历史保留。
@@ -437,8 +478,29 @@ export async function up(configPath: string) {
         }
       },
       state: () => todo.state(),
+      leadstate: (content: string) => {
+        if (!cfg.todo?.leadReset.enabled) return { ok: false, error: t().leadMemoryOff };
+        saveLeadState(launchCwd, content);
+        const lead = currentLead();
+        if (lead) { const spec = cfg.agents.find((x) => x.name === lead); if (spec) bootstraps.set(lead, composeBootstrap(spec)); }
+        return { ok: true };
+      },
     },
     getDiag: () => { try { return loadDiag(launchCwd); } catch { return []; } },
+    onLeadReset: async ({ enabled, every }) => {
+      if (!cfg.todo) cfg.todo = { leadReset: { enabled: true, everyTasks: 5 } };
+      if (enabled !== undefined) cfg.todo.leadReset.enabled = enabled;
+      if (every !== undefined) {
+        if (!Number.isInteger(every) || every <= 0) return { ok: false, error: 'everyTasks must be a positive integer' };
+        cfg.todo.leadReset.everyTasks = every;
+      }
+      try {
+        const raw = JSON.parse(readFileSync(configPath, 'utf8'));
+        raw.todo = { ...raw.todo, leadReset: { ...cfg.todo.leadReset } };
+        writeFileSync(configPath, JSON.stringify(raw, null, 2));
+      } catch { /* 写回失败不致命,内存已生效 */ }
+      return { ok: true, enabled: cfg.todo.leadReset.enabled, every: cfg.todo.leadReset.everyTasks };
+    },
   }, cfg.busPort ?? 0, {
     identity: { cwd: launchCwd, startedAt: Date.now() },
     onPortFallback: (wanted, got) => { portWarning = t().portFallback(wanted, got); },
