@@ -209,7 +209,7 @@ export const zh = {
     '① 先和老板(boss)把需求与细节聊清楚——用 ask(to="boss", …) 对关键决策做选择题、用 sendmsg(to="boss", …) 追问不明确处,确认目标、范围、约束、验收标准。' +
     '② 用 superpowers 技能做设计:先用 brainstorming 技能探讨方案与取舍,再用 writing-plans 技能写出明确的设计/实现计划。设计阶段可以调度其他员工协助你(让他们调研代码、找资料、对方案提建议),但此阶段严禁让任何人开始编码。' +
     '③ 方案敲定后,再把它拆解成具体任务,用 sendmsg 逐一分派给对应员工(前端/后端/测试…),然后持续管理:跟进进度、协调依赖、汇总结果、必要时复盘。' +
-    '④ 当 boss 明确要求用 todo 模式执行时:拆解定稿后调用 todoplan(tasks:[每条一个任务]) 建成清单 → 用 ask(to:"boss") 确认是否开始执行(选项里给巡查间隔,如「开始(巡查10分钟)/开始(巡查30分钟)/暂不」)→ boss 同意后调 todostart(nudgeMinutes) 启动;之后每完成一条用 taskdone(seq, status, result) 上报,系统会自动下发下一条。未经 boss 同意绝不 todostart;要修订刚建的清单用 todoplan(…, replace:true)。' +
+    '④ 当 boss 明确要求用 todo 模式执行时:拆解定稿后调用 todoplan(tasks:[每条一个任务]) 建成清单 → 用 ask(to:"boss") 确认是否开始执行(选项里给巡查间隔,如「开始(巡查10分钟)/开始(巡查30分钟)/暂不」)→ boss 同意后调 todostart(nudgeMinutes) 启动;之后每完成一条用 taskdone(seq, status, result) 上报,系统会自动下发下一条。未经 boss 同意绝不 todostart;要修订刚建的清单用 todoplan(…, replace:true)。todo 模式下每条任务下发时系统会把其他员工重置为全新会话,你需对他们完整交底,且只有所有分派出去的员工都回报后才调 taskdone。' +
     '一句话:对齐需求 → 完整设计(可调度协助) → 方案定稿 → 才拆解、分派、管理。',
   preparingWorkers: (n: number, names: string) => `⏳ falinks 正在准备 ${n} 名员工（${names}）…`,
   preparingHint: '首次启动每个员工要等 CLI 就绪，可能十几秒，请稍候。',
@@ -256,13 +256,16 @@ export const zh = {
 
   // —— todolist 消息模板(下发/巡查以 boss 名义、自包含;汇总以 falinks 名义入流水)——
   todoDispatchMsg: (seq: number, pos: number, total: number, body: string, isResend: boolean) =>
-    `【任务 #${seq}·第 ${pos}/${total} 条】${isResend ? '(重发)' : ''}${body}\n完成后调用 taskdone(seq:${seq}, status:"done"|"failed", result:"…")上报,系统才会下发下一条;如需等待长时间脚本/外部过程,调 taskwait(seq:${seq}, minutes:预计分钟, reason:"…")声明等待,期间暂停巡查。勿用 sendmsg 回复本条,过程中可照常与团队/boss 沟通。`,
+    `【任务 #${seq}·第 ${pos}/${total} 条】${isResend ? '(重发)' : ''}${body}\n` +
+    `你是本团队的组长(协调者):请把本任务拆解成子任务、用 sendmsg 分派给对应员工(前端/后端/测试…)执行,你只负责协调依赖、跟进进度、汇总结果,不要自己动手包办。` +
+    (isResend ? '' : '⚠ 本轮员工均为全新会话、无任何历史记忆,分派时务必把背景、目标、验收标准一次交代清楚。') +
+    `完成判定:只有当你分派出去的所有员工都已完成并向你回报后,才调 taskdone(seq:${seq}, status:"done"|"failed", result:"…")上报,系统才会下发下一条——否则会中断他们正在进行的工作。如需等待长脚本/外部过程,调 taskwait(seq:${seq}, minutes:预计分钟, reason:"…")声明等待。勿用 sendmsg 回复本条,过程中可照常与团队/boss 沟通。`,
   todoNudgeMsg: (seq: number, pos: number, total: number, body: string, nextMinutes: number, escalated: boolean) =>
     `【任务 #${seq}(第 ${pos}/${total} 条)进度巡查】全员空闲已久仍未收到上报。任务内容:${body}\n` +
     (escalated
       ? `若该任务实际已完成,说明 #${seq} 仍未关闭——请立即调 taskdone(seq:${seq}, status:"done"|"failed", result:"…")上报;`
       : `已完成请调 taskdone(seq:${seq}, status:"done"|"failed", result:"…");`) +
-    `仍在推进则继续即可;如在等待长时间脚本/外部过程,调 taskwait(seq:${seq}, minutes:预计分钟, reason:"…")声明等待。勿因本提醒向队友发起额外沟通。未上报则 ${nextMinutes} 分钟后再次巡查。`,
+    `仍在推进则继续即可;如仍未分派,请把任务拆解后分派给员工执行;如在等待长时间脚本/外部过程,调 taskwait(seq:${seq}, minutes:预计分钟, reason:"…")声明等待。勿因本提醒向队友发起额外沟通。未上报则 ${nextMinutes} 分钟后再次巡查。`,
   todoSummaryTitle: (done: number, failed: number, total: number) => `【todolist 跑完】共 ${total} 条:✅ ${done} 成 · ❌ ${failed} 败`,
   todoSummaryLine: (seq: number, ok: boolean, body: string, result: string) => `${ok ? '✅' : '❌'} #${seq} ${body} — ${result}`,
   todoPlannedMsg: (from: string, n: number) => `【todo 模式】组长 ${from} 已建 ${n} 条任务清单,/todo list 查看;待 boss 确认后由组长启动(或你直接 /todo start)。`,
