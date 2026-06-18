@@ -25,6 +25,12 @@ export interface TodoCallbacks {
   announceStalled(task: TodoTask, n: number, intervalMinutes: number): void;
   /** todo 模式:推进到新任务时同步调用一次,实现方异步把非 lead 员工重置为全新会话(引擎不等待)。 */
   resetWorkers(): void;
+  /** todo 模式:每 K 条完成时,推进新任务前重置 lead(实现方 = clearOneWorker(lead),含文档重加载)。 */
+  resetLead(): void;
+  /** /todo clear 弃单时:删除 lead 项目状态档(白纸)。 */
+  wipeLeadMemory(): void;
+  /** 当前重置周期 K(实现方现取 config);返回 0 表示关闭,引擎永不触发 resetLead。 */
+  leadResetEvery(): number;
   removedByBossText(): string;
   persist(st: TodoState): void;
 }
@@ -86,6 +92,7 @@ export class TodoEngine {
       this.st.tasks.push(task);
       return task.seq;
     });
+    this.st.completedSinceLeadReset = 0; // 新一摊活:重置 lead 重置计数
     this.cb.persist(this.st);
     return { ok: true, seqs };
   }
@@ -121,7 +128,8 @@ export class TodoEngine {
 
   clear(): TodoResult {
     if (this.st.state === 'running') return { ok: false, error: 'todolist is running — /todo stop first' };
-    this.st = { state: 'idle', nudgeMinutes: this.st.nudgeMinutes, tasks: [] };
+    this.cb.wipeLeadMemory(); // 弃单 → 删 lead 记忆(白纸)
+    this.st = { state: 'idle', nudgeMinutes: this.st.nudgeMinutes, tasks: [], completedSinceLeadReset: 0 };
     if (this.lastDispatchId) this.cb.cancelQueued(this.lastDispatchId); // 旧下发可能还在 inbox 排队:撤掉,防 boss 已移除的任务事后送达
     this.lastDispatchId = undefined;
     this.cb.persist(this.st);
@@ -167,6 +175,7 @@ export class TodoEngine {
     cur.status = status;
     cur.result = result;
     cur.ts = this.cb.now();
+    this.st.completedSinceLeadReset = (this.st.completedSinceLeadReset ?? 0) + 1;
     this.lastDispatchId = undefined;
     if (this.st.state === 'running') this.dispatchNext(false); // 内含 persist(及 clearWait)
     else { this.clearWait(); this.cb.persist(this.st); }       // paused:只记录,resume 再推进;等待声明随完结作废
@@ -253,6 +262,13 @@ export class TodoEngine {
       task.status = 'current';
     }
     if (!isResend) this.cb.resetWorkers(); // 仅新任务推进时重置员工(重发=同一 current,员工可能在干,不清)
+    if (!isResend) {
+      const k = this.cb.leadResetEvery();
+      if (k > 0 && (this.st.completedSinceLeadReset ?? 0) >= k) {
+        this.cb.resetLead();
+        this.st.completedSinceLeadReset = 0;
+      }
+    }
     const id = this.cb.dispatch(task, this.st.tasks.indexOf(task) + 1, this.st.tasks.length, isResend);
     if (id) { this.lastDispatchId = id; this.noteSendOk(); }
     else this.noteSendFail(); // 下发被丢:不标已派发,巡查模板自包含,满 N 自然兜底重试

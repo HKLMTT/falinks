@@ -137,6 +137,9 @@ export async function up(configPath: string) {
         .map((a) => a.name);
       void Promise.all(targets.map((nm) => clearOneWorker(nm).catch(() => {}))); // fire-and-forget:引擎不等待
     },
+    resetLead: () => {}, // TODO(Task 5)
+    wipeLeadMemory: () => {}, // TODO(Task 5)
+    leadResetEvery: () => 0, // TODO(Task 5):读 cfg
     removedByBossText: () => t().todoRemovedByBoss,
     persist: (st) => { try { saveTodo(launchCwd, st); } catch { /* 落盘失败不致命,内存继续 */ } },
   }, loadTodo(launchCwd));

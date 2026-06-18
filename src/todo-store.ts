@@ -14,11 +14,12 @@ export interface TodoState {
   state: 'idle' | 'running' | 'paused' | 'finished';
   nudgeMinutes: number; // 巡查间隔 N(分钟),默认 10
   tasks: TodoTask[];
+  completedSinceLeadReset?: number; // 距上次 lead 重置以来已完成条数;驱动每 K 条周期重置
   waitUntil?: number;  // taskwait 等待声明截止时刻(ms):等待期内暂停巡查;随档落盘但 loadTodo 不恢复
   waitReason?: string; // 等待原因(boss 进度行/公告可见)
 }
 
-const EMPTY = (): TodoState => ({ state: 'idle', nudgeMinutes: 10, tasks: [] });
+const EMPTY = (): TodoState => ({ state: 'idle', nudgeMinutes: 10, tasks: [], completedSinceLeadReset: 0 });
 
 /** 每个项目一份:~/.falinks/todos/<projectKey>.json。root 可注入便于测试。 */
 export function todoPath(launchCwd: string, root = runtimeDir()): string {
@@ -35,6 +36,7 @@ export function loadTodo(launchCwd: string, root = runtimeDir()): TodoState {
       state: raw.state === 'running' ? 'paused' : (raw.state ?? 'idle'),
       nudgeMinutes: typeof raw.nudgeMinutes === 'number' && raw.nudgeMinutes > 0 ? raw.nudgeMinutes : 10,
       tasks: Array.isArray(raw.tasks) ? raw.tasks : [],
+      completedSinceLeadReset: typeof raw.completedSinceLeadReset === 'number' ? raw.completedSinceLeadReset : 0,
     };
     // waitUntil/waitReason 有意不恢复:重启后清单必经 paused→resume 重发,旧等待声明随旧会话作废。
     return st;
