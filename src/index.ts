@@ -325,6 +325,34 @@ export async function up(configPath: string) {
     }
   }
 
+  // 重启某 agent 的 CLI(复用:/restart 与「/clear=重启换 id」)。fresh=true 清会话记录→launchInto 全新 --session-id,
+  // 由 IIFE 落回 store→重启可 --resume 到这个新会话。关旧 pane+切新 pane,故不可并行调用(锚点竞态)。
+  async function relaunchAgent(name: string, fresh: boolean): Promise<{ ok: boolean; error?: string }> {
+    const spec = cfg.agents.find((x) => x.name === name);
+    if (!spec || !router.get(name)) return { ok: false, error: `unknown agent: ${name}` };
+    if (restarting.has(name) || clearing.has(name)) return { ok: false, error: t().restartBusy(name) };
+    restarting.add(name);
+    try {
+      if (fresh) { delete store.agents[name]; saveStore(launchCwd, store); }
+      router.markLaunching(name); // inbox 保留,重新 register 后照常投递
+      forgetAgentState(name);
+      const sid = sessions.get(name);
+      if (sid) {
+        await driver.closePane(sid).catch(() => {});
+        sessions.delete(name);
+        if (sid === lastRight) lastRight = consoleSid; // 关的是锚点 → 复位
+      }
+      const anchor = await chooseAnchor(lastRight, consoleSid, (s) => driver.paneExists(s));
+      lastRight = await launchInto(anchor, 'horizontal', spec);
+      return { ok: true };
+    } catch (e: any) {
+      router.markDead(name);
+      return { ok: false, error: String(e?.message ?? e) };
+    } finally {
+      restarting.delete(name);
+    }
+  }
+
   let portWarning = ''; // 显式端口被占回退时的提示;控制台模式 stderr 会被清屏吞掉,改走首条 status
   bus = await startBus({
     router,
@@ -370,18 +398,16 @@ export async function up(configPath: string) {
       if (name && !sessions.has(name)) return { ok: false, error: `unknown agent: ${name}` };
       if (name && restarting.has(name)) return { ok: false, error: t().restartBusy(name) };
       const targets = (name ? [name] : router.roster().filter((a) => !a.virtual).map((a) => a.name))
-        .filter((nm) => !restarting.has(nm)); // 全员清时跳过重启中的人:别把 /clear 注进正在关闭的 pane
+        .filter((nm) => !restarting.has(nm));
+      // lead 文档:/clear 删档(白纸)。重启前抹掉,launchInto 的 composeBootstrap 现读即得空档。
       const lead = currentLead();
-      if (lead && targets.includes(lead)) {
-        clearLeadState(launchCwd);
-        const spec = cfg.agents.find((x) => x.name === lead);
-        if (spec) bootstraps.set(lead, composeBootstrap(spec)); // 此刻文档已删 → 不含文档 = 白纸
-      }
+      if (lead && targets.includes(lead)) clearLeadState(launchCwd);
+      // /clear 改为「重启换新 session id」:重启 falinks 时能 --resume 到 clear 后的会话(而非 clear 前的旧会话)。
+      // 重启关旧 pane+切新 pane,不可并行(锚点竞态),故串行;比注入 /clear 慢,但可恢复。
       const cleared: string[] = [];
-      // 并发清空：每个员工各自 /clear → 等一下 → 重注入 bootstrap，互不阻塞（总耗时≈单个，不再 N 倍）。
-      await Promise.all(targets.map(async (nm) => {
-        if (await clearOneWorker(nm)) cleared.push(nm);
-      }));
+      for (const nm of targets) {
+        if ((await relaunchAgent(nm, true)).ok) cleared.push(nm);
+      }
       // 全员 /clear（未指定 name）：连 boss 的历史对话流水也一并清空（内存 + 持久化）。
       // 指定某个 AI 时只清那一个 pane 的上下文，boss 历史保留。
       if (!name) {
@@ -434,32 +460,7 @@ export async function up(configPath: string) {
       if (cur && cur !== name) router.send('boss', cur, t().leadRevokedMsg);
       return { ok: true };
     },
-    onRestartAgent: async (name, fresh) => {
-      const spec = cfg.agents.find((x) => x.name === name);
-      if (!spec || !router.get(name)) return { ok: false, error: `unknown agent: ${name}` };
-      if (restarting.has(name) || clearing.has(name)) return { ok: false, error: t().restartBusy(name) };
-      restarting.add(name);
-      try {
-        if (fresh) { delete store.agents[name]; saveStore(launchCwd, store); } // fresh:清会话记录→launchInto 走全新开局
-        // 注意:旧 launch 的后台 IIFE 可能在 fresh 删除后仍把旧 sessionId 写回 store(窄竞态,可接受;再 /restart fresh 一次即可)。
-        router.markLaunching(name); // inbox 保留,重新 register 后照常投递
-        forgetAgentState(name);
-        const sid = sessions.get(name);
-        if (sid) { // 上次重启失败后 sessions 可能已无此人:pane 已不在,跳过关闭,仍可重建
-          await driver.closePane(sid).catch(() => {});
-          sessions.delete(name);
-          if (sid === lastRight) lastRight = consoleSid; // 关的是锚点 → 复位
-        }
-        const anchor = await chooseAnchor(lastRight, consoleSid, (s) => driver.paneExists(s));
-        lastRight = await launchInto(anchor, 'horizontal', spec);
-        return { ok: true };
-      } catch (e: any) {
-        router.markDead(name); // 留在花名册标 dead:用户可再 /restart(无 sid 路径)重试,不会卡死
-        return { ok: false, error: String(e?.message ?? e) };
-      } finally {
-        restarting.delete(name);
-      }
-    },
+    onRestartAgent: async (name, fresh) => relaunchAgent(name, fresh),
     todo: {
       taskdone: (seq, status, result) => todo.taskdone(seq, status, result),
       taskwait: (seq, minutes, reason) => todo.taskwait(seq, minutes, reason),
