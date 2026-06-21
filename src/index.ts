@@ -313,6 +313,12 @@ export async function up(configPath: string) {
       const bs = bootstraps.get(nm);
       if (bs) armRegisterExpectation(nm); // 先布防再注入:重注入失败(拥堵超时)也要 90s 亮 ⚠
       if (bs) await driver.inject(sid, bs, true); // 重注入 bootstrap:恢复身份+重新 register
+      // /clear 已让 claude/codex 开了新 session,但 falinks 无法无侵入地得知新 id
+      //(/status 是模态屏会卡住 claude;共享 cwd 下文件系统也无法区分)。
+      // 故删 store 条目:重启走 fresh(全新会话+重注入 bootstrap;lead 还会重载 leadstate 文档),
+      // 绝不 --resume 到 clear 之前的旧会话。代价:clear 后那段会话重启不恢复(对「清空」语义可接受)。
+      delete store.agents[nm];
+      saveStore(launchCwd, store);
       return true;
     } finally {
       clearing.delete(nm);
