@@ -11,28 +11,6 @@ export function parseStatusSessionId(screen: string, cli: 'claude' | 'codex'): s
   return m ? m[1].toLowerCase() : null;
 }
 
-/**
- * 反复注入 /status 读屏,抓出当前 session id。用于 codex 首启、以及 /clear 后(claude/codex 都会开新 session,
- * 必须重新抓 id 写回 store,否则重启 --resume 会恢复到 clear 之前的旧会话)。
- * 依赖全部注入便于单测。抓不到返回 null(调用方据此退化为 fresh,绝不留旧 id)。
- */
-export async function captureSessionIdViaStatus(
-  cli: 'claude' | 'codex',
-  inject: () => Promise<unknown>,
-  readScreen: () => Promise<string>,
-  sleep: (ms: number) => Promise<unknown>,
-  retries = 8,
-  stepMs = 1800,
-): Promise<string | null> {
-  for (let i = 0; i < retries; i++) {
-    await inject();
-    await sleep(stepMs);
-    const id = parseStatusSessionId(await readScreen().catch(() => ''), cli);
-    if (id) return id;
-  }
-  return null;
-}
-
 /** claude 把每个项目的会话存在 ~/.claude/projects/<编码 cwd>/ 下，编码=把非字母数字全替成 '-'。 */
 export function encodeClaudeProjectDir(cwd: string): string {
   return cwd.replace(/[^a-zA-Z0-9]/g, '-');

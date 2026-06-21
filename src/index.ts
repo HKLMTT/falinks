@@ -17,7 +17,7 @@ import { paneBgColor } from './console/log-format.js';
 import { chooseAnchor } from './terminal/anchor.js';
 import { loadStore, saveStore, pruneToAgents, type SessionStore } from './session/store.js';
 import { decideClaudeSession, decideCodexSession } from './session/decide.js';
-import { captureSessionIdViaStatus } from './session/capture.js';
+import { parseStatusSessionId } from './session/capture.js';
 import { addAgentToConfigFile, removeAgentFromConfigFile } from './team-persist.js';
 import { bootstrapForRole } from './templates.js';
 import { loadMessageLog, appendMessageLog, clearMessageLog, MESSAGE_LOG_CAP } from './message-log.js';
@@ -261,13 +261,12 @@ export async function up(configPath: string) {
 
           // codex 首启：注入 /status 读屏抓 session id（轮询重试，员工忙时也能抓到）。
           if (!resuming) {
-            const captured = await captureSessionIdViaStatus(
-              'codex',
-              () => driver.inject(sid, '/status', true),
-              () => driver.readScreen(sid),
-              sleep,
-            );
-            if (captured) sid2 = captured;
+            for (let i = 0; i < 8; i++) {
+              await driver.inject(sid, '/status', true);
+              await sleep(1800);
+              const captured = parseStatusSessionId(await driver.readScreen(sid).catch(() => ''), 'codex');
+              if (captured) { sid2 = captured; break; }
+            }
           }
         }
 
@@ -314,20 +313,6 @@ export async function up(configPath: string) {
       const bs = bootstraps.get(nm);
       if (bs) armRegisterExpectation(nm); // 先布防再注入:重注入失败(拥堵超时)也要 90s 亮 ⚠
       if (bs) await driver.inject(sid, bs, true); // 重注入 bootstrap:恢复身份+重新 register
-      // /clear 已开新 session(claude/codex 都会):抓新 id 写回 store,让重启 --resume 到「最后关闭」的会话,
-      // 而非 clear 之前的旧会话(否则重启会把 clear/重置全废)。抓不到则删条目→退化为 fresh,绝不留旧 id。
-      const cli = cfg.agents.find((x) => x.name === nm)?.cli;
-      if (cli === 'claude' || cli === 'codex') {
-        const newId = await captureSessionIdViaStatus(
-          cli,
-          () => driver.inject(sid, '/status', true),
-          () => driver.readScreen(sid),
-          sleep,
-        );
-        if (newId) store.agents[nm] = { cli, sessionId: newId };
-        else delete store.agents[nm];
-        saveStore(launchCwd, store);
-      }
       return true;
     } finally {
       clearing.delete(nm);
