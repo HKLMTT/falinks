@@ -276,6 +276,7 @@ export const zh = {
   todoSummaryLine: (seq: number, ok: boolean, body: string, result: string) => `${ok ? '✅' : '❌'} #${seq} ${body} — ${result}`,
   todoPlannedMsg: (from: string, n: number) => `【todo 模式】组长 ${from} 已建 ${n} 条任务清单,/todo list 查看;待 boss 确认后由组长启动(或你直接 /todo start)。`,
   todoSuspendedMsg: '【todolist 挂起】当前没有组长,任务暂停下发;/lead 指定组长后自动继续。',
+  todoWorkersTimeoutMsg: '【todolist】部分员工尚未清空就绪(已等待超时),仍按计划把当前任务派给组长。',
   todoSendFailingMsg: '【todolist 告警】连续多次消息发送失败(守卫拦截或组长不可达),清单可能停滞,请检查。',
   todoWaitingMsg: (seq: number, minutes: number, reason: string) =>
     `【todolist】组长声明等待外部过程${reason ? `:${reason}` : ''},任务 #${seq} 巡查暂停 ${minutes} 分钟。`,

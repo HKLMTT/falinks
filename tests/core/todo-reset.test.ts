@@ -18,6 +18,8 @@ function mk() {
     announceWaiting: () => {},
     announceStalled: () => {},
     resetWorkers: () => { order.push('reset'); },
+    workersReady: () => true,
+    announceWorkersTimeout: () => {},
     resetLead: () => {},
     wipeLeadMemory: () => {},
     leadResetEvery: () => 0,

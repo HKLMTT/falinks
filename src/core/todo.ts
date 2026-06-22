@@ -18,6 +18,8 @@ export interface TodoCallbacks {
   cancelQueued(msgId: string): void;
   announceSummary(tasks: TodoTask[]): void;
   announceSuspended(): void;
+  /** 等员工就绪超时仍有人没准备好:仍按计划派发前向 boss 公告一次(边沿)。 */
+  announceWorkersTimeout(): void;
   announceSendFailing(): void;
   /** lead 经 taskwait 声明等待外部过程:向 boss 公告(消息流可见,知道为什么安静)。 */
   announceWaiting(task: TodoTask, minutes: number, reason: string): void;
@@ -25,6 +27,9 @@ export interface TodoCallbacks {
   announceStalled(task: TodoTask, n: number, intervalMinutes: number): void;
   /** todo 模式:推进到新任务时同步调用一次,实现方异步把非 lead 员工重置为全新会话(引擎不等待)。 */
   resetWorkers(): void;
+  /** 非 lead 员工是否全部就绪(re-register 完成、idle;dead/已移除不算阻塞)。
+   *  resetWorkers 后员工被 hold→busy,此处返回 false;引擎据此推迟派发,直到全员就绪或超时。 */
+  workersReady(): boolean;
   /** todo 模式:每 K 条完成时,推进新任务前重置 lead(实现方 = clearOneWorker(lead),含文档重加载)。 */
   resetLead(): void;
   /** /todo clear 弃单时:删除 lead 项目状态档(白纸)。 */
@@ -42,6 +47,7 @@ const FAIL_ANNOUNCE_AT = 3; // 连续发送失败这么多次 → 边沿公告�
 const WAIT_CAP_MIN = 120; // taskwait 单次等待上限(分钟):防 lead 一句声明把巡查睡死
 const BACKOFF_CAP_MIN = 60;   // 无果退避封顶(分钟);nudgeMinutes 配得更长时取后者
 const STALL_ANNOUNCE_AT = 3;  // 连续无果巡查达此次数 → 边沿告警一次(疑似已完成未关闭/停滞)
+const WORKERS_READY_TIMEOUT_MS = 60_000; // 等员工就绪上限:超时仍未全员就绪则照常派发(防单个员工没就绪永久卡死)
 
 export class TodoEngine {
   private st: TodoState;
@@ -49,6 +55,8 @@ export class TodoEngine {
   private lastDispatchId?: string; // 最近一次下发的消息 id(撤排队用;运行时瞬态,不落盘——重启后 inbox 本就清空)
   private idleSince?: number;      // 巡查计时锚点(下发/有人忙/巡查发出时刻);undefined=尚未开始计时
   private suspended = false;       // 运行时瞬态:无 lead 挂起
+  private awaitingWorkers = false;  // 运行时瞬态:已 resetWorkers、等员工就绪、当前任务尚未派给 lead
+  private awaitingSince?: number;   // 进入等待的时刻(超时兜底锚点)
   private failStreak = 0;
   private failAnnounced = false;
   private fruitlessNudges = 0; // 自上次进度信号(taskdone/taskwait/下发)以来的无果巡查次数:驱动指数退避
@@ -56,6 +64,9 @@ export class TodoEngine {
   constructor(private cb: TodoCallbacks, initial?: TodoState) {
     this.st = initial ?? { state: 'idle', nudgeMinutes: 10, tasks: [] };
     this.seqCounter = this.st.tasks.reduce((m, t) => Math.max(m, t.seq), 0);
+    // 重启载入的状态仍 running:置 suspended,首个「有 lead」的 tick 会 redispatch 把 current 重发给
+    // (重新拉起的)lead,不必干等一个 nudge 周期(默认 10 分钟)。无 lead 时照常等,且不会公告(suspended 已置)。
+    if (this.st.state === 'running') this.suspended = true;
   }
 
   /** 只读快照(GET /admin/todo / 控制台进度行)。 */
@@ -168,6 +179,15 @@ export class TodoEngine {
     return { ok: true };
   }
 
+  /** 换 lead 后把 current 立刻重发给新 lead(否则要等一个 nudge 周期新 lead 才接到活)。
+   *  仅 running + 有 lead 生效;复用 redispatch(先撤旧排队防叠两份)。换 lead 不重置员工(沿用 isResend 语义)。 */
+  redispatchCurrent(hasLead: boolean): void {
+    if (this.st.state !== 'running' || !hasLead) return;
+    if (this.awaitingWorkers) return; // 还没派发,等就绪门触发时 dispatch 回调自会解析到新 lead,无需干预
+    this.suspended = false;
+    this.redispatch();
+  }
+
   taskdone(seq: number, status: 'done' | 'failed', result: string): TodoResult {
     if (this.st.state !== 'running' && this.st.state !== 'paused') return { ok: false, error: 'no active todolist' };
     const cur = this.st.tasks.find((t) => t.status === 'current');
@@ -207,9 +227,27 @@ export class TodoEngine {
       if (!this.suspended) { this.suspended = true; this.cb.announceSuspended(); } // 边沿一次
       return;
     }
-    if (this.suspended) { // lead 回归:重发 current(新 lead 没上下文)
+    if (this.suspended) { // lead 回归
       this.suspended = false;
-      this.redispatch();
+      if (this.awaitingWorkers) {
+        this.awaitingSince = this.cb.now(); // 仍在等员工就绪:别立刻重发,重置就绪门锚点,落到下面的门继续等
+      } else {
+        this.redispatch(); // 重发 current(新 lead 没上下文)
+        return;
+      }
+    }
+    if (this.awaitingWorkers) { // 已 resetWorkers,等员工就绪再把当前任务派给 lead
+      const cur = this.st.tasks.find((t) => t.status === 'current');
+      if (!cur) { this.awaitingWorkers = false; this.awaitingSince = undefined; return; } // 防御:无 current 不该发生
+      const now = this.cb.now();
+      const ready = this.cb.workersReady();
+      const timedOut = now - (this.awaitingSince ?? now) >= WORKERS_READY_TIMEOUT_MS;
+      if (ready || timedOut) {
+        if (timedOut && !ready) this.cb.announceWorkersTimeout(); // 超时仍未全员就绪:公告一次后照常派发
+        this.doDispatch(cur, false);
+      } else {
+        this.idleSince = now; // 等待期不巡查,锚点持续推进
+      }
       return;
     }
     const cur = this.st.tasks.find((t) => t.status === 'current');
@@ -270,6 +308,23 @@ export class TodoEngine {
         this.st.completedSinceLeadReset = 0;
       }
     }
+    // 新任务:resetWorkers 后员工正被清空(hold),先等全员就绪再派给 lead——否则 lead 拿到任务
+    // 却没人可派,可能空等翻腾中的团队而卡死。就绪/超时由 tick 轮询(见 awaitingWorkers 分支)。
+    // 重发(resume/lead 回归)不重置员工,直接派发。
+    if (!isResend && !this.cb.workersReady()) {
+      this.awaitingWorkers = true;
+      this.awaitingSince = this.cb.now();
+      this.idleSince = this.cb.now();
+      this.cb.persist(this.st);
+      return;
+    }
+    this.doDispatch(task, isResend);
+  }
+
+  /** 真正把当前任务派给 lead(下发成功/失败记账、重置巡查锚点、清等员工标志、落盘)。 */
+  private doDispatch(task: TodoTask, isResend: boolean): void {
+    this.awaitingWorkers = false;
+    this.awaitingSince = undefined;
     const id = this.cb.dispatch(task, this.st.tasks.indexOf(task) + 1, this.st.tasks.length, isResend);
     if (id) { this.lastDispatchId = id; this.noteSendOk(); }
     else this.noteSendFail(); // 下发被丢:不标已派发,巡查模板自包含,满 N 自然兜底重试

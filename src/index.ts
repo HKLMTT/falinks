@@ -122,6 +122,10 @@ export async function up(configPath: string) {
       router.send('falinks', 'boss', `${t().todoSummaryTitle(done, failed, tasks.length)}\n${lines.join('\n')}`);
     },
     announceSuspended: () => { router.send('falinks', 'boss', t().todoSuspendedMsg); },
+    announceWorkersTimeout: () => {
+      router.send('falinks', 'boss', t().todoWorkersTimeoutMsg);
+      try { appendDiag(launchCwd, { kind: 'todo-workers-timeout', ts: Date.now() }); } catch { /* 诊断落盘失败不致命 */ }
+    },
     announceSendFailing: () => {
       router.send('falinks', 'boss', t().todoSendFailingMsg);
       try { appendDiag(launchCwd, { kind: 'todo-send-failing', ts: Date.now() }); } catch { /* 诊断落盘失败不致命 */ }
@@ -140,6 +144,14 @@ export async function up(configPath: string) {
         .filter((a) => !a.virtual && a.name !== lead && !restarting.has(a.name) && !clearing.has(a.name))
         .map((a) => a.name);
       void Promise.all(targets.map((nm) => clearOneWorker(nm).catch(() => {}))); // fire-and-forget:引擎不等待
+    },
+    workersReady: () => {
+      // 非 lead 员工是否全部就绪:idle=已 re-register 且空闲;dead/已移除不阻塞。
+      // resetWorkers 后员工被 hold→busy(launching/clearing 同理),此处即返回 false → 引擎推迟派发。
+      const lead = currentLead();
+      return router.roster()
+        .filter((a) => !a.virtual && a.name !== lead)
+        .every((w) => w.status === 'idle' || w.status === 'dead');
     },
     resetLead: () => {
       const lead = currentLead();
@@ -462,6 +474,8 @@ export async function up(configPath: string) {
       // 当场生效(不必 /clear):新 lead 收到工作法、旧 lead 收到卸任(走正常投递,忙则排队)
       router.send('boss', name, `${t().leadAssignedMsg}\n${t().coordinatorRules}`);
       if (cur && cur !== name) router.send('boss', cur, t().leadRevokedMsg);
+      // todo 正跑时换 lead:把 current 立刻重发给新 lead(否则旧 lead 的完成上报会被拒、新 lead 要等一个 nudge 周期才接活)
+      todo.redispatchCurrent(!!currentLead());
       return { ok: true };
     },
     onRestartAgent: async (name, fresh) => relaunchAgent(name, fresh),
@@ -667,12 +681,13 @@ export async function up(configPath: string) {
               }
               if (action === 'mark-idle') {
                 const since = Date.now() - (lastDeliverAt.get(name) ?? 0);
-                if (since < SUSPECT_FAST_IDLE_MS) {
-                  try { appendDiag(launchCwd, { kind: 'auto-idle', name, sinceDeliverMs: since, ts: Date.now() }); } catch { /* 诊断落盘失败不致命 */ }
-                }
                 const mv = judgeAutoIdleSilence({ deliveredAt: lastDeliverAt.get(name), countedAt: muteCountedAt.get(name) ?? 0, lastMcpAt: a.lastMcpAt });
                 muteCountedAt.set(name, mv.countedAt);
                 if (mv.reset) router.clearMute(name);
+                // 仅"投递后零 MCP 调用且降闲过快"才记可疑(mv.count=有活无声);调过工具的快速响应是健康的,不算可疑。
+                if (since < SUSPECT_FAST_IDLE_MS && mv.count) {
+                  try { appendDiag(launchCwd, { kind: 'auto-idle', name, sinceDeliverMs: since, ts: Date.now() }); } catch { /* 诊断落盘失败不致命 */ }
+                }
                 if (mv.count && router.bumpMute(name) >= MUTE_THRESHOLD) alarmUnresponsive(name, 'mute');
                 router.onIdle(name);
               } else if (action === 'mark-busy') router.observeBusy(name);

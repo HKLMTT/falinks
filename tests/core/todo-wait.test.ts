@@ -23,6 +23,8 @@ function mk(initial?: TodoState) {
     announceWaiting: (t, minutes, reason) => { calls.waiting.push({ seq: t.seq, minutes, reason }); },
     announceStalled: () => {},
     resetWorkers: () => {},
+    workersReady: () => true,
+    announceWorkersTimeout: () => {},
     resetLead: () => {},
     wipeLeadMemory: () => {},
     leadResetEvery: () => 0,

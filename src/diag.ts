@@ -20,6 +20,7 @@ export type DiagEvent =
   | { kind: 'agent-unresponsive'; name: string; rule: 'register-timeout' | 'mute'; ts: number }
   | { kind: 'poll'; name: string; status: string; proc: boolean; scrape: boolean; paneBusy: boolean; grace: boolean; streak: number; action: string; bottom: string; ts: number }
   | { kind: 'todo-send-failing'; ts: number }
+  | { kind: 'todo-workers-timeout'; ts: number } // 等员工就绪超时,仍按计划派发当前任务
   | { kind: 'todo-stalled'; seq: number; n: number; ts: number } // 任务连续 n 次巡查无上报(疑似完成未关闭/停滞)
   | { kind: 'bootstrap-fail'; name: string; error: string; ts: number }
   | { kind: 'poll-frozen'; streak: number; error: string; ts: number } // 批量轮询连续整轮失败(状态冻结);

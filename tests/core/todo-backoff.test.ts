@@ -20,6 +20,8 @@ function mk(nudgeResult: (callIndex: number) => boolean = () => true) {
     announceWaiting: () => {},
     announceStalled: (t, n, intervalMinutes) => { calls.stalled.push({ seq: t.seq, n, intervalMinutes }); },
     resetWorkers: () => {},
+    workersReady: () => true,
+    announceWorkersTimeout: () => {},
     resetLead: () => {},
     wipeLeadMemory: () => {},
     leadResetEvery: () => 0,

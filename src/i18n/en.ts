@@ -270,6 +270,7 @@ export const en: typeof zh = {
   todoSummaryLine: (seq: number, ok: boolean, body: string, result: string) => `${ok ? '✅' : '❌'} #${seq} ${body} — ${result}`,
   todoPlannedMsg: (from: string, n: number) => `[todo mode] lead ${from} created a ${n}-task list — /todo list to review; the lead will start it after your approval (or run /todo start yourself).`,
   todoSuspendedMsg: '[todolist suspended] No lead assigned — task dispatch paused. Assign a lead with /lead and it will resume automatically.',
+  todoWorkersTimeoutMsg: '[todolist] Some workers are not yet cleared/ready (wait timed out) — dispatching the current task to the lead anyway.',
   todoSendFailingMsg: '[todolist warning] Message delivery has failed repeatedly (guardrail or lead unreachable) — the list may be stalled, please investigate.',
   todoWaitingMsg: (seq: number, minutes: number, reason: string) =>
     `[todolist] lead declared an external wait${reason ? `: ${reason}` : ''}; nudges for task #${seq} paused for ${minutes} min.`,

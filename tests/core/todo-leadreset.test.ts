@@ -16,6 +16,8 @@ function mk(everyK: number) {
     announceWaiting: () => {},
     announceStalled: () => {},
     resetWorkers: () => { order.push('resetWorkers'); },
+    workersReady: () => true,
+    announceWorkersTimeout: () => {},
     resetLead: () => { order.push('resetLead'); },
     wipeLeadMemory: () => { order.push('wipeLeadMemory'); },
     leadResetEvery: () => everyK,

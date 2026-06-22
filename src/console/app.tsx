@@ -21,6 +21,9 @@ const PKG: { name: string; version: string } = (() => {
 })();
 const VERSION = PKG.version;
 
+// 协作诊断横幅的计数时间窗:只统计最近这段时间内的诊断事件,平息后自动消退(避免陈旧事件长期粘住告警)。
+const DIAG_WINDOW_MS = 5 * 60_000;
+
 async function admin(port: number, method: string, path: string, body?: unknown) {
   const res = await fetch(`http://127.0.0.1:${port}${path}`, {
     method,
@@ -623,9 +626,13 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
   const color = (s: string) => (s === 'idle' ? 'green' : s === 'busy' ? 'yellow' : s === 'dead' ? 'red' : 'gray');
 
   // 协作诊断警告:有守卫丢消息/注入失败/可疑过早 idle 时顶一行,提醒可能卡死。
-  const drops = diag.filter((e) => e?.kind === 'guard-drop').length;
-  const injFails = diag.filter((e) => e?.kind === 'inject-fail').length;
-  const fastIdle = diag.filter((e) => e?.kind === 'auto-idle').length;
+  // 只算最近 DIAG_WINDOW_MS 内的事件——按时间窗(而非全部历史)计数,事情平息后横幅自动消退,
+  // 再出现即代表"此刻在发生",避免一两条陈旧事件把告警长期粘住(alarm fatigue)。
+  const diagSince = Date.now() - DIAG_WINDOW_MS;
+  const recentDiag = diag.filter((e) => typeof e?.ts === 'number' && e.ts >= diagSince);
+  const drops = recentDiag.filter((e) => e?.kind === 'guard-drop').length;
+  const injFails = recentDiag.filter((e) => e?.kind === 'inject-fail').length;
+  const fastIdle = recentDiag.filter((e) => e?.kind === 'auto-idle').length;
   const hasDiag = drops || injFails || fastIdle;
 
   // 失联员工警告(roster 驱动:员工一恢复 MCP 调用标志即清,警告行自动消失)。

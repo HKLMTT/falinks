@@ -25,6 +25,8 @@ function mk(initial?: TodoState) {
     announceWaiting: () => {},
     announceStalled: () => {},
     resetWorkers: () => {},
+    workersReady: () => true,
+    announceWorkersTimeout: () => {},
     resetLead: () => {},
     wipeLeadMemory: () => {},
     leadResetEvery: () => 0,
@@ -146,6 +148,35 @@ test('add:running 追加队尾;finished 后 add 自动转 idle 清旧账', () =>
   e.add('tomorrow');
   expect(e.state().state).toBe('idle');
   expect(e.state().tasks.map((t) => t.body)).toEqual(['tomorrow']); // 旧账清掉
+});
+
+test('重启:载入 running 状态后,首个有 lead 的 tick 重发 current(不必等 nudge);无 lead 不公告', () => {
+  const initial: TodoState = { state: 'running', nudgeMinutes: 10, tasks: [{ seq: 1, body: 'a', status: 'current' }] };
+  const { e, calls } = mk(initial);
+  expect(calls.dispatch.length).toBe(0); // 构造不派发
+  e.tick(false, false);                  // 无 lead:不派发,且不公告(构造已置 suspended)
+  expect(calls.dispatch.length).toBe(0);
+  expect(calls.suspended).toBe(0);
+  e.tick(false, true);                   // lead 在场:redispatch current(isResend)
+  expect(calls.dispatch).toEqual([{ seq: 1, pos: 1, isResend: true }]);
+});
+
+test('redispatchCurrent:running+有 lead 撤旧排队重发 current;非 running/无 lead 为 no-op', () => {
+  const { e, calls } = mk();
+  e.add('a'); e.start(undefined, true);  // dispatch #1 (isResend=false), lastDispatchId=msg1
+  e.redispatchCurrent(true);             // 换 lead:撤 msg1,重发 current(isResend=true)
+  expect(calls.cancel).toEqual(['msg1']);
+  expect(calls.dispatch).toEqual([{ seq: 1, pos: 1, isResend: false }, { seq: 1, pos: 1, isResend: true }]);
+  const before = calls.dispatch.length;
+  e.redispatchCurrent(false);            // 无 lead:no-op
+  expect(calls.dispatch.length).toBe(before);
+});
+
+test('redispatchCurrent:idle(未 start)为 no-op', () => {
+  const { e, calls } = mk();
+  e.add('a');
+  e.redispatchCurrent(true);
+  expect(calls.dispatch.length).toBe(0);
 });
 
 test('rm:pending 可删;paused 态可删 current(标 failed 脱困);running 态 current 拒绝;clear 仅非 running', () => {
