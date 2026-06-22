@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
 import { escapeAppleScript } from './applescript.js';
+import { submitWithVerify } from './submit.js';
 import { hexToAppleRGB } from '../console/log-format.js';
 import type { LaunchOpts, TerminalDriver } from './driver.js';
 
@@ -50,6 +51,10 @@ end tell`;
 export class ITerm2Driver implements TerminalDriver {
   /** 两步提交之间的 settle 延时（ms）：让 TUI 稳定，避免回车被吞。 */
   static SUBMIT_SETTLE_MS = 600;
+  /** 发回车后等多久再读屏验证是否真提交。 */
+  static SUBMIT_VERIFY_MS = 400;
+  /** 提交回车被吞时的最大重试次数(含首次)。 */
+  static SUBMIT_MAX_ATTEMPTS = 3;
 
   async launch(opts: LaunchOpts): Promise<string> {
     // 注：opts.command 视为受信任（来自本机配置，可含 flags），故不做 shQuote；
@@ -68,14 +73,20 @@ end tell`;
   }
 
   async inject(sessionId: string, text: string, submit: boolean): Promise<void> {
-    // 单次 write-text+newline 对 Claude TUI 的"提交"不可靠（初始化/刚结束回合时
-    // 末尾 CR 会被吃掉，Phase 1B 里程碑实测）。可靠做法：先写正文（不提交，LF=插入换行），
-    // settle 后单独发一个回车提交。submit=false 时只写正文。
+    // 单次 write-text+newline 对 Claude TUI 的"提交"不可靠（初始化/刚结束回合/大段粘贴时
+    // 末尾 CR 会被吞掉）。可靠做法：先写正文（不提交，LF=插入换行），settle 后单独发回车提交，
+    // 并读屏验证正文是否真离开了输入框——被吞则重发(最多 SUBMIT_MAX_ATTEMPTS 次)。submit=false 时只写正文。
     await this.write(sessionId, text, false);
-    if (submit) {
-      await new Promise((r) => setTimeout(r, ITerm2Driver.SUBMIT_SETTLE_MS));
-      await this.write(sessionId, '', true);
-    }
+    if (!submit) return;
+    await submitWithVerify({
+      enter: () => this.write(sessionId, '', true),
+      readScreen: () => this.readScreen(sessionId),
+      sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
+      body: text,
+      settleMs: ITerm2Driver.SUBMIT_SETTLE_MS,
+      verifyMs: ITerm2Driver.SUBMIT_VERIFY_MS,
+      maxAttempts: ITerm2Driver.SUBMIT_MAX_ATTEMPTS,
+    });
   }
 
   /** 单次 `write text`：往匹配 session 写文本，submit=true 时末尾附回车提交。 */
