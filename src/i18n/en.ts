@@ -227,6 +227,8 @@ export const en: typeof zh = {
   toolDescIdle: 'Wrap up this turn, release to idle state',
   toolDescAsk:
     'Pose a multiple-choice question. Send to the boss (to="boss") and the boss sees clickable options and picks one; send to a coworker and they receive a message with numbered options and reply via sendmsg with their pick.',
+  askBlockedInTodo:
+    '[todolist running · unattended] Asking the boss is disabled — nobody is watching to answer, and a question would stall the long-running task. Proceed with your best recommended option based on available info, and record your assumptions and trade-offs in the task result / project state doc.',
   toolDescWho: 'View the online roster',
   toolDescTaskdone: '[todolist only · lead only] report the current task finished: taskdone(seq, status:"done"|"failed", result). The system records it and dispatches the next task; report failures too — the list never stops.',
   toolDescTodoplan: '[todo mode · lead only] when boss explicitly asks for todo-mode execution, batch-create the finalized task breakdown: todoplan(tasks:[one per task], replace?). You MUST get boss approval via ask(to:"boss") before todostart; pass replace:true to revise a list you just created.',
@@ -259,7 +261,7 @@ export const en: typeof zh = {
     `[Task #${seq} · ${pos}/${total}]${isResend ? ' (resend)' : ''} ${body}\n` +
     `You are the team lead (coordinator): decompose this task into subtasks and dispatch them via sendmsg to the right workers (frontend/backend/qa…); you only coordinate dependencies, track progress, and aggregate results — do not do the work yourself. ` +
     (isResend ? '' : '⚠ This round all workers are brand-new sessions with no memory — when dispatching, fully brief them on background, goals, and acceptance criteria. ') +
-    `Done means: only after every worker you dispatched has finished and reported back do you call taskdone(seq:${seq}, status:"done"|"failed", result:"…"); the next task is dispatched only after that — reporting early would cut off their in-progress work. If waiting on a long script/external process, call taskwait(seq:${seq}, minutes:est, reason:"…"). Do not reply to this via sendmsg; normal team/boss communication is fine meanwhile.`,
+    `Done means: only after every worker you dispatched has finished and reported back do you call taskdone(seq:${seq}, status:"done"|"failed", result:"…"); the next task is dispatched only after that — reporting early would cut off their in-progress work. If waiting on a long script/external process, call taskwait(seq:${seq}, minutes:est, reason:"…"). Do not reply to this via sendmsg. [Unattended] At any decision point, proceed with your best recommended option and record assumptions/trade-offs in the result or project state doc — do NOT ask the boss (ask→boss is rejected while running); normal sendmsg communication with the team is fine meanwhile.`,
   todoNudgeMsg: (seq: number, pos: number, total: number, body: string, nextMinutes: number, escalated: boolean) =>
     `[Task #${seq} (${pos}/${total}) progress check] Everyone has been idle for a while with no report. Task: ${body}\n` +
     (escalated

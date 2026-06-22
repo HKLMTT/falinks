@@ -95,3 +95,40 @@ test('/admin/answer 自定义 text -> 把老板自由回答注回提问者,pendi
   expect(driver.injections.some((i) => i.sessionId === sessions.get('alice') && i.text.includes('都不用,先调研一周'))).toBe(true);
   expect((await http('GET', '/admin/questions')).questions.length).toBe(0);
 });
+
+// —— todo 模式无人值守:running 时禁 ask→boss ——
+
+const TODO_DEPS = (state: string) => ({
+  taskdone: () => ({ ok: true }),
+  taskwait: () => ({ ok: true }),
+  op: () => ({ ok: true }),
+  state: () => ({ state, nudgeMinutes: 10, tasks: [] }),
+  plan: () => ({ ok: true, seqs: [] }),
+  leadstate: () => ({ ok: true }),
+});
+
+test('todo running 时 ask→boss 被拒、不进 pending,提示自行按最优方案推进', async () => {
+  await bus.close();
+  bus = await startBus({ router, getSessionId: (nm) => sessions.get(nm), todo: TODO_DEPS('running') }, 0);
+  const r = await callTool('alice', 'ask', { to: 'boss', question: '用哪个方案?', options: ['A', 'B'] });
+  expect(r.ok).toBe(false);
+  expect(r.error).toMatch(/无人值守|unattended/i);
+  expect((await http('GET', '/admin/questions')).questions.length).toBe(0); // 没落到 pending
+});
+
+test('todo running 时问同事的 ask 照常(不卡人)', async () => {
+  await bus.close();
+  bus = await startBus({ router, getSessionId: (nm) => sessions.get(nm), todo: TODO_DEPS('running') }, 0);
+  const r = await callTool('alice', 'ask', { to: 'bob', question: '选哪个?', options: ['甲', '乙'] });
+  expect(r.ok).toBe(true);
+  expect(driver.injections.some((i) => i.sessionId === sessions.get('bob') && i.text.includes('选哪个?'))).toBe(true);
+});
+
+test('todo 非 running(idle)时 ask→boss 照常进 pending(不误伤启动前审批)', async () => {
+  await bus.close();
+  bus = await startBus({ router, getSessionId: (nm) => sessions.get(nm), todo: TODO_DEPS('idle') }, 0);
+  const r = await callTool('alice', 'ask', { to: 'boss', question: '可以 todostart 吗?', options: ['同意', '再改改'] });
+  expect(r.ok).toBe(true);
+  expect(r.pending).toBe(true);
+  expect((await http('GET', '/admin/questions')).questions.length).toBe(1);
+});

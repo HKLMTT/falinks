@@ -127,6 +127,10 @@ function serverForAgent(agentName: string, deps: BusDeps, questions: QuestionSto
   }, async ({ to, question, options }) => {
     touch();
     if (to === 'boss' || to === '老板') {
+      // todo 模式无人值守:running 时禁止向 boss 提问(没人即时回答会卡死长任务),让 agent 自行按最优方案推进。
+      // 启动前的审批 ask(状态 idle)不受影响;问同事/lead 的 ask(下面分支)照常。
+      const todoState = deps.todo?.state() as { state?: string } | undefined;
+      if (todoState?.state === 'running') return ok({ ok: false, error: t().askBlockedInTodo });
       const id = questions.add({ from: agentName, question, options });
       return ok({ ok: true, id, pending: true });
     }

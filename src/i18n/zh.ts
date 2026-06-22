@@ -233,6 +233,8 @@ export const zh = {
   toolDescIdle: '本回合收尾，释放空闲状态',
   toolDescAsk:
     '出选择题。发给老板(to="boss")老板会看到可点选项并回选;发给同事则对方收到带编号选项的消息,用 sendmsg 回选哪个。',
+  askBlockedInTodo:
+    '【todo 模式运行中·无人值守】禁止向 boss 提问——没人会即时回答,提问会卡死长任务。请基于现有信息按你的最优推荐方案继续推进,并在任务结果/项目状态档里写明你的假设与取舍。',
   toolDescWho: '查看在线花名册',
   toolDescTaskdone: '【todolist 专用·仅组长】上报当前任务完结:taskdone(seq, status:"done"|"failed", result)。系统记录后才会下发下一条;失败也要报,不会中断清单。',
   toolDescTodoplan: '【todo 模式·仅组长】boss 明确要求用 todo 模式执行时,把拆解定稿的任务批量建成清单:todoplan(tasks:[每条一个任务], replace?)。建完必须用 ask(to:"boss") 征得 boss 同意才可 todostart;修订自己刚建的清单传 replace:true。',
@@ -265,7 +267,7 @@ export const zh = {
     `【任务 #${seq}·第 ${pos}/${total} 条】${isResend ? '(重发)' : ''}${body}\n` +
     `你是本团队的组长(协调者):请把本任务拆解成子任务、用 sendmsg 分派给对应员工(前端/后端/测试…)执行,你只负责协调依赖、跟进进度、汇总结果,不要自己动手包办。` +
     (isResend ? '' : '⚠ 本轮员工均为全新会话、无任何历史记忆,分派时务必把背景、目标、验收标准一次交代清楚。') +
-    `完成判定:只有当你分派出去的所有员工都已完成并向你回报后,才调 taskdone(seq:${seq}, status:"done"|"failed", result:"…")上报,系统才会下发下一条——否则会中断他们正在进行的工作。如需等待长脚本/外部过程,调 taskwait(seq:${seq}, minutes:预计分钟, reason:"…")声明等待。勿用 sendmsg 回复本条,过程中可照常与团队/boss 沟通。`,
+    `完成判定:只有当你分派出去的所有员工都已完成并向你回报后,才调 taskdone(seq:${seq}, status:"done"|"failed", result:"…")上报,系统才会下发下一条——否则会中断他们正在进行的工作。如需等待长脚本/外部过程,调 taskwait(seq:${seq}, minutes:预计分钟, reason:"…")声明等待。勿用 sendmsg 回复本条。【无人值守】遇到决策点请自行采用最优推荐方案推进、把假设与取舍写进结果或项目状态档,切勿向 boss 提问(运行中 ask boss 会被拒);过程中可照常用 sendmsg 与团队沟通。`,
   todoNudgeMsg: (seq: number, pos: number, total: number, body: string, nextMinutes: number, escalated: boolean) =>
     `【任务 #${seq}(第 ${pos}/${total} 条)进度巡查】全员空闲已久仍未收到上报。任务内容:${body}\n` +
     (escalated
