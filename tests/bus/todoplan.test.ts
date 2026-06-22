@@ -38,6 +38,7 @@ beforeEach(async () => {
       op: (op: string, args: { body?: string; seq?: number; n?: number }) => { opCalls.push({ op, n: args.n }); return { ok: true }; },
       state: () => ({ state: 'idle', nudgeMinutes: 10, tasks: [] }),
       plan: (tasks: string[], replace: boolean, from: string) => { planCalls.push({ tasks, replace, from }); return { ok: true, seqs: [1, 2] }; },
+      leadstate: (_c: string) => ({ ok: true }),
     },
   }, 0);
 });

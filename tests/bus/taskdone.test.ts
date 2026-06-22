@@ -36,6 +36,7 @@ beforeEach(async () => {
       op: (op: string, args: { body?: string; seq?: number; n?: number }) => ({ ok: true, op, args }),
       state: () => ({ state: 'running', nudgeMinutes: 10, tasks: [] }),
       plan: (_t: string[], _r: boolean, _f: string) => ({ ok: true }),
+      leadstate: (_c: string) => ({ ok: true }),
     },
   }, 0);
 });
