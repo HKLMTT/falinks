@@ -1,7 +1,7 @@
 import { readFileSync, mkdtempSync, writeFileSync, mkdirSync, realpathSync, rmSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { parseConfig } from './core/config.js';
 import { Router } from './core/router.js';
 import type { AgentRuntime, Message } from './core/types.js';
@@ -37,6 +37,9 @@ export async function up(configPath: string) {
   let n = 0;
   const guards = new Guards(cfg.guards, () => Date.now());
   const launchCwd = (() => { try { return realpathSync(process.cwd()); } catch { return process.cwd(); } })();
+  // agent cwd 归一化为绝对路径(相对 launchCwd 解析):config 写 "." 或相对路径时,pane 里 `cd <cwd>`
+  // 必须落到项目目录,否则 claude 把会话写进 iTerm 默认目录、与 decideClaudeSession 查找的目录错位 → resume 失效。
+  for (const a of cfg.agents) a.cwd = resolve(launchCwd, a.cwd);
   // 包一层 deliverer：记录每个员工"最近一次被投递"的时刻，给自动空闲检测做投递后宽限（防投递空窗误判）。
   const lastDeliverAt = new Map<string, number>();
   // 注入失败 = 消息已出队却没进 pane（永久丢失,发件人却以为发出去了）→ 落盘诊断,让其可见。
@@ -361,6 +364,7 @@ export async function up(configPath: string) {
       if (!lastRight && !consoleSid) return { ok: false, error: 'layout not ready' };
       if (spec.name === 'falinks') return { ok: false, error: 'reserved name' }; // 汇总消息的系统发件人名
       if (router.get(spec.name)) return { ok: false, error: 'name exists' };
+      spec = { ...spec, cwd: resolve(launchCwd, spec.cwd) }; // 同启动:cwd 归一化为绝对,防 resume 错位
       // 锚点自愈:lastRight 指向的 pane 可能已被关/被删(野指针),回退到永远活着的控制台 pane。
       // 否则 splitFrom 抛 anchor not found,此后 /add 全部失败、只能重开。
       const anchor = await chooseAnchor(lastRight, consoleSid, (s) => driver.paneExists(s));
