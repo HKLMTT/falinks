@@ -16,6 +16,7 @@ export const COMMANDS: CommandDef[] = [
   { name: 'clear', usage: '/clear [name]', get hint() { return t().cmdHint.clear; } },
   { name: 'lang', usage: '/lang', noArgs: true, get hint() { return t().cmdHint.lang; } },
   { name: 'lead', usage: '/lead', noArgs: true, get hint() { return t().cmdHint.lead; } },
+  { name: 'office', usage: '/office', noArgs: true, get hint() { return t().cmdHint.office; } },
   { name: 'help', usage: '/help', noArgs: true, get hint() { return t().cmdHint.help; } },
 ];
 

@@ -4,7 +4,7 @@ import { commandState, applyCommand, COMMANDS, todoSubState } from '../../src/co
 test('bare / activates with all commands', () => {
   const s = commandState('/');
   expect(s.active).toBe(true);
-  expect(s.matches.map((c) => c.name)).toEqual(['add', 'remove', 'restart', 'todo', 'clear', 'lang', 'lead', 'help']);
+  expect(s.matches.map((c) => c.name)).toEqual(['add', 'remove', 'restart', 'todo', 'clear', 'lang', 'lead', 'office', 'help']);
 });
 
 test('/a matches add', () => {

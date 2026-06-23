@@ -10,7 +10,8 @@ import { renderMarkdown } from './markdown.js';
 import { decodeKey, wheelBurst, type KeyEvent } from './keys.js';
 import { appendCommitted, pendingCounts, wrapSegs, sliceView, clampOffset, clipDisp, dispWidth, type StyledSeg } from './scrollback.js';
 import { saveClipboardImage, expandImageTokens } from './clipboard.js';
-import { t, setLocale } from '../i18n/index.js';
+import { t, setLocale, getLocale } from '../i18n/index.js';
+import { openBrowser } from '../util/open-browser.js';
 
 const PKG: { name: string; version: string } = (() => {
   try {
@@ -176,6 +177,7 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
       if (a.kind === 'add-start') { setWizard({ name: a.name, step: 'cli', sel: 0 }); return; }
       if (a.kind === 'lang-start') { setLangPick(0); return; }
       if (a.kind === 'lead-start') { setLeadPick(0); return; }
+      if (a.kind === 'office') { openBrowser(`http://127.0.0.1:${port}/office?lang=${getLocale()}`); setStatus(t().officeOpened); return; }
       if (a.kind === 'say') { const r = await admin(port, 'POST', '/admin/say', { to: a.to, message: expand(a.message), urgent: a.urgent }); setStatus(r.ok ? (a.urgent ? t().urgentOk(a.to) : t().sayOk(a.to)) : '⚠ ' + t().sayUndelivered(a.to, r.error ?? t().guardrailBlocked)); return; }
       if (a.kind === 'broadcast') { await admin(port, 'POST', '/admin/broadcast', { message: expand(a.message), urgent: a.urgent }); setStatus(a.urgent ? t().urgentBroadcastOk : t().broadcastOk); return; }
       if (a.kind === 'reply') {
