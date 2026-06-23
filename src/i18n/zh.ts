@@ -142,6 +142,7 @@ export const zh = {
   usageLang: '用法: /lang（按提示选语言）',
   usageLead: '用法: /lead（按提示选组长）',
   officeOpened: '已在浏览器打开像素办公室',
+  officeHint: '输入 /office 在浏览器查看像素办公室',
   unknownCommand: (cmd: string) => `未知命令: /${cmd}`,
   usageMention: '用法: @<name> <message> 或 @all <message>',
   usageUrgent: '插队直送用法:!@名字 消息 · !消息(插队回复) · !@all 消息——跳过排队直接送达;命令不可插队',

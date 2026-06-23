@@ -149,6 +149,10 @@ falinks runs an **MCP HTTP bus** in-process; each worker's CLI connects to `…/
 - CI runs on every push/PR (ubuntu + macOS × Node 20/24): typecheck, build, full test suite.
 - Releases are automated: push a `v*` tag and GitHub Actions publishes to npm via Trusted Publishing (OIDC, no stored secrets, with provenance). See [`docs/RELEASE.md`](docs/RELEASE.md).
 
+## Credits
+
+- Office sprites by [2dPig](https://2dpig.itch.io/) (CC0) — used in the `/office` pixel-office easter egg.
+
 ## License
 
 MIT

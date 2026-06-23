@@ -136,6 +136,7 @@ export const en: typeof zh = {
   usageLang: 'Usage: /lang (pick from the menu)',
   usageLead: 'Usage: /lead (pick from the menu)',
   officeOpened: 'Pixel office opened in your browser',
+  officeHint: 'Type /office to view the pixel office in your browser',
   unknownCommand: (cmd: string) => `unknown command: /${cmd}`,
   usageMention: 'usage: @<name> <message> or @all <message>',
   usageUrgent: 'Urgent send: !@name msg · !msg (urgent reply) · !@all msg — skips the queue, delivered immediately; commands cannot be urgent',

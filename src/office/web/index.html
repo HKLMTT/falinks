@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<base href="/office/">
+<title>falinks · 像素办公室</title>
+<link rel="stylesheet" href="office.css">
+</head>
+<body>
+  <div id="app">
+    <header id="topbar">
+      <span class="logo">falinks</span>
+      <span class="sub" id="subtitle">像素办公室</span>
+      <span class="clock" id="clock"></span>
+    </header>
+
+    <main id="stage-wrap">
+      <div id="stage">
+        <div id="wall"></div>
+        <div id="floor"></div>
+        <div id="decor"></div>
+        <div id="lounge"></div>
+        <div id="desks"></div>
+      </div>
+      <div id="empty" class="hidden">暂无成员</div>
+    </main>
+
+    <aside id="panel" class="empty">
+      <div id="panel-hint">点击工位查看详情</div>
+      <div id="panel-body" class="hidden">
+        <div id="panel-head">
+          <span id="panel-name"></span>
+          <span id="panel-status" class="status-pill"></span>
+        </div>
+        <div id="panel-role"></div>
+        <div id="panel-q" class="hidden"></div>
+        <div id="panel-msgs-label">相关消息</div>
+        <ul id="panel-msgs"></ul>
+      </div>
+    </aside>
+  </div>
+
+  <div id="banner" class="hidden">连接已断开，正在重试…</div>
+
+  <script src="office.js"></script>
+</body>
+</html>

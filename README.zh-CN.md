@@ -143,6 +143,10 @@ falinks 进程内跑一个 **MCP HTTP 总线**，每个员工的 CLI 连到 `…
 - 每次 push/PR 都跑 CI（ubuntu + macOS × Node 20/24）：类型检查、构建、全量测试。
 - 发布自动化：打 `v*` tag，GitHub Actions 经 Trusted Publishing（OIDC，无长期密钥，带 provenance 溯源）发到 npm。详见 [`docs/RELEASE.md`](docs/RELEASE.md)。
 
+## 致谢
+
+- 办公室像素素材 by [2dPig](https://2dpig.itch.io/)（CC0）——用于 `/office` 像素办公室彩蛋。
+
 ## License
 
 MIT

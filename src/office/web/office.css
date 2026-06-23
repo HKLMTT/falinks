@@ -1,0 +1,331 @@
+/* falinks 像素办公室 — 暖色 cozy 俯视微透视。
+   画风/调色板/状态约定见 docs/SPRITE-SPEC.md，数据源 assets/sprites.json。
+   状态两级冗余：一级=脚下 tile 染色发光，二级=头顶形状浮标。 */
+
+:root {
+  --s: 4;                /* 像素整数放大倍数 */
+  /* 调色板由 office.js 从 sprites.json 注入，这里给兜底默认 */
+  --tileA: #E8D5A8;
+  --tileB: #D9C088;
+  --seam: #C8A86A;
+  --wood: #9C6B3E;
+  --woodLo: #7A4F2A;
+  --base: #5C3A20;
+  --busy: #5FB84A;
+  --waiting: #F2A33C;    /* hue≈34° 实心琥珀核：距裸地砖(232,213,168)欧氏≈138，杜绝被暖底吞 */
+  /* ⚠️ 调色板运行时事实源是 assets/sprites.json：office.js 把 palette 注入 :root 行内变量，
+     会覆盖这里的 --busy/--waiting/--done/... 默认值。此处仅作兜底，须与 sprites.json 保持一致，
+     改色请改 sprites.json（否则像 #DE8428 那样写在这里也不会生效）。环#8A4A12/外发光#DE7A1E 见 @keyframes。 */
+  --done: #2FA4C8;
+  --offline: #5A5A60;
+  --idle: #8893A8;
+  --warmGlow: #F2C879;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body { height: 100%; }
+
+body {
+  background: #15120e;
+  color: #ece3d2;
+  font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  overflow: hidden;
+}
+
+img, [class*="spr"] { image-rendering: pixelated; image-rendering: crisp-edges; }
+
+#app {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  grid-template-columns: 1fr 320px;
+  grid-template-areas: "top top" "stage panel";
+  height: 100vh;
+}
+
+/* ---- 顶栏 ---- */
+#topbar {
+  grid-area: top;
+  display: flex; align-items: baseline; gap: 12px;
+  padding: 10px 18px;
+  background: #1c1812;
+  border-bottom: 2px solid var(--base);
+}
+.logo { font-weight: 700; font-size: 18px; letter-spacing: .5px; color: var(--warmGlow); }
+.sub { font-size: 13px; color: #b39c78; }
+.clock { margin-left: auto; font-variant-numeric: tabular-nums; font-size: 13px; color: #8a7a5e; }
+
+/* ---- 舞台 ---- */
+#stage-wrap {
+  grid-area: stage;
+  overflow: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+#stage {
+  position: relative;
+  flex: none;
+  border: 3px solid var(--base);
+  border-radius: 4px;
+  overflow: hidden;
+  box-shadow: 0 10px 40px rgba(0,0,0,.5);
+}
+
+/* 后墙：wall.png 横向平铺 */
+#wall {
+  position: absolute; top: 0; left: 0; right: 0;
+  background-repeat: repeat-x;
+  z-index: 0;
+}
+
+/* 地面：暖米棋盘格（用调色板色，像素对齐） */
+#floor {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  background-color: var(--tileA);
+  background-image:
+    conic-gradient(var(--tileA) 0 .25turn, var(--tileB) 0 .5turn,
+                   var(--tileA) 0 .75turn, var(--tileB) 0);
+  z-index: 0;
+}
+/* 砖缝 */
+#floor::after {
+  content: ""; position: absolute; inset: 0;
+  background-image:
+    repeating-linear-gradient(90deg, transparent 0 calc(var(--cell) - 1px), var(--seam) calc(var(--cell) - 1px) var(--cell)),
+    repeating-linear-gradient(0deg,  transparent 0 calc(var(--cell) - 1px), var(--seam) calc(var(--cell) - 1px) var(--cell));
+  opacity: .5;
+}
+
+#decor, #lounge, #desks { position: absolute; inset: 0; z-index: 1; pointer-events: none; }
+#desks { pointer-events: auto; }
+
+/* 窗/门冷蓝是全屋最饱和冷色,会稀释 done「全屋唯一冷色」的辨识(SPEC§5 窗应暖光透入)。
+   降饱和 + 暖日光偏色,既贴 cozy 又把唯一冷色让位给 done。 */
+[class*="decor-win"] { filter: saturate(.42) sepia(.28) brightness(1.06) hue-rotate(-8deg); }
+
+/* 通用 sprite 块（背景图裁切，尺寸由 JS 注入 --w/--h/--bx/--by/--bw/--bh） */
+.spr {
+  position: absolute;
+  width: calc(var(--w) * var(--s) * 1px);
+  height: calc(var(--h) * var(--s) * 1px);
+  background-repeat: no-repeat;
+  background-position: calc(var(--bx) * var(--s) * -1px) calc(var(--by) * var(--s) * -1px);
+  background-size: calc(var(--bw) * var(--s) * 1px) calc(var(--bh) * var(--s) * 1px);
+}
+
+/* ---- 工位 ---- */
+.station {
+  position: absolute;
+  width: calc(36 * var(--s) * 1px);
+  height: calc(28 * var(--s) * 1px);  /* 6px 头顶留白 + 22px 工位 */
+  cursor: pointer;
+}
+.station .tile {            /* 一级通道：脚下地台发光 */
+  position: absolute; left: 50%; bottom: calc(-4 * var(--s) * 1px);
+  width: calc(34 * var(--s) * 1px); height: calc(18 * var(--s) * 1px);
+  transform: translateX(-50%);
+  border-radius: 50%;
+  z-index: 0;
+}
+.station .chair {           /* 椅子（小人身后，桌下露出） */
+  left: 50%; transform: translateX(-50%);
+  bottom: calc(-2 * var(--s) * 1px);
+  z-index: 1;
+}
+.station .person {          /* 小人坐姿半身 */
+  left: 50%; transform: translateX(-50%);
+  top: 0;
+  z-index: 2;
+}
+.station .ws {              /* 木桌+显示器，盖住小人肩部 */
+  left: 0; top: calc(6 * var(--s) * 1px);
+  z-index: 3;
+}
+.station .crown {           /* lead 皇冠：CSS 像素冠形，戴在头顶发际上 */
+  position: absolute;
+  left: 50%; transform: translateX(-50%);
+  top: calc(-4 * var(--s) * 1px);
+  width: calc(9 * var(--s) * 1px);
+  height: calc(6 * var(--s) * 1px);
+  z-index: 5; pointer-events: none;
+  background: var(--warmGlow);
+  clip-path: polygon(0% 100%, 0% 30%, 25% 62%, 50% 4%, 75% 62%, 100% 30%, 100% 100%);
+  filter: drop-shadow(0 1px 0 rgba(0,0,0,.7)) drop-shadow(0 0 1px rgba(0,0,0,.7));
+}
+.station .name {
+  position: absolute; left: 50%; transform: translateX(-50%);
+  bottom: calc(-9 * var(--s) * 1px);
+  font-size: 12px; white-space: nowrap;
+  color: #f0e6d2; text-shadow: 0 1px 2px #000, 0 0 2px #000;
+  z-index: 6; pointer-events: none;
+}
+.station.sel .name { color: var(--warmGlow); font-weight: 700; }
+.station.sel .ws { outline: calc(.5 * var(--s) * 1px) solid var(--warmGlow); outline-offset: 1px; }
+
+/* 二级通道：头顶形状浮标（深色描边底，缩略图/色弱也能分） */
+.station .floater {
+  position: absolute; left: 50%; transform: translateX(-50%);
+  top: calc(-7 * var(--s) * 1px);
+  z-index: 5; pointer-events: none;
+  display: flex; align-items: center; justify-content: center;
+  min-width: calc(7 * var(--s) * 1px); height: calc(7 * var(--s) * 1px);
+  padding: 0 calc(.6 * var(--s) * 1px);
+  border-radius: calc(2 * var(--s) * 1px);
+  font-size: calc(5 * var(--s) * 1px); font-weight: 700; line-height: 1;
+  color: #fff;
+  border: 2px solid rgba(0,0,0,.6);
+  box-shadow: 0 1px 2px rgba(0,0,0,.5);
+  text-shadow: 0 1px 1px rgba(0,0,0,.6);
+}
+.floater.waiting { background: var(--waiting); }
+.floater.done    { background: var(--done); }
+.floater.offline { background: var(--offline); }
+/* busy = 实心圆(无字形，靠形状识别)；其余 waiting…/done✓/offline! 用字形 */
+.floater.busy {
+  background: var(--busy); border-radius: 50%;
+  width: calc(7 * var(--s) * 1px); min-width: 0; padding: 0;
+}
+
+/* ---- 脚下 tile：状态地台 ---- */
+/* 核用「实心高饱和」椭圆(静帧可测：与裸地砖欧氏距离 ≥120、HSV 饱和 ≥0.58)；
+   只让外发光边脉冲/呼吸，不动核色 → 截图测量稳定。深色描边环常驻割暖底。 */
+.tile.idle    { background: none; box-shadow: none; }
+.tile.busy {
+  background: radial-gradient(ellipse at center,
+      var(--busy) 0 56%, color-mix(in srgb, var(--busy) 50%, transparent) 74%, transparent 84%);
+  animation: glow-busy 1.1s ease-in-out infinite;
+}
+.tile.waiting {   /* 琥珀与暖底同色相易被吞 → 实心 #F2A33C 琥珀核(hue≈34° 距裸地砖≈138) + 常驻 2px 深描边硬环 #8A4A12 立形 */
+  background: radial-gradient(ellipse at center,
+      var(--waiting) 0 62%,
+      color-mix(in srgb, var(--waiting) 65%, transparent) 78%, transparent 88%);
+  animation: glow-wait 1.5s ease-in-out infinite;
+}
+.tile.done {
+  background: radial-gradient(ellipse at center,
+      var(--done) 0 56%, color-mix(in srgb, var(--done) 50%, transparent) 74%, transparent 84%);
+  animation: glow-done 1.5s ease-out 1 forwards;
+}
+.tile.offline {   /* 熄灭/压暗，无饱和要求 */
+  background: radial-gradient(ellipse at center, rgba(0,0,0,.55), transparent 74%);
+  box-shadow: 0 0 0 calc(.5 * var(--s) * 1px) rgba(0,0,0,.45);
+}
+
+/* 深环常驻 + 外发光呼吸(只变 blur/spread/亮度，核色不动) */
+@keyframes glow-busy {
+  0%,100% { box-shadow: 0 0 0 calc(.5*var(--s)*1px) rgba(16,28,10,.72),
+                        0 0 calc(2*var(--s)*1px) calc(.4*var(--s)*1px) color-mix(in srgb, var(--busy) 45%, transparent);
+            transform: translateX(-50%) scale(.96); }
+  50%     { box-shadow: 0 0 0 calc(.5*var(--s)*1px) rgba(16,28,10,.72),
+                        0 0 calc(6*var(--s)*1px) calc(1.6*var(--s)*1px) color-mix(in srgb, var(--busy) 80%, transparent);
+            transform: translateX(-50%) scale(1.04); }
+}
+@keyframes glow-wait {   /* 2px 深描边硬环常驻 #8A4A12(inset，hue 无关，专治同色相被吞) + 更橙外发光呼吸 */
+  0%,100% { box-shadow: inset 0 0 0 calc(2*var(--s)*1px) #8A4A12,
+                        0 0 0 calc(.7*var(--s)*1px) #6E3A0E,
+                        0 0 calc(3*var(--s)*1px) calc(.8*var(--s)*1px) color-mix(in srgb, #DE7A1E 65%, transparent); }
+  50%     { box-shadow: inset 0 0 0 calc(2*var(--s)*1px) #8A4A12,
+                        0 0 0 calc(.7*var(--s)*1px) #6E3A0E,
+                        0 0 calc(7.5*var(--s)*1px) calc(2.2*var(--s)*1px) color-mix(in srgb, #DE7A1E 92%, transparent); }
+}
+@keyframes glow-done {
+  0%   { box-shadow: 0 0 0 calc(.5*var(--s)*1px) rgba(0,30,40,.72),
+                     0 0 calc(7*var(--s)*1px) calc(2*var(--s)*1px) color-mix(in srgb, var(--done) 85%, transparent);
+         transform: translateX(-50%) scale(1.22); }
+  100% { box-shadow: 0 0 0 calc(.5*var(--s)*1px) rgba(0,30,40,.72),
+                     0 0 calc(3*var(--s)*1px) calc(1*var(--s)*1px) color-mix(in srgb, var(--done) 55%, transparent);
+         transform: translateX(-50%) scale(1); }
+}
+
+/* offline 小人压暗透明 */
+.station.s-offline .person { opacity: .45; filter: grayscale(.6); }
+.station.s-offline .ws { filter: brightness(.6); }
+
+/* launching 渐入 */
+.station.s-launching { animation: fadein .8s ease-out; }
+@keyframes fadein { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; } }
+
+/* ---- 头顶消息气泡 ---- */
+.bubble {
+  position: absolute; left: 50%; transform: translateX(-50%);
+  bottom: calc(30 * var(--s) * 1px);
+  max-width: 200px; min-width: 40px;
+  background: #fffdf5; color: #2a2014;
+  font-size: 12px; line-height: 1.35;
+  padding: 6px 9px; border-radius: 8px;
+  border: 2px solid var(--base);
+  box-shadow: 0 3px 8px rgba(0,0,0,.4);
+  z-index: 10; pointer-events: none;
+  animation: pop .18s ease-out;
+}
+.bubble::after {
+  content: ""; position: absolute; left: 50%; bottom: -7px; transform: translateX(-50%);
+  border: 5px solid transparent; border-top-color: var(--base);
+}
+@keyframes pop { from { opacity: 0; transform: translateX(-50%) translateY(4px); } to { opacity: 1; } }
+
+/* ---- 休息区（虚拟成员如 boss） ---- */
+.lounge-item { position: absolute; cursor: pointer; pointer-events: auto; }
+.lounge-item .name {
+  position: absolute; left: 50%; transform: translateX(-50%);
+  bottom: calc(-7 * var(--s) * 1px); font-size: 11px; white-space: nowrap;
+  color: #f0e6d2; text-shadow: 0 1px 2px #000; z-index: 6;
+}
+
+/* ---- 右侧详情面板 ---- */
+#panel {
+  grid-area: panel;
+  background: #1c1812;
+  border-left: 2px solid var(--base);
+  padding: 16px;
+  overflow-y: auto;
+}
+#panel-hint { color: #8a7a5e; font-size: 13px; text-align: center; margin-top: 40px; }
+#panel.empty #panel-hint { display: block; }
+#panel:not(.empty) #panel-hint { display: none; }
+
+#panel-head { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
+#panel-name { font-size: 17px; font-weight: 700; color: var(--warmGlow); }
+.status-pill {
+  font-size: 11px; padding: 2px 8px; border-radius: 999px;
+  color: #15120e; font-weight: 700;
+}
+.status-pill.idle    { background: var(--idle); }
+.status-pill.busy    { background: var(--busy); }
+.status-pill.waiting { background: var(--waiting); }
+.status-pill.done    { background: var(--done); }
+.status-pill.offline { background: var(--offline); color: #ccc; }
+#panel-role { font-size: 12px; color: #b39c78; margin-bottom: 14px; }
+#panel-q {
+  background: color-mix(in srgb, var(--waiting) 22%, #1c1812);
+  border: 1px solid var(--waiting);
+  border-radius: 6px; padding: 8px 10px; margin-bottom: 14px; font-size: 12px;
+}
+#panel-q .q-title { color: var(--waiting); font-weight: 700; margin-bottom: 4px; }
+#panel-q .q-opt { color: #d8c8a8; padding-left: 8px; }
+#panel-msgs-label { font-size: 12px; color: #8a7a5e; margin-bottom: 8px; text-transform: uppercase; letter-spacing: .5px; }
+#panel-msgs { list-style: none; display: flex; flex-direction: column; gap: 8px; }
+#panel-msgs li {
+  background: #242019; border-radius: 6px; padding: 7px 9px; font-size: 12px; line-height: 1.4;
+}
+#panel-msgs .m-head { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 3px; }
+#panel-msgs .m-route { color: var(--warmGlow); font-weight: 600; }
+#panel-msgs .m-time { color: #6e6048; font-variant-numeric: tabular-nums; }
+#panel-msgs .m-body { color: #d8ccb4; word-break: break-word; }
+#panel-msgs .m-empty { color: #6e6048; font-style: italic; }
+
+/* ---- 断连横幅 ---- */
+#banner {
+  position: fixed; top: 0; left: 0; right: 0;
+  background: #6e2318; color: #ffd9c8;
+  text-align: center; padding: 8px; font-size: 13px; font-weight: 600;
+  z-index: 100; border-bottom: 2px solid #8a2c1e;
+  animation: slidedown .25s ease-out;
+}
+@keyframes slidedown { from { transform: translateY(-100%); } to { transform: translateY(0); } }
+#stage-wrap.stale { filter: grayscale(.5) brightness(.7); transition: filter .3s; }
+
+.hidden { display: none !important; }
+#empty { color: #8a7a5e; font-size: 15px; }

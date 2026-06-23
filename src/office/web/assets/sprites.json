@@ -1,0 +1,287 @@
+{
+  "_credit": "Office sprites by 2dPig (CC0). Warm recolor + seated busts + workstation for falinks.",
+  "palette": {
+    "tileA": "#E8D5A8",
+    "tileB": "#D9C088",
+    "seam": "#C8A86A",
+    "skirt": "#8A5A38",
+    "skirtHi": "#A6724A",
+    "skirtLo": "#6E4423",
+    "wall": "#B8946A",
+    "wallLo": "#9C7850",
+    "base": "#5C3A20",
+    "wood": "#9C6B3E",
+    "woodHi": "#C08B54",
+    "woodLo": "#7A4F2A",
+    "woodSeam": "#5C3A20",
+    "screen": "#1E2A33",
+    "code": "#5FB0C8",
+    "idle": "#8893A8",
+    "busy": "#5FB84A",
+    "waiting": "#F2A33C",
+    "done": "#2FA4C8",
+    "offline": "#5A5A60",
+    "warmGlow": "#F2C879"
+  },
+  "status": {
+    "idle": {
+      "color": "#8893A8",
+      "tileGlow": false,
+      "floater": null,
+      "note": "本色地砖, 肩慢呼吸"
+    },
+    "busy": {
+      "color": "#5FB84A",
+      "tileGlow": "pulse",
+      "floater": "dot",
+      "note": "绿脉冲, 打字头微点+屏滚动"
+    },
+    "waiting": {
+      "color": "#F2A33C",
+      "tileGlow": "breath",
+      "floater": "dots",
+      "note": "琥珀地台(强对比+深描边), 屏顶琥珀提示条"
+    },
+    "done": {
+      "color": "#2FA4C8",
+      "tileGlow": "flash",
+      "floater": "check",
+      "note": "青光闪1次后常亮1.5s"
+    },
+    "offline": {
+      "color": "#5A5A60",
+      "tileGlow": "dim",
+      "floater": "bang",
+      "note": "熄灭, 小人50%透明屏黑"
+    }
+  },
+  "atlas": {
+    "image": "2dpig/PixelOfficeAssets.png",
+    "sprites": {
+      "chair_orange": [
+        6,
+        41,
+        11,
+        22
+      ],
+      "chair_yellow": [
+        19,
+        41,
+        11,
+        22
+      ],
+      "chair_green": [
+        32,
+        41,
+        11,
+        22
+      ],
+      "chair_blue": [
+        45,
+        41,
+        11,
+        22
+      ],
+      "chair_white": [
+        58,
+        41,
+        11,
+        22
+      ],
+      "chair_gray": [
+        71,
+        41,
+        11,
+        22
+      ],
+      "bench_sm": [
+        85,
+        47,
+        26,
+        16
+      ],
+      "bench_lg": [
+        115,
+        47,
+        40,
+        16
+      ],
+      "counter": [
+        171,
+        44,
+        79,
+        17
+      ],
+      "sofa_gray": [
+        119,
+        66,
+        33,
+        15
+      ],
+      "sofa_blue": [
+        120,
+        83,
+        33,
+        16
+      ],
+      "sofa_green": [
+        120,
+        102,
+        33,
+        16
+      ],
+      "sofa_red": [
+        120,
+        121,
+        31,
+        16
+      ],
+      "plant_tall": [
+        170,
+        65,
+        14,
+        19
+      ],
+      "elevator": [
+        185,
+        60,
+        49,
+        30
+      ],
+      "vending1": [
+        159,
+        123,
+        24,
+        34
+      ],
+      "vending2": [
+        184,
+        126,
+        24,
+        31
+      ],
+      "win_blue1": [
+        59,
+        96,
+        26,
+        21
+      ],
+      "win_blue2": [
+        88,
+        96,
+        26,
+        21
+      ],
+      "win_tall": [
+        98,
+        120,
+        16,
+        31
+      ],
+      "cat": [
+        65,
+        129,
+        16,
+        13
+      ],
+      "corgi": [
+        59,
+        146,
+        24,
+        11
+      ],
+      "monitor_unit_green": [
+        114,
+        143,
+        9,
+        14
+      ],
+      "monitor_unit_red": [
+        124,
+        143,
+        10,
+        14
+      ],
+      "monitor_unit_blue": [
+        134,
+        143,
+        11,
+        14
+      ],
+      "pc_pokeball": [
+        147,
+        140,
+        9,
+        17
+      ]
+    }
+  },
+  "people": {
+    "image": "people.png",
+    "cell": [
+      20,
+      15
+    ],
+    "frames": {
+      "rest": 0,
+      "type": 1
+    },
+    "order": [
+      "p1_dark",
+      "p2_auburn",
+      "p3_glasses",
+      "p4_red",
+      "p5_long"
+    ],
+    "leadSuggest": "p3_glasses",
+    "note": "统一 16-骨架坐姿半身(头+肩); 全员同头/眼骨架, 只换发色+衫色, lead 加眼镜. 眼固定行→露出锚点齐. 置于显示器上沿之后(下层)."
+  },
+  "floor": {
+    "image": "floor.png",
+    "tile": 16,
+    "tiles": {
+      "A": [
+        0,
+        0,
+        16,
+        16
+      ],
+      "B": [
+        16,
+        0,
+        16,
+        16
+      ]
+    }
+  },
+  "wall": {
+    "image": "wall.png",
+    "size": [
+      16,
+      40
+    ]
+  },
+  "workstation": {
+    "image": "workstation.png",
+    "cell": [
+      36,
+      22
+    ],
+    "states": {
+      "idle": 0,
+      "busy": 1,
+      "waiting": 2,
+      "done": 3,
+      "offline": 4
+    },
+    "note": "木桌+显示器(前层). 图层: 地砖 < 椅子 < 小人半身 < workstation < 头顶浮标."
+  },
+  "layering": [
+    "floor",
+    "wall",
+    "chair",
+    "person(bust)",
+    "workstation",
+    "floater"
+  ]
+}
