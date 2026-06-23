@@ -4,6 +4,7 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import * as z from 'zod/v4';
 import type { Router } from '../core/router.js';
 import { t } from '../i18n/index.js';
+import { handleOfficeRequest } from '../office/serve.js';
 
 const PATH_RE = /^\/agent\/([^/]+)\/mcp$/;
 
@@ -206,6 +207,9 @@ export async function startBus(deps: BusDeps, port: number, opts?: BusOptions): 
   const questions = new QuestionStore();
   const httpServer = http.createServer(async (req, res) => {
     const url = new URL(req.url ?? '', `http://${req.headers.host}`);
+
+    // ---- /office 像素办公室彩蛋(只读静态页 + state 聚合)----
+    if (handleOfficeRequest(req, res, { router: deps.router, questions })) return;
 
     // ---- admin 路由（人/老板入口）----
     if (url.pathname.startsWith('/admin/')) {
