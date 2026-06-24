@@ -160,14 +160,19 @@ img, [class*="spr"] { image-rendering: pixelated; image-rendering: crisp-edges; 
   clip-path: polygon(0% 100%, 0% 30%, 25% 62%, 50% 4%, 75% 62%, 100% 30%, 100% 100%);
   filter: drop-shadow(0 1px 0 rgba(0,0,0,.7)) drop-shadow(0 0 1px rgba(0,0,0,.7));
 }
-.station .name {
+.station .name {            /* 名字上桌:落在 .ws 桌前下部木立面, 收进 station 盒(不再 bottom 负值外溢→消跨排遮挡) */
   position: absolute; left: 50%; transform: translateX(-50%);
-  bottom: calc(-9 * var(--s) * 1px);
-  font-size: 12px; white-space: nowrap;
-  color: #f0e6d2; text-shadow: 0 1px 2px #000, 0 0 2px #000;
-  z-index: 6; pointer-events: none;
+  top: calc(20 * var(--s) * 1px);
+  max-width: calc(34 * var(--s) * 1px);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 11px; line-height: 1.1;
+  color: #f0e6d2;
+  background: rgba(20,14,8,.62);
+  border: 1px solid rgba(0,0,0,.5);
+  border-radius: 3px; padding: 1px 5px;
+  z-index: 4; pointer-events: none;       /* 高于 .ws(3)、低于 .floater(5) */
 }
-.station.sel .name { color: var(--warmGlow); font-weight: 700; }
+.station.sel .name { color: var(--warmGlow); font-weight: 700; background: rgba(20,14,8,.72); }
 .station.sel .ws { outline: calc(.5 * var(--s) * 1px) solid var(--warmGlow); outline-offset: 1px; }
 
 /* 二级通道：头顶形状浮标（深色描边底，缩略图/色弱也能分） */
@@ -359,15 +364,40 @@ img, [class*="spr"] { image-rendering: pixelated; image-rendering: crisp-edges; 
   box-shadow: inset 0 0 0 calc(.5 * var(--s) * 1px) #C8A86A;
   opacity: .85; z-index: 0; pointer-events: none;
 }
-/* boss 木牌铭牌(暖字, 非状态色) */
+/* boss 大班桌(CSS 木桌: 比员工桌更宽更厚; 暖木 cozy, 无 status 屏) */
+.boss-desk {
+  position: absolute; pointer-events: none;
+  background: linear-gradient(var(--woodHi) 0 18%, var(--wood) 18% 58%, var(--woodLo) 58% 100%);
+  border: 2px solid var(--base); border-radius: 2px;
+  box-shadow: 0 calc(.5*var(--s)*1px) 0 var(--base), 0 calc(1.5*var(--s)*1px) calc(2*var(--s)*1px) rgba(0,0,0,.45);
+}
+/* 桌上暖光台灯(纯 CSS, 非 status) */
+.boss-lamp {
+  position: absolute; pointer-events: none;
+  width: calc(3 * var(--s) * 1px); height: calc(5 * var(--s) * 1px);
+  background: var(--woodLo); border-radius: 1px;
+}
+.boss-lamp::after {
+  content: ''; position: absolute; left: 50%; top: calc(-3 * var(--s) * 1px); transform: translateX(-50%);
+  width: calc(4 * var(--s) * 1px); height: calc(4 * var(--s) * 1px); border-radius: 50%;
+  background: var(--warmGlow);
+  box-shadow: 0 0 calc(2 * var(--s) * 1px) calc(1 * var(--s) * 1px) color-mix(in srgb, var(--warmGlow) 85%, transparent);
+}
+/* 桌上合盖笔记本(深色小矩形, 非 code 屏) */
+.boss-laptop {
+  position: absolute; pointer-events: none;
+  width: calc(11 * var(--s) * 1px); height: calc(3 * var(--s) * 1px);
+  background: #2a2a30; border: 1px solid #15151a; border-radius: 1px;
+}
+/* boss 桌前铭牌(嵌大班桌前立面: 深木底 + 暖字, 老板版更大气) */
 .boss-plate {
   position: absolute; transform: translateX(-50%);
-  background: var(--wood); color: #2a1c0e;
+  background: var(--base); color: var(--warmGlow);
   font-size: 11px; font-weight: 700; white-space: nowrap;
-  padding: 2px 8px; border-radius: 3px;
-  border: 2px solid var(--woodLo);
+  padding: 2px 9px; border-radius: 3px;
+  border: 1px solid var(--woodLo);
   box-shadow: 0 1px 2px rgba(0,0,0,.5);
-  z-index: 6; pointer-events: none;
+  z-index: 5; pointer-events: none;
 }
 .boss-hit { position: absolute; z-index: 6; cursor: pointer; pointer-events: auto; }
 

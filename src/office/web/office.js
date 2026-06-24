@@ -227,7 +227,7 @@
     $stage.style.transform = 'scale(' + k + ')';
   }
 
-  // 装饰只放在「墙带」+「公共带」+「工位块两侧留白」，绝不压工位行/浮标区(SPEC 红线5)。
+  // 家具按 4 功能区错落布置(角落锚 + 对角, 杜绝一字排/孤件); 任一件离工位行/浮标/boss ≥0.75CELL(SPEC红线5)。
   function buildDecor(L) {
     $decor.innerHTML = '';
     const atlas = imgs.atlas, sp = S.atlas.sprites;
@@ -242,50 +242,50 @@
     };
     const sw = (k) => (sp[k] ? sp[k][2] * SCALE : 0);
     const sh = (k) => (sp[k] ? sp[k][3] * SCALE : 0);
-    const W = L.roomW;
+    const W = L.roomW, s = SCALE;
     const deskRight = L.deskLeft0 + L.deskBlockW;
+    const cBot = L.commonsBottom;
+    const CLEAR = Math.round(0.75 * CELL);             // 离工位/boss 最小净距
 
-    // 墙上窗(暖光透入) 按房宽分布
+    // 墙上窗(暖光透入, 不动)
     add('win_blue1', W * 0.12, WALL_H * 0.18);
-    add('win_blue2', W * 0.12 + (sp.win_blue1[2] + 6) * SCALE, WALL_H * 0.18);
+    add('win_blue2', W * 0.12 + (sp.win_blue1[2] + 6) * s, WALL_H * 0.18);
     add('win_tall', W * 0.80, WALL_H * 0.08);
 
-    // 四角绿植收边
-    add('plant_tall', PAD, L.commonsBottom - sh('plant_tall'));
-    add('plant_tall', W - sw('plant_tall') - PAD, L.commonsBottom - sh('plant_tall'));
-    // 工位块两侧留白各放绿植(上+下), 填侧空(房间够宽时)防 ≥3×3 空棋盘格
-    if (L.deskLeft0 - PAD > sw('plant_tall') + 24) {
-      const lx = L.deskLeft0 - sw('plant_tall') - 16, rx = deskRight + 16;
-      const topY = L.desksTop + 8 * SCALE, botY = L.desksTop + L.deskBlockH - sh('plant_tall');
-      add('plant_tall', lx, topY); add('plant_tall', rx, topY);
-      add('plant_tall', lx, botY); add('plant_tall', rx, botY);
+    // ── A 休息区(底左角): 沙发错位成 L 角(灰后左/红前右, 两张都露出) + 暖毯锚 + 猫狗 ──
+    const aX = PAD, aBot = cBot - sh('sofa_red') - 4;
+    const rug = document.createElement('div'); rug.className = 'rug';
+    rug.style.left = Math.round(aX - 1 * s) + 'px';
+    rug.style.top = Math.round(aBot - 13 * s) + 'px';
+    rug.style.width = Math.round(42 * s) + 'px';
+    rug.style.height = Math.round(24 * s) + 'px';
+    $decor.appendChild(rug);
+    if (sp.sofa_gray) add('sofa_gray', aX + 1 * s, aBot - 11 * s, 2);   // 后左竖臂
+    add('sofa_red', aX + 16 * s, aBot - 1 * s, 2);                      // 前右横臂(错位 → L 角, 非并排)
+    add('cat', aX + 5 * s, aBot + 4 * s, 3);                            // 趴 L 内凹处地毯, 不压沙发
+    add('corgi', aX + 10 * s, aBot + 6 * s, 3);
+
+    // ── B 茶水间(底右角): counter 角 + vending2 立其端 + 角落绿植烘暖 ──
+    const counterLeft = W - sw('counter') - PAD;
+    const bBot = cBot - sh('counter') - 4;
+    add('counter', counterLeft, bBot, 2);
+    add('vending2', counterLeft - sw('vending2') + 2 * s, bBot - (sh('vending2') - sh('counter')), 2);
+    add('plant_tall', W - sw('plant_tall') - PAD, bBot - sh('plant_tall') - 1 * s, 1);
+
+    // ── C 绿植/洽谈角(右侧 desk 列右侧, 填右半空白 P1#18): 绿植+小长椅 紧凑成组(竖向, 离桌 ≥0.75CELL) ──
+    const cX = deskRight + CLEAR;
+    if (cX + sw('plant_tall') < W - PAD) {
+      add('plant_tall', cX, L.desksTop + 2 * s, 1);
+      if (sp.bench_sm) add('bench_sm', cX, L.desksTop + 22 * s, 1);
+      add('plant_tall', cX + 2 * s, L.desksTop + 38 * s, 1);
     }
 
-    // 右下茶水间角: counter + vending2
-    const teaY = L.commonsTop + 6;
-    const counterLeft = W - sw('counter') - PAD;
-    add('counter', counterLeft, teaY + 22);
-    add('vending2', W - sw('vending2') - PAD - 6, teaY - 6);
-
-    // 中下偏右补空: 在 休息角(地毯右沿) 与 茶水间(counter 左沿) 之间放长椅, 消 ≥3×3 空棋盘格
-    const rugRight = L.loungeX + L.rugW;
-    const gapMid = (rugRight + counterLeft) / 2;
-    add('bench_lg', gapMid - sw('bench_lg') / 2, L.commonsTop + 40);
-
-    // 休息角(纯装饰, 不再坐人): 圆地毯 + 两张沙发(暖红 + 中性灰) + 猫狗趴地毯
-    const rug = document.createElement('div');
-    rug.className = 'rug';
-    rug.style.left = Math.round(L.loungeX) + 'px';
-    rug.style.top = Math.round(L.loungeY + 8) + 'px';
-    rug.style.width = Math.round(L.rugW) + 'px';
-    rug.style.height = Math.round(L.rugH) + 'px';
-    $decor.appendChild(rug);
-    const sofaLeft = Math.round(L.loungeX + L.rugW * 0.10);
-    const sofaTop = Math.round(L.loungeY);
-    add('sofa_red', sofaLeft, sofaTop, 1);
-    if (sp.sofa_gray) add('sofa_gray', sofaLeft + (sp.sofa_red[2] + 4) * SCALE, sofaTop, 1);
-    add('cat', L.loungeX + L.rugW * 0.26, L.loungeY + L.rugH * 0.62, 3);
-    add('corgi', L.loungeX + L.rugW * 0.52, L.loungeY + L.rugH * 0.70, 3);
+    // ── D 左侧收边绿植(左 desk 列左侧, 与 A 错开; 离桌 ≥0.75CELL) ──
+    const dX = L.deskLeft0 - sw('plant_tall') - CLEAR;
+    if (dX > PAD) {
+      add('plant_tall', dX, L.desksTop + 4 * s, 1);
+      add('plant_tall', dX, L.desksTop + L.deskBlockH - sh('plant_tall'), 1);
+    }
   }
 
   // ---------- boss 主位(独立渲染分支: 不经 makeStation/updateStation, 无状态/无浮标/无强度) ----------
@@ -294,48 +294,48 @@
     if (!boss) return;
     const sp = S.atlas.sprites;
     const [pw, ph] = S.people.cell;
-    const cx = L.bossCX, top = L.bossSeatTop;
-
-    // 暖地毯(CSS 椭圆, 纯装饰不发光) — 坐镇区底座
-    const rug = document.createElement('div');
-    rug.className = 'boss-rug';
-    rug.style.left = Math.round(cx - 17 * SCALE) + 'px';
-    rug.style.top = Math.round(top + 13 * SCALE) + 'px';
-    rug.style.width = Math.round(34 * SCALE) + 'px';
-    rug.style.height = Math.round(11 * SCALE) + 'px';
-    $lounge.appendChild(rug);
+    const cx = L.bossCX, top = L.bossSeatTop, s = SCALE;
 
     const mk = (key, img, coords, left, t, z) => {
       const el = mkSpr(key, img, coords);
       el.style.left = Math.round(left) + 'px'; el.style.top = Math.round(t) + 'px';
       el.style.zIndex = z; $lounge.appendChild(el); return el;
     };
+    const div = (cls, left, t, w, h, z) => {
+      const el = document.createElement('div'); el.className = cls;
+      el.style.left = Math.round(left) + 'px'; el.style.top = Math.round(t) + 'px';
+      if (w != null) el.style.width = Math.round(w) + 'px';
+      if (h != null) el.style.height = Math.round(h) + 'px';
+      if (z != null) el.style.zIndex = z;
+      $lounge.appendChild(el); return el;
+    };
+
+    // 大班桌几何(≥1.4× 员工桌): 盖住 boss 下半身, 比员工桌更宽更厚
+    const deskW = 44 * s, deskH = 12 * s, deskTop = top + 8 * s, deskLeft = cx - deskW / 2;
+
+    // 层级(从下到上): 暖地毯 → 大班椅 → boss 半身 → 大班桌 → 桌前铭牌 → 桌上小物
+    // 暖地毯(纯装饰不发光, 略宽于桌作区域锚)
+    const rugW = 50 * s, rugH = 9 * s;
+    div('boss-rug', cx - rugW / 2, top + 9 * s, rugW, rugH, 0);
     // 两侧绿植围区
-    mk('decor-plant_tall', imgs.atlas, sp.plant_tall, cx - 26 * SCALE, top - 2 * SCALE, 1);
-    mk('decor-plant_tall', imgs.atlas, sp.plant_tall, cx + 16 * SCALE, top - 2 * SCALE, 1);
-    // 大班椅(chair_white) + boss 半身
-    const chairW = sp.chair_white[2] * SCALE;
-    mk('chair', imgs.atlas, sp.chair_white, cx - chairW / 2, top + 2 * SCALE, 2);
+    mk('decor-plant_tall', imgs.atlas, sp.plant_tall, cx - 30 * s, top - 2 * s, 1);
+    mk('decor-plant_tall', imgs.atlas, sp.plant_tall, cx + 20 * s, top - 2 * s, 1);
+    // 大班椅 + boss 半身
+    const chairW = sp.chair_white[2] * s;
+    mk('chair', imgs.atlas, sp.chair_white, cx - chairW / 2, top + 2 * s, 2);
     const bcol = (S.people.order.indexOf('p2_auburn') + 0) % S.people.order.length;
-    mk('person', imgs.people, [(bcol < 0 ? 0 : bcol) * pw, 0, pw, ph], cx - (pw * SCALE) / 2, top - 2 * SCALE, 3);
-
-    // 木牌铭牌(暖字, 非状态色) — 区分靠铭牌, 不靠状态
-    const plate = document.createElement('div');
-    plate.className = 'boss-plate';
+    mk('person', imgs.people, [(bcol < 0 ? 0 : bcol) * pw, 0, pw, ph], cx - (pw * s) / 2, top - 2 * s, 3);
+    // 大班桌(CSS 木桌, 盖下半身)
+    div('boss-desk', deskLeft, deskTop, deskW, deskH, 4);
+    // 桌上小物(老板办公桌非工位: 暖光台灯 + 合盖笔记本; 无 status 屏)
+    div('boss-lamp', deskLeft + 5 * s, deskTop - 4 * s, null, null, 5);
+    div('boss-laptop', deskLeft + deskW - 15 * s, deskTop - 2 * s, null, null, 5);
+    // 桌前立面铭牌(替代孤立飘牌)
+    const plate = div('boss-plate', cx, deskTop + deskH - 7 * s, null, null, 5);
     plate.textContent = boss.name;
-    plate.style.left = Math.round(cx) + 'px';
-    plate.style.top = Math.round(top + 16 * SCALE) + 'px';
-    $lounge.appendChild(plate);
-
-    // 整个坐镇区可点选 → 详情(中性"坐镇"标, 无 6 态 pill)
-    const hit = document.createElement('div');
-    hit.className = 'boss-hit';
-    hit.style.left = Math.round(cx - 22 * SCALE) + 'px';
-    hit.style.top = Math.round(top - 4 * SCALE) + 'px';
-    hit.style.width = Math.round(44 * SCALE) + 'px';
-    hit.style.height = Math.round(24 * SCALE) + 'px';
+    // 点选区
+    const hit = div('boss-hit', cx - 24 * s, top - 4 * s, 48 * s, 26 * s, 6);
     hit.addEventListener('click', () => selectAgent(boss.name));
-    $lounge.appendChild(hit);
   }
 
   // ---------- 工位 ----------
@@ -668,7 +668,7 @@
     // 注入调色板到 CSS 变量
     const root = document.documentElement.style;
     const p = S.palette || {};
-    const map = { tileA:'tileA', tileB:'tileB', seam:'seam', wood:'wood', woodLo:'woodLo', base:'base',
+    const map = { tileA:'tileA', tileB:'tileB', seam:'seam', wood:'wood', woodHi:'woodHi', woodLo:'woodLo', base:'base',
                   busy:'busy', waiting:'waiting', stuck:'stuck', done:'done', offline:'offline', idle:'idle', warmGlow:'warmGlow' };
     for (const k in map) if (p[k]) root.setProperty('--' + map[k], p[k]);
     root.setProperty('--s', SCALE);
