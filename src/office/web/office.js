@@ -255,18 +255,18 @@
     add('win_blue2', W * 0.12 + (sp.win_blue1[2] + 6) * s, WALL_H * 0.18);
     add('win_tall', W * 0.80, WALL_H * 0.08);
 
-    // ── A 休息区(底左角): 沙发错位成 L 角(灰后左/红前右, 两张都露出) + 暖毯锚 + 猫狗 ──
-    const aX = PAD, aBot = cBot - sh('sofa_red') - 4;
+    // ── A 休息区(底左角): 沙发并排留缝(无侧面 sprite) + 圆角矩形暖毯锚 + 猫狗(ux 精确坐标) ──
+    const aX = PAD, gB = L.roomH - 2 * s;                   // gB = 舞台底基线(贴底, 留满间距)
     const rug = document.createElement('div'); rug.className = 'rug';
-    rug.style.left = Math.round(aX - 1 * s) + 'px';
-    rug.style.top = Math.round(aBot - 13 * s) + 'px';
-    rug.style.width = Math.round(42 * s) + 'px';
-    rug.style.height = Math.round(24 * s) + 'px';
+    rug.style.left = Math.round(aX) + 'px';
+    rug.style.top = Math.round(gB - 32 * s) + 'px';
+    rug.style.width = Math.round(71 * s) + 'px';
+    rug.style.height = Math.round(34 * s) + 'px';
     $decor.appendChild(rug);
-    if (sp.sofa_gray) add('sofa_gray', aX + 1 * s, aBot - 11 * s, 2);   // 后左竖臂
-    add('sofa_red', aX + 16 * s, aBot - 1 * s, 2);                      // 前右横臂(错位 → L 角, 非并排)
-    add('cat', aX + 5 * s, aBot + 4 * s, 3);                            // 趴 L 内凹处地毯, 不压沙发
-    add('corgi', aX + 10 * s, aBot + 6 * s, 3);
+    if (sp.sofa_gray) add('sofa_gray', aX + 2 * s, gB - 29 * s, 2);     // 灰沙发(左)
+    add('sofa_red', aX + 37 * s, gB - 30 * s, 2);                       // 红沙发(右, 与灰留 8px 缝、底对齐)
+    add('cat', aX + 3 * s, gB - 13 * s, 3);                             // 猫狗趴毯前缘, 间隙 12px 不相交
+    add('corgi', aX + 22 * s, gB - 11 * s, 3);
 
     // ── B 茶水间(底右角): counter 角 + vending2 立其端 + 角落绿植烘暖 ──
     const counterLeft = W - sw('counter') - PAD;

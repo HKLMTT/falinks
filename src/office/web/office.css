@@ -365,11 +365,11 @@ img, [class*="spr"] { image-rendering: pixelated; image-rendering: crisp-edges; 
 }
 
 /* ---- 休息区(纯装饰: 沙发/地毯/猫狗, 不坐人) + boss 坐镇主位 ---- */
-.rug {                       /* 休息角圆地毯(CSS 椭圆) */
+.rug {                       /* 休息角地毯: 圆角矩形(收住矩形沙发角, 非纯椭圆) */
   position: absolute;
-  border-radius: 50%;
-  background: radial-gradient(ellipse at center, var(--rug) 0 64%, color-mix(in srgb, var(--rug) 80%, #000) 80%, transparent 88%);
-  box-shadow: inset 0 0 0 calc(.5 * var(--s) * 1px) var(--rugEdge);
+  border-radius: calc(5 * var(--s) * 1px);
+  background: radial-gradient(ellipse at center, var(--rug) 0 70%, color-mix(in srgb, var(--rug) 78%, #000) 100%);
+  box-shadow: inset 0 0 0 calc(.6 * var(--s) * 1px) var(--rugEdge);
   opacity: .92; z-index: 0;
 }
 /* boss 暖地毯(纯装饰, 不发光) */
