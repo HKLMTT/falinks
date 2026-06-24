@@ -330,6 +330,38 @@ img, [class*="spr"] { image-rendering: pixelated; image-rendering: crisp-edges; 
   .station.b3 { animation: none; }
 }
 
+/* ---- idle 打瞌睡(idle 态内部随机休眠子维度; 不破 6 态: 无地台/无状态浮标/不换色) ---- */
+/* 每 station 随机 --doze-dur(清醒+打盹) + --doze-delay(负相位错峰); 前~72% 静止, 后段点头+Zzz */
+.zzz {                       /* 头顶 Zzz: 中性奶白像素字, 禁状态色; 默认隐, z 低于气泡(10) */
+  position: absolute; left: 50%; transform: translateX(-50%);
+  top: calc(-9 * var(--s) * 1px);
+  font-size: 12px; font-weight: 700; letter-spacing: 1px;
+  color: #E8DCC0; text-shadow: 0 1px 0 #5C3A20, 0 0 2px rgba(0,0,0,.6);
+  opacity: 0; z-index: 7; pointer-events: none;
+}
+.station.dozing .person { animation: doze-nod var(--doze-dur, 16s) steps(1, end) var(--doze-delay, 0s) infinite; }
+.station.dozing .zzz    { animation: doze-zzz var(--doze-dur, 16s) ease-in-out var(--doze-delay, 0s) infinite; }
+/* 气泡优先: 说话(=醒着)挂起打盹 */
+.station.talking .person { animation: none; }
+.station.talking .zzz    { animation: none; opacity: 0; }
+@keyframes doze-nod {        /* 仅后段点头: translateY 0→+2px, 整数像素(steps), 不 rotate */
+  0%, 72%, 100% { transform: translateX(-50%) translateY(0); }
+  76%, 86%, 96% { transform: translateX(-50%) translateY(2px); }
+  81%, 91%      { transform: translateX(-50%) translateY(0); }
+}
+@keyframes doze-zzz {        /* 打盹段冒 2 次 Zzz, 飘升淡出 ~-10px */
+  0%, 73%   { opacity: 0; transform: translateX(-50%) translateY(0); }
+  80%       { opacity: .95; transform: translateX(-50%) translateY(-6px); }
+  86%       { opacity: 0; transform: translateX(-50%) translateY(-10px); }
+  87%       { opacity: 0; transform: translateX(-50%) translateY(0); }
+  94%       { opacity: .95; transform: translateX(-50%) translateY(-6px); }
+  100%      { opacity: 0; transform: translateX(-50%) translateY(-10px); }
+}
+@media (prefers-reduced-motion: reduce) {   /* 去点头; Zzz 不显 */
+  .station.dozing .person { animation: none; }
+  .station.dozing .zzz { animation: none; opacity: 0; }
+}
+
 /* ---- 头顶说话气泡(独立 #bubbles 层; 暖白像素, 禁状态色) ---- */
 #bubbles { position: absolute; inset: 0; z-index: 10; pointer-events: none; }
 .bubble {

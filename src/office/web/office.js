@@ -388,6 +388,13 @@
     name.textContent = agent.name;
     el.appendChild(name);
 
+    // idle 打瞌睡用: 头顶 Zzz + 每人随机错峰(纯 CSS, 共用 --doze-dur/--doze-delay)
+    const zzz = document.createElement('div'); zzz.className = 'zzz'; zzz.textContent = 'Zzz';
+    el.appendChild(zzz);
+    const dur = 11 + Math.random() * 11;                 // 清醒+打盹 ~11-22s
+    el.style.setProperty('--doze-dur', dur.toFixed(2) + 's');
+    el.style.setProperty('--doze-delay', (-Math.random() * dur).toFixed(2) + 's');  // 随机相位错峰
+
     el.addEventListener('click', () => selectAgent(agent.name));
     $desks.appendChild(el);
     const rec = { el, tile, person, ws, floater, col };
@@ -408,6 +415,7 @@
   function updateStation(rec, agent, vis) {
     const el = rec.el;
     el.classList.remove('s-offline', 's-launching', 's-stuck', 'b1', 'b2', 'b3');
+    el.classList.toggle('dozing', vis === 'idle');   // 仅 idle 可能打盹; 切走→秒停
     if (vis === 'offline') el.classList.add('s-offline');
     if (vis === 'stuck') el.classList.add('s-stuck');
     if (agent.status === 'launching') el.classList.add('s-launching');
@@ -475,6 +483,8 @@
     el.classList.add('fade');
     setTimeout(() => { if (el.parentNode) el.remove(); }, 260);
     bubbleState[name] = null;
+    const rec = stations.get(name);                    // 气泡结束 → 恢复打盹随机循环
+    if (rec) rec.el.classList.remove('talking');
   }
 
   function showBubble(name, body) {
@@ -496,6 +506,8 @@
     const dwell = Math.max(2500, Math.min(6000, 2500 + 35 * text.length));
     clearTimeout(st.timer);
     st.timer = setTimeout(() => fadeOutBubble(name), dwell);
+    const rec = stations.get(name);                    // 说话=醒着 → 挂起打盹(气泡优先)
+    if (rec) rec.el.classList.add('talking');
   }
 
   // 每次重绘按当前头顶坐标重定位活动气泡(防 roster 重排/缩放后气泡飘离头顶); 说话人离屏则移除。
