@@ -32,8 +32,8 @@ test('buildOfficeState 字段齐全', () => {
   const s = buildOfficeState(fakeDeps());
   expect(s.ts).toBe(999);
   expect(s.roster).toEqual([
-    { name: 'lead', role: '组长', status: 'busy', virtual: false, lead: true, unresponsive: false },
-    { name: 'boss', role: '老板', status: 'idle', virtual: true, lead: false, unresponsive: false },
+    { name: 'lead', role: '组长', status: 'busy', virtual: false, lead: true, unresponsive: false, queue: 0 },
+    { name: 'boss', role: '老板', status: 'idle', virtual: true, lead: false, unresponsive: false, queue: 0 },
   ]);
   expect(s.log).toEqual([
     { id: 'm1', from: 'lead', to: 'backend', body: 'hi', ts: 1 },
@@ -53,7 +53,16 @@ test('log 截断为最近 200 条且时间升序', () => {
 
 test('roster 缺省 role 归一为空串', () => {
   const s = buildOfficeState(fakeDeps({ roster: [{ name: 'x', status: 'idle' }] }));
-  expect(s.roster[0]).toEqual({ name: 'x', role: '', status: 'idle', virtual: false, lead: false, unresponsive: false });
+  expect(s.roster[0]).toEqual({ name: 'x', role: '', status: 'idle', virtual: false, lead: false, unresponsive: false, queue: 0 });
+});
+
+test('roster 暴露 queue:inbox.length 优先,queue 字段次之,缺省 0', () => {
+  const s = buildOfficeState(fakeDeps({ roster: [
+    { name: 'a', status: 'busy', inbox: [{}, {}, {}] }, // 真实 inbox → 3
+    { name: 'b', status: 'busy', queue: 7 },            // 无 inbox,给 queue → 7
+    { name: 'c', status: 'idle' },                      // 都没有 → 0
+  ] }));
+  expect(s.roster.map((r) => [r.name, r.queue])).toEqual([['a', 3], ['b', 7], ['c', 0]]);
 });
 
 // ---- 静态服务 / 穿越防护(用真 http server + fetch) ----
@@ -98,6 +107,7 @@ test('GET /office/state 返回 JSON', async () => {
   expect(res.headers.get('content-type')).toMatch(/application\/json/);
   const j = await res.json();
   expect(j.roster[0].name).toBe('lead');
+  expect(typeof j.roster[0].queue).toBe('number');
   expect(Array.isArray(j.log)).toBe(true);
 });
 

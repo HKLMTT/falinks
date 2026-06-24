@@ -2,7 +2,7 @@
 // 用法: node scripts/office-mock.mjs [port]
 //   - 绑定 127.0.0.1,默认端口 4317
 //   - /office /office/state /office/<asset> 由真实 handleOfficeRequest 提供(webRoot=dist/office/web)
-//   - /mock/set?name=&status=&unresponsive=  现场翻状态
+//   - /mock/set?name=&status=&unresponsive=&queue=  现场翻状态(queue=队列深度,演示分档)
 //   - /mock/state                            查看当前内存 roster
 // 非发布产物,仅供验收。
 import http from 'node:http';
@@ -18,15 +18,17 @@ const HOST = '127.0.0.1';
 
 const VALID_STATUS = new Set(['idle', 'busy', 'waiting', 'done', 'offline']);
 
-// 初始覆盖全部状态 + 一个 unresponsive(卡住)成员。
+// 初始覆盖全部状态 + 一个 unresponsive(卡住)成员;queue 覆盖 0/低/高/超阈值四档。
+// boss:office.js 按 name==='boss' 渲染中轴坐镇位,不参与 6 态/强度/统计;与真实 roster 一致,演示老板区。
 const roster = [
-  { name: 'lead', role: '组长,统筹任务分配', status: 'busy', virtual: false, lead: true, unresponsive: false },
-  { name: 'frontend', role: '前端开发', status: 'idle', virtual: false, lead: false, unresponsive: false },
-  { name: 'backend', role: '后端开发', status: 'busy', virtual: false, lead: false, unresponsive: false },
-  { name: 'qa', role: '测试与质量', status: 'waiting', virtual: false, lead: false, unresponsive: false },
-  { name: 'ux', role: 'UI/UX 设计走查', status: 'done', virtual: false, lead: false, unresponsive: false },
-  { name: 'intern', role: '实习生', status: 'offline', virtual: true, lead: false, unresponsive: false },
-  { name: 'stuck', role: '卡住的成员', status: 'busy', virtual: false, lead: false, unresponsive: true },
+  { name: 'boss', role: '老板', status: 'idle', virtual: false, lead: false, unresponsive: false, queue: 0 },
+  { name: 'lead', role: '组长,统筹任务分配', status: 'busy', virtual: false, lead: true, unresponsive: false, queue: 2 },
+  { name: 'frontend', role: '前端开发', status: 'idle', virtual: false, lead: false, unresponsive: false, queue: 0 },
+  { name: 'backend', role: '后端开发', status: 'busy', virtual: false, lead: false, unresponsive: false, queue: 5 },
+  { name: 'qa', role: '测试与质量', status: 'waiting', virtual: false, lead: false, unresponsive: false, queue: 1 },
+  { name: 'ux', role: 'UI/UX 设计走查', status: 'done', virtual: false, lead: false, unresponsive: false, queue: 0 },
+  { name: 'intern', role: '实习生', status: 'offline', virtual: true, lead: false, unresponsive: false, queue: 0 },
+  { name: 'stuck', role: '卡住的成员', status: 'busy', virtual: false, lead: false, unresponsive: true, queue: 12 },
 ];
 
 const now = () => Date.now();
@@ -73,6 +75,16 @@ const server = http.createServer((req, res) => {
       member.status = status;
     }
     if (unresponsive !== null) member.unresponsive = unresponsive === '1' || unresponsive === 'true';
+    const queue = url.searchParams.get('queue');
+    if (queue !== null) {
+      const n = Number(queue);
+      if (!Number.isFinite(n) || n < 0) {
+        res.writeHead(400, { 'content-type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ ok: false, error: `bad queue: ${queue}` }));
+        return;
+      }
+      member.queue = Math.floor(n);
+    }
     res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' });
     res.end(JSON.stringify({ ok: true, member }));
     return;
@@ -95,6 +107,6 @@ server.listen(PORT, HOST, () => {
   console.log(`[office-mock] webRoot = ${WEB_ROOT}`);
   console.log(`[office-mock] 办公室:   http://${HOST}:${PORT}/office`);
   console.log(`[office-mock] state:    http://${HOST}:${PORT}/office/state`);
-  console.log(`[office-mock] 翻状态:   http://${HOST}:${PORT}/mock/set?name=frontend&status=busy&unresponsive=0`);
+  console.log(`[office-mock] 翻状态:   http://${HOST}:${PORT}/mock/set?name=frontend&status=busy&unresponsive=0&queue=5`);
   console.log(`[office-mock] 查内存:   http://${HOST}:${PORT}/mock/state`);
 });

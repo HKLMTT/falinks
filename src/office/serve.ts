@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 /** /office/state 返回结构(与前端约定)。 */
 export interface OfficeState {
   ts: number;
-  roster: Array<{ name: string; role: string; status: string; virtual: boolean; lead: boolean; unresponsive: boolean }>;
+  roster: Array<{ name: string; role: string; status: string; virtual: boolean; lead: boolean; unresponsive: boolean; queue: number }>;
   log: Array<{ id: string; from: string; to: string; body: string; ts: number; thread?: string }>;
   questions: Array<{ id: string; from: string; question: string; options: string[]; ts: number }>;
 }
@@ -14,7 +14,7 @@ export interface OfficeState {
 /** buildOfficeState/handleOfficeRequest 的依赖:复用 router 取数 + 待答问题源。 */
 export interface OfficeDeps {
   router: {
-    roster(): Array<{ name: string; role?: string; status: string; virtual?: boolean; lead?: boolean; unresponsive?: boolean }>;
+    roster(): Array<{ name: string; role?: string; status: string; virtual?: boolean; lead?: boolean; unresponsive?: boolean; inbox?: unknown[]; queue?: number }>;
     messages(): Array<{ id: string; from: string; to: string; body: string; ts: number; thread?: string }>;
   };
   questions: { list(): Array<{ id: string; from: string; question: string; options: string[]; ts: number }> };
@@ -36,6 +36,9 @@ export function buildOfficeState(deps: OfficeDeps): OfficeState {
     virtual: !!a.virtual,
     lead: !!a.lead,
     unresponsive: !!a.unresponsive,
+    // 队列深度 = 该 agent 仍在 inbox 排队、尚未投出的消息数,用于表现繁忙程度。
+    // 优先取真实 inbox.length;mock/测试可直接给 queue;拿不到则 0(健壮)。
+    queue: Array.isArray(a.inbox) ? a.inbox.length : typeof a.queue === 'number' ? a.queue : 0,
   }));
   const all = deps.router.messages();
   const log = all.slice(-MAX_LOG).map((m) => ({ id: m.id, from: m.from, to: m.to, body: m.body, ts: m.ts, thread: m.thread }));
