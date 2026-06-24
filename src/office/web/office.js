@@ -270,9 +270,15 @@
     $decor.appendChild(rug);
     if (sp.sofa_gray) add('sofa_gray', aX + 2 * s, gB - 29 * s, 2);     // 灰沙发(左)
     add('sofa_red', aX + 37 * s, gB - 30 * s, 2);                       // 红沙发(右, 与灰留 8px 缝、底对齐)
-    // 猫狗改为自由游走(独立 #pets 持久层, 不随 buildDecor 重置): 活动区 + 沙发避让 bbox 传给控制器
-    petSofa = { minX: aX + 2 * s, minY: gB - 30 * s, maxX: aX + 37 * s + sp.sofa_red[2] * s, maxY: gB - 14 * s };
-    petArea = { minX: PAD, minY: L.commonsTop + 8, maxX: Math.round(L.roomW * 0.38), maxY: L.commonsBottom - 4 };
+    // 猫狗自由游走(独立 #pets 持久层): 活动区整块落在沙发底沿下方 → 构造性避沙发(整身 bbox 在区内即不碰任一沙发)
+    const sofaBottom = gB - 14 * s;                                         // gray/red 沙发底沿(两者对齐)
+    const zoneBLeft = deskRight - sw('bench_sm') - sw('plant_tall') - 2 * s; // zoneB 绿植左缘(右边界避让)
+    petArea = {
+      minX: PAD + 1 * s,
+      minY: sofaBottom + 2,                                                 // 比沙发底低 2px → 整区在沙发之下
+      maxX: Math.min(Math.round(0.5 * L.roomW), zoneBLeft - 1 * s),         // 右不过中轴且避开 zoneB 绿植
+      maxY: L.roomH - 1 * s,                                                // 贴舞台底(留 4px); 区高恒 58 容 cat52/dog44
+    };
     mountPets();
 
 
@@ -301,27 +307,20 @@
 
   // ---------- 猫狗自由游走(独立 #pets 层: rAF 推进 + 逐帧 clamp + 朝向翻转; reduced-motion 静止) ----------
   // 解耦(同气泡/打盹): 外层 wrap 走"位置+翻转", 内层 .inner 走"步态/原地动作"(CSS), 互不拖拽。
-  // 沙发避让口径: 脚底着地点(底边中点)不落在沙发 bbox 内(= 不爬座面); 宠物 z=3 渲染在沙发(z=2)前, 身子可视觉重叠读作"站沙发前"。
+  // 避沙发: 活动区整块构造在沙发底沿之下 → 整身 bbox 在区内即不与任一沙发相交(无需逐帧判沙发)。
   const PET_DEFS = [{ key: 'cat', spd: [8, 12] }, { key: 'corgi', spd: [10, 14] }];
   const petState = {};                  // key -> {wrap, inner, w, h, x, y, tx, ty, mode, until, spd, face, acting, actUntil, nextAct}
-  let petArea = null, petSofa = null, petLayer = null, petRAFid = 0, petLastTs = 0;
+  let petArea = null, petLayer = null, petRAFid = 0, petLastTs = 0;
   const petMql = (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)')) || { matches: false };
   const prnd = (a, b) => a + Math.random() * (b - a);
 
-  function petOnSofa(p, x, y) {          // 脚底着地点落沙发 bbox 内 = 爬沙发(禁)
-    const gx = x + p.w / 2, gy = y + p.h;
-    return gx >= petSofa.minX && gx <= petSofa.maxX && gy >= petSofa.minY && gy <= petSofa.maxY;
-  }
   function petClamp(p, x, y) {
     return [Math.max(petArea.minX, Math.min(petArea.maxX - p.w, x)),
             Math.max(petArea.minY, Math.min(petArea.maxY - p.h, y))];
   }
-  function petPickTarget(p) {
-    for (let i = 0; i < 16; i++) {
-      const tx = prnd(petArea.minX, petArea.maxX - p.w), ty = prnd(petArea.minY, petArea.maxY - p.h);
-      if (!petOnSofa(p, tx, ty)) { p.tx = tx; p.ty = ty; return; }
-    }
-    p.tx = p.x; p.ty = p.y;              // 兜底原地
+  function petPickTarget(p) {           // 区内随机目标(整区已在沙发下方, 无需判沙发)
+    p.tx = prnd(petArea.minX, petArea.maxX - p.w);
+    p.ty = prnd(petArea.minY, petArea.maxY - p.h);
   }
   function petApply(p) {
     p.wrap.style.left = Math.round(p.x) + 'px';
@@ -341,12 +340,8 @@
         p.wrap.classList.remove('moving');
       } else {
         const nx = p.x + dx / dist * step, ny = p.y + dy / dist * step;
-        if (petOnSofa(p, nx, ny)) {                           // 直线途经沙发 → 中止本段, 短停后重选点
-          p.mode = 'pause'; p.until = ts + prnd(600, 1500); p.wrap.classList.remove('moving');
-        } else {
-          if (Math.abs(dx) > 0.4) p.face = dx < 0 ? -1 : 1;   // 按 dx 水平翻转面向
-          [p.x, p.y] = petClamp(p, nx, ny);
-        }
+        if (Math.abs(dx) > 0.4) p.face = dx < 0 ? -1 : 1;   // 按 dx 水平翻转面向
+        [p.x, p.y] = petClamp(p, nx, ny);
       }
     } else {                                                  // pause: 偶发原地动作 + 到时再走
       if (!p.acting && ts >= p.nextAct) { p.acting = true; p.wrap.classList.add('acting'); p.actUntil = ts + 850; p.nextAct = ts + prnd(5000, 10000); }
