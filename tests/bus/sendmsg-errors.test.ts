@@ -47,10 +47,12 @@ test('sendmsg 到已死目标 → 报 target dead', async () => {
   expect(r.error).toMatch(/dead/);
 });
 
-test('sendmsg 被守卫拦下 → 报 guardrail(而非 unknown/dead),且明示未送达', async () => {
+test('sendmsg 被守卫拦下 → 报"重复/空转被护栏拦、未送达、请 idle 停手"(而非 unknown/dead)', async () => {
   expect((await callTool('alice', 'sendmsg', { to: 'bob', message: 'm1' })).ok).toBe(true); // 第1回合 OK
   const r = await callTool('bob', 'sendmsg', { to: 'alice', message: 'm2' });               // 同一对第2回合 > cap1 被拦
   expect(r.ok).toBe(false);
-  expect(r.error).toMatch(/guardrail/);
-  expect(r.error).toMatch(/NOT delivered/);
+  expect(r.error).not.toMatch(/unknown target|dead/); // 与目标不存在/已死区分开
+  expect(r.error).toMatch(/护栏|空转/); // 明示被护栏拦下
+  expect(r.error).toMatch(/未送达/);    // 明示未送达
+  expect(r.error).toMatch(/idle/i);     // 给出可执行的停手指令(调 idle 等待,别重发)
 });

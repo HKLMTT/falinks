@@ -54,6 +54,7 @@ test('ask to boss -> pending,/admin/questions 能查到', async () => {
   const r = await callTool('alice', 'ask', { to: 'boss', question: '用哪个方案?', options: ['A', 'B', 'C'] });
   expect(r.ok).toBe(true);
   expect(r.pending).toBe(true);
+  expect(r.note).toMatch(/idle/i); // pending 返回带显式"调 idle 停手"指令,引导 agent 别空转
   const { questions } = await http('GET', '/admin/questions');
   expect(questions.length).toBe(1);
   expect(questions[0]).toMatchObject({ from: 'alice', question: '用哪个方案?', options: ['A', 'B', 'C'] });

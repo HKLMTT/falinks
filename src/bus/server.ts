@@ -97,7 +97,7 @@ function serverForAgent(agentName: string, deps: BusDeps, questions: QuestionSto
     const target = router.resolve(to);
     if (!target) return `unknown target: ${to}`;
     if (router.get(target)?.status === 'dead') return `target dead: ${to}`;
-    return `blocked by guardrail (turn cap / loop / rate limit), message NOT delivered: ${to}`;
+    return t().undeliverableBlocked(to);
   };
 
   server.registerTool('register', { description: t().toolDescRegister, inputSchema: {} }, async () => {
@@ -133,7 +133,8 @@ function serverForAgent(agentName: string, deps: BusDeps, questions: QuestionSto
       const todoState = deps.todo?.state() as { state?: string } | undefined;
       if (todoState?.state === 'running') return ok({ ok: false, error: t().askBlockedInTodo });
       const id = questions.add({ from: agentName, question, options });
-      return ok({ ok: true, id, pending: true });
+      // pending 返回里带显式停手指令:让 agent 在工具结果里直接看到"现在该 idle 等待,别空转"。
+      return ok({ ok: true, id, pending: true, note: t().askPendingNote });
     }
     const body = t().askToPeer(question, options.map((o, i) => `${i + 1}. ${o}`).join('\n'), agentName);
     const msg = router.send(agentName, to, body);

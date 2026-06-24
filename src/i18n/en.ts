@@ -227,9 +227,13 @@ export const en: typeof zh = {
     `${question}\n${options}\n(Reply via sendmsg(to="${replyTo}", message="pick N"))`,
   toolDescRegister: 'Check in: tell falinks you are ready',
   toolDescSendmsg: 'Send a message to a coworker/role',
-  toolDescIdle: 'Wrap up this turn, release to idle state',
+  toolDescIdle: 'Wrap up this turn and release to idle. Call it whenever you have nothing to do right now (waiting on a reply / waiting for the next message / just asked the boss) — a new message will automatically wake you again. This is the correct way to wait; do NOT busy-wait by repeatedly calling tools (who / resend / re-ask).',
   toolDescAsk:
-    'Pose a multiple-choice question. Send to the boss (to="boss") and the boss sees clickable options and picks one; send to a coworker and they receive a message with numbered options and reply via sendmsg with their pick.',
+    'Pose a multiple-choice question. Send to the boss (to="boss") and the boss sees clickable options and picks one; send to a coworker and they receive a message with numbered options and reply via sendmsg with their pick. Note: asking the boss returns immediately as pending (non-blocking; the boss may not answer right away). After asking, **call idle immediately to end your turn** and wait — the boss\'s answer arrives as a new message that wakes you again. Do NOT poll, re-ask, or busy-resend (it gets blocked by guardrails and wastes turns).',
+  askPendingNote:
+    'Handed off to the boss (awaiting their answer). Call idle now to end this turn — the boss\'s answer will arrive as a new message and wake you again. Do not poll, do not re-ask, do not busy-resend.',
+  undeliverableBlocked: (to: string) =>
+    `Detected repeated sending / busy-waiting (blocked by the loop guardrail); message NOT delivered: ${to}. Call idle now to end this turn and wait — do not resend or re-ask; a new message will wake you again.`,
   askBlockedInTodo:
     '[todolist running · unattended] Asking the boss is disabled — nobody is watching to answer, and a question would stall the long-running task. Proceed with your best recommended option based on available info, and record your assumptions and trade-offs in the task result / project state doc.',
   toolDescWho: 'View the online roster',
