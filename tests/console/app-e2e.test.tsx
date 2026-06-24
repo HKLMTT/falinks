@@ -119,8 +119,56 @@ renderE2E('e2e:滚轮 burst 进回看(底部活区仍在),Esc 回到最新', asy
   }
 });
 
+// 回归:滚轮把一格拆成跨 chunk 的单个 ↑(非同 chunk burst)时,短窗内连发仍判为滚轮 → 进回看,
+// 绝不落进输入历史;而真正孤立的单个键盘 ↑ 不应被误判为滚轮(贴底+空历史 → 不进回看)。
+renderE2E('e2e:跨 chunk 单发 ↑ 连发=滚轮进回看;孤立单个 ↑ 不误判', async () => {
+  for (let i = 1; i <= 30; i++) router.send('boss', 'alice', `历史消息-${i}`);
 
-// 全套并发跑时偶发超默认 5s(单跑 <1s),提时限消 flaky。
+  const stdout = fakeStdout(80, 14);
+  const stdin = fakeStdin();
+  const inst = render(<App port={bus.port} />, { stdout, stdin, exitOnCtrlC: false, patchConsole: false });
+  const lastFrame = () => (stdout.frames as string[]).map(strip).filter((x) => x.trim()).at(-1) ?? '';
+  try {
+    await waitFor(() => lastFrame().includes('历史消息-30'));
+
+    // 孤立单个 ↑(贴底、输入空、无输入历史):等过合并窗口后结算为键盘方向键 → 什么都不动,不进回看。
+    stdin.emit('data', '\x1b[A');
+    await new Promise((r) => setTimeout(r, 120)); // > WHEEL_COALESCE_MS(40ms)
+    expect(lastFrame()).not.toContain('回看中');
+    expect(lastFrame()).toContain('历史消息-30');
+
+    // 跨 chunk 的两个单发 ↑ 紧挨着到(模拟滚轮拆包):窗口内累加 → 判为滚轮 → 进回看。
+    stdin.emit('data', '\x1b[A');
+    stdin.emit('data', '\x1b[A');
+    await waitFor(() => lastFrame().includes('回看中'));
+    expect(lastFrame()).toContain('›'); // 底部输入区仍钉住
+  } finally {
+    inst.unmount();
+  }
+});
+
+
+// 回归:Ctrl+C "有内容先清空(不退出),空才弹退出确认"(标准 REPL 手感)。
+renderE2E('e2e:Ctrl+C 有内容先清空、不退出;输入为空再 Ctrl+C 才弹退出确认', { timeout: 15000 }, async () => {
+  const stdout = fakeStdout(80, 14);
+  const stdin = fakeStdin();
+  const inst = render(<App port={bus.port} />, { stdout, stdin, exitOnCtrlC: false, patchConsole: false });
+  const lastFrame = () => (stdout.frames as string[]).map(strip).filter((x) => x.trim()).at(-1) ?? '';
+  try {
+    await waitFor(() => lastFrame().includes('alice')); // 等首轮轮询渲染(挂载完成、stdin 监听已挂,否则过早 emit 会丢)
+    stdin.emit('data', 'hello');
+    await waitFor(() => lastFrame().includes('hello')); // 输入框显示已输入内容
+
+    stdin.emit('data', '\x03'); // Ctrl+C:有内容 → 清空,不退出
+    await waitFor(() => !lastFrame().includes('hello'));
+    expect(lastFrame()).not.toContain('退出 falinks'); // 未弹退出确认
+
+    stdin.emit('data', '\x03'); // 再 Ctrl+C:输入已空 → 弹退出确认
+    await waitFor(() => lastFrame().includes('退出 falinks'));
+  } finally {
+    inst.unmount();
+  }
+});
 renderE2E('e2e:Esc 开取消排队浮层,Enter 取消选中条 → 等送达计数缩、历史标已取消', { timeout: 15000 }, async () => {
   router.send('boss', 'alice', '占住-alice');   // 即时投递 → alice busy
   router.send('boss', 'alice', '排队-甲');      // 排队

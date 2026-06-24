@@ -25,6 +25,11 @@ const VERSION = PKG.version;
 // 协作诊断横幅的计数时间窗:只统计最近这段时间内的诊断事件,平息后自动消退(避免陈旧事件长期粘住告警)。
 const DIAG_WINDOW_MS = 5 * 60_000;
 
+// 1007 滚轮消歧:孤立单个方向键缓冲的极短窗口。窗口内又来同向方向键即判为滚轮连发。
+// 取 40ms——远大于滚轮把一格拆成跨 chunk 单发的间隔(亚毫秒~数十毫秒),又小于 macOS
+// 默认键重复间隔(~80ms+),故键盘单按/常速按住仍单发结算,不误判为滚轮。见下方 onData。
+const WHEEL_COALESCE_MS = 40;
+
 async function admin(port: number, method: string, path: string, body?: unknown) {
   const res = await fetch(`http://127.0.0.1:${port}${path}`, {
     method,
@@ -326,7 +331,10 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
       }
       return; // 确认中，吞掉其它键
     }
-    if (ev.type === 'ctrl' && ev.key === 'c') { setConfirmExit(true); return; }
+    if (ev.type === 'ctrl' && ev.key === 'c') {
+      if (input.length > 0) { setInput(''); setCursor(0); setHistIdx(null); return; } // 有内容:先清空输入,不退出(标准 REPL 手感)
+      setConfirmExit(true); return;                                                   // 输入为空:走退出确认
+    }
 
     // 滚轮(1007 burst)/PageUp/PageDown:滚回看视口。浮层菜单开着时滚轮代行 ↑/↓ 选项(CC 同款手感)。
     const totalLines = flatLines.length;
@@ -616,13 +624,43 @@ export function App({ port, initialStatus }: { port: number; initialStatus?: str
   handleKeyRef.current = handleKey;
   useEffect(() => {
     if (!stdin) return;
+    // 1007 滚轮 ≈ 方向键(为保终端原生拖选复制,我们故意不开鼠标上报),字节层无法区分滚轮与键盘 ↑↓。
+    // 同 chunk 连发 ≥2 个方向键铁定是滚轮(wheelBurst),立即作 scroll、无延迟。
+    // 但部分终端把一格滚轮拆成**跨 chunk 的多个单发**、或每格只发 1 个 ↑/↓——这些单发会被 decodeKey
+    // 当普通方向键,在贴底(scrollOff===0)时落进"输入历史"分支 → 滚轮改了输入框内容(boss 报的 bug)。
+    // 对策:孤立单个 ↑/↓ 先进缓冲、延 WHEEL_COALESCE_MS 结算;窗口内又来同向方向键就累加 → 判为滚轮连发
+    // (n≥2 → scroll 回看);窗口内无后续才结算为真实键盘方向键(贴底翻输入历史 / 回看态逐行滚)。
+    // 这样滚轮永不触发输入历史,而键盘 ↑↓ 行为不变;原生复制不受影响(未改成鼠标上报)。
+    let pend: { dir: 'up' | 'down'; n: number } | null = null;
+    let pendTimer: ReturnType<typeof setTimeout> | null = null;
+    const flushPend = () => {
+      if (pendTimer) { clearTimeout(pendTimer); pendTimer = null; }
+      if (!pend) return;
+      const { dir, n } = pend; pend = null;
+      handleKeyRef.current(n >= 2 ? { type: 'scroll', dir, n } : { type: dir });
+    };
     const onData = (d: Buffer | string) => {
       const s = d.toString();
-      const w = wheelBurst(s); // 1007 滚轮 burst 先于按键解码(同 chunk 连发方向键不可能是打字)
-      handleKeyRef.current(w ? { type: 'scroll', dir: w.dir, n: w.n } : decodeKey(s));
+      const w = wheelBurst(s);
+      if (w) { // 同 chunk 连发:铁定滚轮——并入任何同向待定单发后立即派发为 scroll
+        if (pend && pend.dir === w.dir) { w.n += pend.n; pend = null; if (pendTimer) { clearTimeout(pendTimer); pendTimer = null; } }
+        else flushPend();
+        handleKeyRef.current({ type: 'scroll', dir: w.dir, n: w.n });
+        return;
+      }
+      const ev = decodeKey(s);
+      if (ev.type === 'up' || ev.type === 'down') { // 单发方向键:进缓冲,等窗口判滚轮/键盘
+        if (pend && pend.dir !== ev.type) flushPend(); // 反向先结算旧的
+        pend = { dir: ev.type, n: (pend?.n ?? 0) + 1 };
+        if (pendTimer) clearTimeout(pendTimer);
+        pendTimer = setTimeout(flushPend, WHEEL_COALESCE_MS);
+        return;
+      }
+      flushPend(); // 其它键:先结算待定方向键(保序),再处理本键
+      handleKeyRef.current(ev);
     };
     stdin.on('data', onData);
-    return () => { stdin.off('data', onData); };
+    return () => { stdin.off('data', onData); if (pendTimer) clearTimeout(pendTimer); };
   }, [stdin]);
 
   const color = (s: string) => (s === 'idle' ? 'green' : s === 'busy' ? 'yellow' : s === 'dead' ? 'red' : 'gray');
