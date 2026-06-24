@@ -19,6 +19,7 @@
     "idle": "#8893A8",
     "busy": "#5FB84A",
     "waiting": "#F2A33C",
+    "stuck": "#D2483A",
     "done": "#2FA4C8",
     "offline": "#5A5A60",
     "warmGlow": "#F2C879"
@@ -42,17 +43,23 @@
       "floater": "dots",
       "note": "琥珀地台(强对比+深描边), 屏顶琥珀提示条"
     },
+    "stuck": {
+      "color": "#D2483A",
+      "tileGlow": "pulse-fast",
+      "floater": "bang-tri",
+      "note": "卡住/无响应: 警示红快脉冲(0.7s)+深环, 三角!浮标, 小人微抖"
+    },
     "done": {
       "color": "#2FA4C8",
       "tileGlow": "flash",
       "floater": "check",
-      "note": "青光闪1次后常亮1.5s"
+      "note": "青光闪1次后余辉常亮再淡出(共3s), ✓ pop 入场"
     },
     "offline": {
       "color": "#5A5A60",
       "tileGlow": "dim",
-      "floater": "bang",
-      "note": "熄灭, 小人50%透明屏黑"
+      "floater": "cross",
+      "note": "熄灭, 小人50%透明屏黑, ✕灰空心浮标"
     }
   },
   "atlas": {
@@ -271,10 +278,11 @@
       "idle": 0,
       "busy": 1,
       "waiting": 2,
+      "stuck": 2,
       "done": 3,
       "offline": 4
     },
-    "note": "木桌+显示器(前层). 图层: 地砖 < 椅子 < 小人半身 < workstation < 头顶浮标."
+    "note": "木桌+显示器(前层). stuck 暂复用 waiting 列(列2), 新列归 P1. 图层: 地砖 < 椅子 < 小人半身 < workstation < 头顶浮标."
   },
   "layering": [
     "floor",

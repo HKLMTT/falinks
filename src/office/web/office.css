@@ -18,8 +18,11 @@
      改色请改 sprites.json（否则像 #DE8428 那样写在这里也不会生效）。环#8A4A12/外发光#DE7A1E 见 @keyframes。 */
   --done: #2FA4C8;
   --offline: #5A5A60;
+  --stuck: #D2483A;      /* 警示红 hue≈6°；仅小面积 tile/浮标，警示而非装饰 */
   --idle: #8893A8;
   --warmGlow: #F2C879;
+  --rug: #B8503C;        /* 休息角地毯暖红(SPEC) */
+  --rugEdge: #EAD9B0;
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -62,7 +65,7 @@ img, [class*="spr"] { image-rendering: pixelated; image-rendering: crisp-edges; 
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 24px;
+  padding: 16px;
 }
 #stage {
   position: relative;
@@ -71,6 +74,7 @@ img, [class*="spr"] { image-rendering: pixelated; image-rendering: crisp-edges; 
   border-radius: 4px;
   overflow: hidden;
   box-shadow: 0 10px 40px rgba(0,0,0,.5);
+  transform-origin: center center;   /* fitStage 叠 scale(k) 铺满视口 */
 }
 
 /* 后墙：wall.png 横向平铺 */
@@ -102,8 +106,10 @@ img, [class*="spr"] { image-rendering: pixelated; image-rendering: crisp-edges; 
 #desks { pointer-events: auto; }
 
 /* 窗/门冷蓝是全屋最饱和冷色,会稀释 done「全屋唯一冷色」的辨识(SPEC§5 窗应暖光透入)。
-   降饱和 + 暖日光偏色,既贴 cozy 又把唯一冷色让位给 done。 */
+   降饱和 + 暖日光偏色,既贴 cozy 又把唯一冷色让位给 done。(此滤镜本就正常,勿动;
+   "黄窗"真凶是已删除的 elevator 装饰盖住窗,非本滤镜。) */
 [class*="decor-win"] { filter: saturate(.42) sepia(.28) brightness(1.06) hue-rotate(-8deg); }
+/* 第二张沙发用中性灰 sprite(sofa_gray, 见 renderLounge), 不再用降饱和滤镜(鲜蓝降饱和易发灰发闷)。 */
 
 /* 通用 sprite 块（背景图裁切，尺寸由 JS 注入 --w/--h/--bx/--by/--bw/--bh） */
 .spr {
@@ -180,13 +186,25 @@ img, [class*="spr"] { image-rendering: pixelated; image-rendering: crisp-edges; 
   text-shadow: 0 1px 1px rgba(0,0,0,.6);
 }
 .floater.waiting { background: var(--waiting); }
-.floater.done    { background: var(--done); }
-.floater.offline { background: var(--offline); }
-/* busy = 实心圆(无字形，靠形状识别)；其余 waiting…/done✓/offline! 用字形 */
+.floater.done    { background: var(--done); animation: floater-pop .35s ease-out; }
+.floater.offline {              /* 空心灰 ✕：断电下班感，与暖色休息角标明确分语义 */
+  background: transparent; border-color: var(--offline);
+  color: var(--offline); text-shadow: none;
+}
+/* busy = 实心圆(无字形，靠形状识别) */
 .floater.busy {
   background: var(--busy); border-radius: 50%;
   width: calc(7 * var(--s) * 1px); min-width: 0; padding: 0;
 }
+/* stuck = 红三角 !（形状本身即编码，与 waiting 的圆角矩形区分，色弱也能认） */
+.floater.stuck {
+  background: var(--stuck); border: none; border-radius: 0; min-width: 0;
+  width: calc(9 * var(--s) * 1px); height: calc(8 * var(--s) * 1px);
+  clip-path: polygon(50% 2%, 98% 98%, 2% 98%);
+  align-items: flex-end; padding: 0 0 calc(.7 * var(--s) * 1px);
+  filter: drop-shadow(0 1px 0 rgba(0,0,0,.7)) drop-shadow(0 0 1px rgba(0,0,0,.85));
+}
+@keyframes floater-pop { from { transform: translateX(-50%) scale(1.35); } to { transform: translateX(-50%) scale(1); } }
 
 /* ---- 脚下 tile：状态地台 ---- */
 /* 核用「实心高饱和」椭圆(静帧可测：与裸地砖欧氏距离 ≥120、HSV 饱和 ≥0.58)；
@@ -203,10 +221,16 @@ img, [class*="spr"] { image-rendering: pixelated; image-rendering: crisp-edges; 
       color-mix(in srgb, var(--waiting) 65%, transparent) 78%, transparent 88%);
   animation: glow-wait 1.5s ease-in-out infinite;
 }
+.tile.stuck {   /* 警示红核(hue≈6° 与 waiting 琥珀34° 拉开≥25°) + 深环 + 快脉冲(0.7s) */
+  background: radial-gradient(ellipse at center,
+      var(--stuck) 0 60%,
+      color-mix(in srgb, var(--stuck) 60%, transparent) 78%, transparent 88%);
+  animation: glow-stuck 0.7s ease-in-out infinite;
+}
 .tile.done {
   background: radial-gradient(ellipse at center,
       var(--done) 0 56%, color-mix(in srgb, var(--done) 50%, transparent) 74%, transparent 84%);
-  animation: glow-done 1.5s ease-out 1 forwards;
+  animation: glow-done 3s ease-out 1 forwards;
 }
 .tile.offline {   /* 熄灭/压暗，无饱和要求 */
   background: radial-gradient(ellipse at center, rgba(0,0,0,.55), transparent 74%);
@@ -230,18 +254,42 @@ img, [class*="spr"] { image-rendering: pixelated; image-rendering: crisp-edges; 
                         0 0 0 calc(.7*var(--s)*1px) #6E3A0E,
                         0 0 calc(7.5*var(--s)*1px) calc(2.2*var(--s)*1px) color-mix(in srgb, #DE7A1E 92%, transparent); }
 }
-@keyframes glow-done {
+@keyframes glow-stuck {  /* 警示红快脉冲(0.7s, 比 busy/wait 更急促=警报感); 环/光均由 var(--stuck) 派生, 不另设硬编码色 */
+  0%,100% { box-shadow: inset 0 0 0 calc(1.5*var(--s)*1px) color-mix(in srgb, var(--stuck) 50%, #000),
+                        0 0 0 calc(.6*var(--s)*1px) color-mix(in srgb, var(--stuck) 35%, #000),
+                        0 0 calc(2.5*var(--s)*1px) calc(.6*var(--s)*1px) color-mix(in srgb, var(--stuck) 55%, transparent);
+            transform: translateX(-50%) scale(.95); }
+  50%     { box-shadow: inset 0 0 0 calc(1.5*var(--s)*1px) color-mix(in srgb, var(--stuck) 50%, #000),
+                        0 0 0 calc(.6*var(--s)*1px) color-mix(in srgb, var(--stuck) 35%, #000),
+                        0 0 calc(6.5*var(--s)*1px) calc(2*var(--s)*1px) color-mix(in srgb, var(--stuck) 92%, transparent);
+            transform: translateX(-50%) scale(1.06); }
+}
+@keyframes glow-done {   /* 闪1次 → 0.5s 渐隐为余辉 → 常亮 ~1.8s → 淡出, 共 3s 可感知 */
   0%   { box-shadow: 0 0 0 calc(.5*var(--s)*1px) rgba(0,30,40,.72),
-                     0 0 calc(7*var(--s)*1px) calc(2*var(--s)*1px) color-mix(in srgb, var(--done) 85%, transparent);
-         transform: translateX(-50%) scale(1.22); }
-  100% { box-shadow: 0 0 0 calc(.5*var(--s)*1px) rgba(0,30,40,.72),
-                     0 0 calc(3*var(--s)*1px) calc(1*var(--s)*1px) color-mix(in srgb, var(--done) 55%, transparent);
+                     0 0 calc(8*var(--s)*1px) calc(2.4*var(--s)*1px) color-mix(in srgb, var(--done) 92%, transparent);
+         transform: translateX(-50%) scale(1.22); opacity: 1; }
+  16%  { box-shadow: 0 0 0 calc(.5*var(--s)*1px) rgba(0,30,40,.72),
+                     0 0 calc(4*var(--s)*1px) calc(1.2*var(--s)*1px) color-mix(in srgb, var(--done) 70%, transparent);
          transform: translateX(-50%) scale(1); }
+  75%  { box-shadow: 0 0 0 calc(.5*var(--s)*1px) rgba(0,30,40,.6),
+                     0 0 calc(3.5*var(--s)*1px) calc(1*var(--s)*1px) color-mix(in srgb, var(--done) 60%, transparent);
+         opacity: 1; }
+  100% { box-shadow: 0 0 0 calc(.5*var(--s)*1px) rgba(0,30,40,.2),
+                     0 0 calc(2*var(--s)*1px) calc(.4*var(--s)*1px) color-mix(in srgb, var(--done) 18%, transparent);
+         transform: translateX(-50%) scale(1); opacity: .55; }
 }
 
 /* offline 小人压暗透明 */
 .station.s-offline .person { opacity: .45; filter: grayscale(.6); }
 .station.s-offline .ws { filter: brightness(.6); }
+
+/* stuck 小人微抖(警示, ±1px) */
+.station.s-stuck .person { animation: shake .5s ease-in-out infinite; }
+@keyframes shake {
+  0%,100% { transform: translateX(-50%); }
+  25%     { transform: translateX(calc(-50% - 1px)); }
+  75%     { transform: translateX(calc(-50% + 1px)); }
+}
 
 /* launching 渐入 */
 .station.s-launching { animation: fadein .8s ease-out; }
@@ -266,12 +314,48 @@ img, [class*="spr"] { image-rendering: pixelated; image-rendering: crisp-edges; 
 }
 @keyframes pop { from { opacity: 0; transform: translateX(-50%) translateY(4px); } to { opacity: 1; } }
 
-/* ---- 休息区（虚拟成员如 boss） ---- */
-.lounge-item { position: absolute; cursor: pointer; pointer-events: auto; }
-.lounge-item .name {
-  position: absolute; left: 50%; transform: translateX(-50%);
-  bottom: calc(-7 * var(--s) * 1px); font-size: 11px; white-space: nowrap;
-  color: #f0e6d2; text-shadow: 0 1px 2px #000; z-index: 6;
+/* ---- 休息区(纯装饰: 沙发/地毯/猫狗, 不坐人) + boss 坐镇主位 ---- */
+.rug {                       /* 休息角圆地毯(CSS 椭圆) */
+  position: absolute;
+  border-radius: 50%;
+  background: radial-gradient(ellipse at center, var(--rug) 0 64%, color-mix(in srgb, var(--rug) 80%, #000) 80%, transparent 88%);
+  box-shadow: inset 0 0 0 calc(.5 * var(--s) * 1px) var(--rugEdge);
+  opacity: .92; z-index: 0;
+}
+/* boss 暖地毯(纯装饰, 不发光) */
+.boss-rug {
+  position: absolute; border-radius: 50%;
+  background: radial-gradient(ellipse at center, var(--warmGlow) 0 60%, color-mix(in srgb, var(--warmGlow) 70%, #7A4F2A) 80%, transparent 90%);
+  box-shadow: inset 0 0 0 calc(.5 * var(--s) * 1px) #C8A86A;
+  opacity: .85; z-index: 0; pointer-events: none;
+}
+/* boss 木牌铭牌(暖字, 非状态色) */
+.boss-plate {
+  position: absolute; transform: translateX(-50%);
+  background: var(--wood); color: #2a1c0e;
+  font-size: 11px; font-weight: 700; white-space: nowrap;
+  padding: 2px 8px; border-radius: 3px;
+  border: 2px solid var(--woodLo);
+  box-shadow: 0 1px 2px rgba(0,0,0,.5);
+  z-index: 6; pointer-events: none;
+}
+.boss-hit { position: absolute; z-index: 6; cursor: pointer; pointer-events: auto; }
+
+/* 猫狗 idle 微动(纯 CSS transform; 平时静止, 偶尔 ~0.5s 微动; ≤2px 整数 step; 无 rotate; 错峰) */
+@keyframes pet-hop {   /* 猫: 小跳 */
+  0%, 88%, 100% { transform: translateY(0); }
+  92%           { transform: translateY(-2px); }
+  96%           { transform: translateY(-1px); }
+}
+@keyframes pet-shift { /* 狗: 小挪 */
+  0%, 90%, 100% { transform: translateX(0); }
+  94%           { transform: translateX(2px); }
+  97%           { transform: translateX(1px); }
+}
+.decor-cat   { animation: pet-hop 6.5s steps(1, end) infinite; }
+.decor-corgi { animation: pet-shift 8.3s steps(1, end) infinite; animation-delay: 2.5s; }
+@media (prefers-reduced-motion: reduce) {
+  .decor-cat, .decor-corgi { animation: none; }
 }
 
 /* ---- 右侧详情面板 ---- */
@@ -282,9 +366,37 @@ img, [class*="spr"] { image-rendering: pixelated; image-rendering: crisp-edges; 
   padding: 16px;
   overflow-y: auto;
 }
-#panel-hint { color: #8a7a5e; font-size: 13px; text-align: center; margin-top: 40px; }
+#panel-hint { color: #6e6048; font-size: 12px; text-align: center; margin-top: 22px; }
 #panel.empty #panel-hint { display: block; }
 #panel:not(.empty) #panel-hint { display: none; }
+
+/* ---- 未选中态：团队概览 + 状态图例 ---- */
+.ov-title, .ov-legend-title {
+  font-size: 12px; color: #8a7a5e; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 10px;
+}
+.ov-legend-title { margin-top: 6px; }
+.ov-stats { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 5px; margin-bottom: 20px; font-size: 12px; color: #c8b896; }
+.ov-stat b { color: #f0e6d2; font-size: 14px; font-variant-numeric: tabular-nums; margin-right: 2px; }
+.ov-stat.busy b    { color: var(--busy); }
+.ov-stat.waiting b { color: var(--waiting); }
+.ov-stat.stuck b   { color: var(--stuck); }
+.ov-dot { color: #5a4f3a; font-style: normal; }
+.ov-legend { list-style: none; display: grid; grid-template-columns: 1fr 1fr; gap: 12px 10px; --s: 2.2; }
+.ov-legend li { display: flex; align-items: center; gap: 9px; }
+.ov-legend .lg-ico {        /* 图例小样 = 场内浮标同款形+色(复用 .floater.<state>) */
+  position: static; flex: none;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: calc(7 * var(--s) * 1px); height: calc(7 * var(--s) * 1px); min-width: calc(7 * var(--s) * 1px);
+  border-radius: calc(2 * var(--s) * 1px); border: 2px solid rgba(0,0,0,.55);
+  color: #fff; font-size: calc(5 * var(--s) * 1px); font-weight: 700; line-height: 1;
+  text-shadow: 0 1px 1px rgba(0,0,0,.6);
+  animation: none !important;   /* 图例不动(关 pop/脉冲) */
+}
+.ov-legend .lg-ico.idle { background: var(--idle); }
+.ov-legend .lg-ico.busy { border-radius: 50%; }   /* 图例 busy 小样为圆, 对齐场内 ● 浮标 */
+.ov-legend .lg-label { font-size: 12px; color: #d8c8a8; }
+
+#panel-done { font-size: 12px; color: var(--done); margin: -6px 0 12px; font-variant-numeric: tabular-nums; }
 
 #panel-head { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
 #panel-name { font-size: 17px; font-weight: 700; color: var(--warmGlow); }
@@ -295,8 +407,10 @@ img, [class*="spr"] { image-rendering: pixelated; image-rendering: crisp-edges; 
 .status-pill.idle    { background: var(--idle); }
 .status-pill.busy    { background: var(--busy); }
 .status-pill.waiting { background: var(--waiting); }
+.status-pill.stuck   { background: var(--stuck); color: #fff; }
 .status-pill.done    { background: var(--done); }
 .status-pill.offline { background: var(--offline); color: #ccc; }
+.status-pill.boss    { background: var(--warmGlow); color: #15120e; }  /* 坐镇: 中性暖色, 非状态色 */
 #panel-role { font-size: 12px; color: #b39c78; margin-bottom: 14px; }
 #panel-q {
   background: color-mix(in srgb, var(--waiting) 22%, #1c1812);

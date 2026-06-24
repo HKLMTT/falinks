@@ -8,7 +8,7 @@
   const POLL_MS = 1000;
   const FRAME_MS = 250;          // 打字微动 ~4fps
   const BUBBLE_MS = 4500;
-  const DONE_MS = 1500;          // busy→idle 短暂 done 闪
+  const DONE_MS = 3000;          // busy→idle done 可感知窗口(青余辉, SPEC P0-2 D)
   const MAX_MISS = 2;            // 连续轮询失败数后判定断连
 
   // ---- i18n（内联小词典，?lang= 切换；key 对齐 zh/en） ----
@@ -16,16 +16,22 @@
   const T = {
     zh: { subtitle: '像素办公室', empty: '暂无成员', hint: '点击工位查看详情', disconnected: '连接已断开，正在重试…',
           role: '角色', messages: '相关消息', waiting: '待回答', noMessages: '暂无相关消息',
-          st: { idle:'空闲', busy:'忙碌', waiting:'等待', done:'完成', offline:'离线' } },
+          overview: '团队概览', legend: '状态图例', lastDone: '上次完成', resting: '离座', boss: '坐镇',
+          st: { idle:'空闲', busy:'忙碌', waiting:'等待', stuck:'卡住', done:'完成', offline:'离线' },
+          stat: { idle:'在岗', busy:'忙', waiting:'等待', stuck:'卡住', offline:'离线' } },
     en: { subtitle: 'Pixel Office', empty: 'No members', hint: 'Click a desk for details', disconnected: 'Disconnected — retrying…',
           role: 'Role', messages: 'Related messages', waiting: 'Awaiting answer', noMessages: 'No related messages',
-          st: { idle:'Idle', busy:'Busy', waiting:'Waiting', done:'Done', offline:'Offline' } },
+          overview: 'Team', legend: 'Legend', lastDone: 'Last done', resting: 'Away', boss: 'Overseeing',
+          st: { idle:'Idle', busy:'Busy', waiting:'Waiting', stuck:'Stuck', done:'Done', offline:'Offline' },
+          stat: { idle:'Idle', busy:'Busy', waiting:'Wait', stuck:'Stuck', offline:'Offline' } },
   }[LANG];
 
   document.documentElement.lang = LANG === 'en' ? 'en' : 'zh-CN';
   document.getElementById('subtitle').textContent = T.subtitle;
   document.getElementById('empty').textContent = T.empty;
   document.getElementById('panel-hint').textContent = T.hint;
+  document.getElementById('ov-title').textContent = T.overview;
+  document.getElementById('ov-legend-title').textContent = T.legend;
   document.getElementById('panel-msgs-label').textContent = T.messages;
   document.getElementById('banner').textContent = T.disconnected;
 
@@ -40,18 +46,25 @@
   const $empty = document.getElementById('empty');
   const $banner = document.getElementById('banner');
   const $panel = document.getElementById('panel');
+  const $overview = document.getElementById('panel-overview');
+  const $ovStats = document.getElementById('ov-stats');
+  const $ovLegend = document.getElementById('ov-legend');
 
   // ---- 几何（与 SPRITE-SPEC 一致） ----
   const SCALE = 4;
-  const CELL = 16 * SCALE;       // 地砖像素
+  const CELL = 16 * SCALE;       // 64 地砖像素
   const WS_W = 36, WS_H = 22;    // workstation cell
-  const STA_W = WS_W * SCALE;    // 工位占位宽
-  const STA_H = 28 * SCALE;      // 6 头顶 + 22 工位
+  const STA_W = WS_W * SCALE;    // 144 工位占位宽
+  const STA_H = 28 * SCALE;      // 112 (6 头顶 + 22 工位)
   const GAP_X = 30, GAP_Y = 46;  // 工位间距
-  const COLS = 5;                // 每行工位数
+  const COLS_MAX = 5;            // 单行工位上限(超出分行成方阵, 消灭单人尾行)
   const PAD = 28;                // 房间内边距
   const WALL_H = 40 * SCALE;     // 后墙带高
   const COMMONS_H = 150;         // 工位下方公共休息带高
+  const TOP_GAP = 24;            // (保留)
+  const VPAD = 30;              // 地面区(墙带以下)内 desk 块上下对称留白 → 含墙光学居中
+  const ROOM_ASPECT = 1.4;       // 房间最小横宽比(消左右大留白 / 大屏铺满; 1.4 兼顾 1280 与 1920)
+  const FIT_MIN = 0.5, FIT_MAX = 2;// fit 缩放系数夹取区间(下限<1 让窄屏 shrink-to-fit, 不溢出不裁切)
 
   let S = null;                  // sprites.json
   let imgs = {};                 // 预加载图（含 naturalWidth/Height）
@@ -63,6 +76,7 @@
   const lastMsgTs = {};          // name -> 最近一次已展示气泡的消息 ts
   const bubbleTimers = {};       // name -> timeout
   const doneUntil = {};          // name -> ts(ms) done 闪结束时刻
+  const lastDoneAt = {};         // name -> 最近一次 busy→idle 完成时刻(ms)
   const prevStatus = {};         // name -> 上次原始 status
   const stations = new Map();    // name -> {el, parts...}
 
@@ -95,12 +109,12 @@
     return el;
   }
 
-  // ---- 原始 roster status → 5 态视觉 ----
+  // ---- 原始 roster status → 6 态视觉(状态视觉编码规范 单一事实源见 OFFICE-REDESIGN.md) ----
   function visualState(agent, questionFroms) {
     const raw = agent.status;
     if (raw === 'dead') return 'offline';
-    if (questionFroms.has(agent.name)) return 'waiting';     // 该员工有待答问题
-    if (raw === 'stuck' || agent.unresponsive) return 'waiting';
+    if (questionFroms.has(agent.name)) return 'waiting';     // 有待答问题=正常等待(优先于 stuck)
+    if (raw === 'stuck' || agent.unresponsive) return 'stuck'; // 卡住/无响应=需介入(从 waiting 拆出)
     if (raw === 'busy') return 'busy';
     if (raw === 'launching') return 'idle';
     // busy→idle 的短暂 done 闪
@@ -109,6 +123,16 @@
   }
 
   function statusLabel(v) { return T.st[v] || v; }
+
+  // boss 主位:独立分支渲染,不参与 6 态/强度。按 name 识别(falinks 约定的老板)。
+  function isBoss(a) { return !!a && a.name === 'boss'; }
+
+  // 浮标字形：唯一事实源 = sprites.json.status[*].floater(key) → 字符。
+  // 头顶浮标 / 右栏图例 都走这里，杜绝第二处硬编码(防漂移)。
+  const FLOATER_GLYPH = { dot: '', dots: '…', check: '✓', 'bang-tri': '!', cross: '✕' };
+  function floaterKey(vis) { return S && S.status[vis] && S.status[vis].floater; }
+  function floaterGlyph(vis) { const f = floaterKey(vis); return f ? (FLOATER_GLYPH[f] || '') : ''; }
+
   function fmtTime(ts) {
     const d = new Date(ts);
     const p = (n) => String(n).padStart(2, '0');
@@ -116,31 +140,75 @@
   }
 
   // ---------- 静态房间 ----------
-  function layoutRoom(deskCount) {
-    const rows = Math.max(1, Math.ceil(deskCount / COLS));
-    const perRow = Math.min(COLS, Math.max(1, deskCount));
-    const w = PAD * 2 + perRow * STA_W + (perRow - 1) * GAP_X;
-    const floorTop = WALL_H * 0.62;                 // 地面从墙裙处接上
-    const deskBlock = rows * (STA_H + GAP_Y);
-    const commonsTop = floorTop + 20 + deskBlock;   // 工位下方的公共休息带
-    const h = commonsTop + COMMONS_H;
-    const W = Math.max(w, 760), Hh = Math.max(h, 460);
+  // 几何: 均衡分行(方阵) + 横宽比下限(消左右大留白) + 工位块垂直居中 + 休息角坐标。
+  function computeLayout(deskCount, hasBoss) {
+    const rows = Math.max(1, Math.ceil(deskCount / COLS_MAX));
+    const perRow = Math.max(1, Math.ceil(deskCount / rows));
+    const deskBlockW = perRow * STA_W + (perRow - 1) * GAP_X;
+    const deskBlockH = rows * STA_H + (rows - 1) * GAP_Y;
 
-    $stage.style.width = W + 'px';
-    $stage.style.height = Hh + 'px';
+    const floorTop = Math.round(WALL_H * 0.62);     // 地面贴墙裙(铺到墙带下沿之后)
+    const MID_GAP = 14;
+    // boss 主位占顶部一带(大班椅+暖毯+铭牌 + 与首排纵向错开≥1CELL); 无 boss 时退化为对称留白
+    const BOSS_BAND = hasBoss ? 146 : 0;
+    const desksTop = WALL_H + (hasBoss ? BOSS_BAND : VPAD);
+    const commonsTop = desksTop + deskBlockH + MID_GAP;
+    const commonsBottom = commonsTop + COMMONS_H;
+    const roomH = commonsBottom + VPAD;
+
+    const minW = PAD * 2 + deskBlockW;
+    const roomW = Math.max(minW, Math.round(roomH * ROOM_ASPECT));
+    const deskLeft0 = Math.round((roomW - deskBlockW) / 2);
+
+    // boss 主位几何: 房间上方正中、椅背靠墙
+    // 不变量: boss 坐镇区恒落在后墙带之下(seatTop≈WALL_H),而窗都贴墙带顶部(底沿 < WALL_H),
+    // 二者纵向永不重叠 → 挤窗判定(≥0.5CELL 或 纵向不重叠)始终满足、中轴位恒成立,
+    // 故 OFFICE-REDESIGN 的"先挪中央窗→退左上角"回退分支当前为死分支(YAGNI 未实现)。
+    // ⚠️ 若日后改动 boss 位置或窗位置/尺寸,需重新评估此不变量与回退分支。
+    const bossCX = Math.round(roomW / 2);
+    const bossSeatTop = WALL_H - 4;
+
+    // 休息角(纯装饰: 沙发+地毯+猫狗, 不再坐人)落在公共带左中
+    const rugW = Math.max(180, Math.min(280, Math.round(roomW * 0.30)));
+    const rugH = 96;
+    const loungeX = Math.round(roomW * 0.30 - rugW / 2);
+    const loungeY = commonsTop + 26;
+
+    return { rows, perRow, deskCount, deskBlockW, deskBlockH, roomW, roomH,
+             floorTop, desksTop, commonsTop, commonsBottom, deskLeft0,
+             hasBoss, bossCX, bossSeatTop, rugW, rugH, loungeX, loungeY };
+  }
+
+  function layoutRoom(deskCount, hasBoss) {
+    const L = computeLayout(deskCount, hasBoss);
+    $stage.style.width = L.roomW + 'px';
+    $stage.style.height = L.roomH + 'px';
     $stage.style.setProperty('--cell', CELL + 'px');
 
     $wall.style.height = WALL_H + 'px';
     $wall.style.backgroundImage = `url(${imgs.wall.src})`;
     $wall.style.backgroundSize = `${imgs.wall.naturalWidth * SCALE}px ${WALL_H}px`;
 
-    $floor.style.top = floorTop + 'px';
+    $floor.style.top = L.floorTop + 'px';
     $floor.style.backgroundSize = `${CELL * 2}px ${CELL * 2}px`;
-    return { W, floorTop, perRow, commonsTop };
+    return L;
   }
 
-  // 装饰只放在「墙上」与「工位下方公共带」，绝不与工位行重叠。
-  function buildDecor(W, floorTop, commonsTop) {
+  // fit-to-viewport: 固定 SCALE 之上叠 transform:scale(k), 铺满 wrap 又不糊像素。
+  function fitStage() {
+    if (!S || !$stage.offsetWidth) return;
+    const PADW = 16;                                // 与 #stage-wrap padding 对齐
+    const availW = Math.max(1, $stageWrap.clientWidth - PADW * 2);
+    const availH = Math.max(1, $stageWrap.clientHeight - PADW * 2);
+    let k = Math.min(availW / $stage.offsetWidth, availH / $stage.offsetHeight);
+    k = Math.floor(k * 4) / 4;                       // 吸附 0.25 倍, 防非整数缩放糊像素
+    k = Math.max(FIT_MIN, Math.min(FIT_MAX, k));
+    $stage.style.transformOrigin = 'center center';
+    $stage.style.transform = 'scale(' + k + ')';
+  }
+
+  // 装饰只放在「墙带」+「公共带」+「工位块两侧留白」，绝不压工位行/浮标区(SPEC 红线5)。
+  function buildDecor(L) {
     $decor.innerHTML = '';
     const atlas = imgs.atlas, sp = S.atlas.sprites;
     const add = (key, left, top, z) => {
@@ -153,16 +221,101 @@
       return el;
     };
     const sw = (k) => (sp[k] ? sp[k][2] * SCALE : 0);
-    const cy = commonsTop + 24;                      // 公共带基线
-    // 墙上窗（采暖光）
-    add('win_blue1', W * 0.14, WALL_H * 0.16);
-    add('win_blue2', W * 0.14 + (sp.win_blue1[2] + 6) * SCALE, WALL_H * 0.16);
-    add('win_tall', W * 0.72, WALL_H * 0.1);
-    // 公共带：绿植 / 贩卖机 / 猫狗 横向铺开，互不重叠
-    add('plant_tall', PAD, cy - 6 * SCALE);
-    add('vending1', W - sw('vending1') - PAD, cy - 12 * SCALE);
-    add('cat', W * 0.30, cy + 22 * SCALE);
-    add('corgi', W * 0.42, cy + 26 * SCALE);
+    const sh = (k) => (sp[k] ? sp[k][3] * SCALE : 0);
+    const W = L.roomW;
+    const deskRight = L.deskLeft0 + L.deskBlockW;
+
+    // 墙上窗(暖光透入) 按房宽分布
+    add('win_blue1', W * 0.12, WALL_H * 0.18);
+    add('win_blue2', W * 0.12 + (sp.win_blue1[2] + 6) * SCALE, WALL_H * 0.18);
+    add('win_tall', W * 0.80, WALL_H * 0.08);
+
+    // 四角绿植收边
+    add('plant_tall', PAD, L.commonsBottom - sh('plant_tall'));
+    add('plant_tall', W - sw('plant_tall') - PAD, L.commonsBottom - sh('plant_tall'));
+    // 工位块两侧留白各放绿植(上+下), 填侧空(房间够宽时)防 ≥3×3 空棋盘格
+    if (L.deskLeft0 - PAD > sw('plant_tall') + 24) {
+      const lx = L.deskLeft0 - sw('plant_tall') - 16, rx = deskRight + 16;
+      const topY = L.desksTop + 8 * SCALE, botY = L.desksTop + L.deskBlockH - sh('plant_tall');
+      add('plant_tall', lx, topY); add('plant_tall', rx, topY);
+      add('plant_tall', lx, botY); add('plant_tall', rx, botY);
+    }
+
+    // 右下茶水间角: counter + vending2
+    const teaY = L.commonsTop + 6;
+    const counterLeft = W - sw('counter') - PAD;
+    add('counter', counterLeft, teaY + 22);
+    add('vending2', W - sw('vending2') - PAD - 6, teaY - 6);
+
+    // 中下偏右补空: 在 休息角(地毯右沿) 与 茶水间(counter 左沿) 之间放长椅, 消 ≥3×3 空棋盘格
+    const rugRight = L.loungeX + L.rugW;
+    const gapMid = (rugRight + counterLeft) / 2;
+    add('bench_lg', gapMid - sw('bench_lg') / 2, L.commonsTop + 40);
+
+    // 休息角(纯装饰, 不再坐人): 圆地毯 + 两张沙发(暖红 + 中性灰) + 猫狗趴地毯
+    const rug = document.createElement('div');
+    rug.className = 'rug';
+    rug.style.left = Math.round(L.loungeX) + 'px';
+    rug.style.top = Math.round(L.loungeY + 8) + 'px';
+    rug.style.width = Math.round(L.rugW) + 'px';
+    rug.style.height = Math.round(L.rugH) + 'px';
+    $decor.appendChild(rug);
+    const sofaLeft = Math.round(L.loungeX + L.rugW * 0.10);
+    const sofaTop = Math.round(L.loungeY);
+    add('sofa_red', sofaLeft, sofaTop, 1);
+    if (sp.sofa_gray) add('sofa_gray', sofaLeft + (sp.sofa_red[2] + 4) * SCALE, sofaTop, 1);
+    add('cat', L.loungeX + L.rugW * 0.26, L.loungeY + L.rugH * 0.62, 3);
+    add('corgi', L.loungeX + L.rugW * 0.52, L.loungeY + L.rugH * 0.70, 3);
+  }
+
+  // ---------- boss 主位(独立渲染分支: 不经 makeStation/updateStation, 无状态/无浮标/无强度) ----------
+  function renderBoss(boss, L) {
+    $lounge.innerHTML = '';
+    if (!boss) return;
+    const sp = S.atlas.sprites;
+    const [pw, ph] = S.people.cell;
+    const cx = L.bossCX, top = L.bossSeatTop;
+
+    // 暖地毯(CSS 椭圆, 纯装饰不发光) — 坐镇区底座
+    const rug = document.createElement('div');
+    rug.className = 'boss-rug';
+    rug.style.left = Math.round(cx - 17 * SCALE) + 'px';
+    rug.style.top = Math.round(top + 13 * SCALE) + 'px';
+    rug.style.width = Math.round(34 * SCALE) + 'px';
+    rug.style.height = Math.round(11 * SCALE) + 'px';
+    $lounge.appendChild(rug);
+
+    const mk = (key, img, coords, left, t, z) => {
+      const el = mkSpr(key, img, coords);
+      el.style.left = Math.round(left) + 'px'; el.style.top = Math.round(t) + 'px';
+      el.style.zIndex = z; $lounge.appendChild(el); return el;
+    };
+    // 两侧绿植围区
+    mk('decor-plant_tall', imgs.atlas, sp.plant_tall, cx - 26 * SCALE, top - 2 * SCALE, 1);
+    mk('decor-plant_tall', imgs.atlas, sp.plant_tall, cx + 16 * SCALE, top - 2 * SCALE, 1);
+    // 大班椅(chair_white) + boss 半身
+    const chairW = sp.chair_white[2] * SCALE;
+    mk('chair', imgs.atlas, sp.chair_white, cx - chairW / 2, top + 2 * SCALE, 2);
+    const bcol = (S.people.order.indexOf('p2_auburn') + 0) % S.people.order.length;
+    mk('person', imgs.people, [(bcol < 0 ? 0 : bcol) * pw, 0, pw, ph], cx - (pw * SCALE) / 2, top - 2 * SCALE, 3);
+
+    // 木牌铭牌(暖字, 非状态色) — 区分靠铭牌, 不靠状态
+    const plate = document.createElement('div');
+    plate.className = 'boss-plate';
+    plate.textContent = boss.name;
+    plate.style.left = Math.round(cx) + 'px';
+    plate.style.top = Math.round(top + 16 * SCALE) + 'px';
+    $lounge.appendChild(plate);
+
+    // 整个坐镇区可点选 → 详情(中性"坐镇"标, 无 6 态 pill)
+    const hit = document.createElement('div');
+    hit.className = 'boss-hit';
+    hit.style.left = Math.round(cx - 22 * SCALE) + 'px';
+    hit.style.top = Math.round(top - 4 * SCALE) + 'px';
+    hit.style.width = Math.round(44 * SCALE) + 'px';
+    hit.style.height = Math.round(24 * SCALE) + 'px';
+    hit.addEventListener('click', () => selectAgent(boss.name));
+    $lounge.appendChild(hit);
   }
 
   // ---------- 工位 ----------
@@ -219,16 +372,21 @@
     return rec;
   }
 
-  function positionStation(el, idx, perRow, floorTop) {
-    const r = Math.floor(idx / perRow), c = idx % perRow;
-    el.style.left = (PAD + c * (STA_W + GAP_X)) + 'px';
-    el.style.top = (floorTop + 20 + r * (STA_H + GAP_Y)) + 'px';
+  function positionStation(el, idx, L) {
+    const r = Math.floor(idx / L.perRow), c = idx % L.perRow;
+    // 每行居中(末行不足列数时也居中, 不左挤)
+    const itemsInRow = (r < L.rows - 1) ? L.perRow : (L.deskCount - L.perRow * (L.rows - 1));
+    const rowW = itemsInRow * STA_W + (itemsInRow - 1) * GAP_X;
+    const rowLeft = Math.round((L.roomW - rowW) / 2);
+    el.style.left = (rowLeft + c * (STA_W + GAP_X)) + 'px';
+    el.style.top = (L.desksTop + r * (STA_H + GAP_Y)) + 'px';
   }
 
   function updateStation(rec, agent, vis) {
     const el = rec.el;
-    el.classList.remove('s-offline', 's-launching');
+    el.classList.remove('s-offline', 's-launching', 's-stuck');
     if (vis === 'offline') el.classList.add('s-offline');
+    if (vis === 'stuck') el.classList.add('s-stuck');
     if (agent.status === 'launching') el.classList.add('s-launching');
 
     // 工位屏幕状态列
@@ -238,11 +396,11 @@
     // 脚下 tile 发光
     rec.tile.className = 'tile ' + vis;
 
-    // 头顶浮标：busy=实心圆(CSS 形状,无字形)；waiting…/done✓/offline! 用字形,均带深描边底
-    const f = S.status[vis] && S.status[vis].floater;
-    const glyph = { dots: '…', check: '✓', bang: '!' };
+    // 头顶浮标：busy=实心圆(CSS 形状); stuck=三角!; offline=空心✕; waiting…/done✓ 圆角矩形。
+    // 字形与图例同走 floaterGlyph()(单一事实源 sprites.json.status[*].floater)。
+    const f = floaterKey(vis);
     if (f) {
-      rec.floater.textContent = glyph[f] || '';
+      rec.floater.textContent = FLOATER_GLYPH[f] || '';
       rec.floater.className = 'floater ' + vis;
     } else {
       rec.floater.className = 'floater hidden';
@@ -255,36 +413,6 @@
     rec.person.style.setProperty('--by', row * ph);
 
     el.classList.toggle('sel', selected === agent.name);
-  }
-
-  // ---------- 休息区（虚拟成员，如 boss） ----------
-  function renderLounge(virtuals, W, commonsTop) {
-    $lounge.innerHTML = '';
-    if (!virtuals.length) return;
-    // 沙发置于公共带中部，远离工位行
-    const sofa = mkSpr('decor-sofa', imgs.atlas, S.atlas.sprites.sofa_red);
-    const sofaLeft = Math.round(W * 0.5 - (S.atlas.sprites.sofa_red[2] * SCALE) / 2);
-    const sofaTop = commonsTop + 18;
-    sofa.style.left = sofaLeft + 'px';
-    sofa.style.top = sofaTop + 'px';
-    sofa.style.zIndex = 1;
-    $lounge.appendChild(sofa);
-
-    const [pw, ph] = S.people.cell;
-    virtuals.forEach((a, i) => {
-      const wrap = document.createElement('div');
-      wrap.className = 'lounge-item';
-      wrap.style.left = (sofaLeft + (6 + i * (pw + 2)) * SCALE) + 'px';
-      wrap.style.top = (sofaTop - (ph - 4) * SCALE) + 'px';
-      wrap.style.zIndex = 2;
-      const col = (S.people.order.indexOf('p2_auburn') + i) % S.people.order.length;
-      const person = mkSpr('person', imgs.people, [(col < 0 ? 0 : col) * pw, 0, pw, ph]);
-      wrap.appendChild(person);
-      const name = document.createElement('div'); name.className = 'name'; name.textContent = a.name;
-      wrap.appendChild(name);
-      wrap.addEventListener('click', () => selectAgent(a.name));
-      $lounge.appendChild(wrap);
-    });
   }
 
   // ---------- 气泡 ----------
@@ -301,6 +429,29 @@
     bubbleTimers[name] = setTimeout(() => b.remove(), BUBBLE_MS);
   }
 
+  // 未选中态：团队概览 + 常驻状态图例(图例小样与场内浮标同款)
+  function renderOverview() {
+    if (!state) return;
+    const qFroms = new Set(state.questions.map((q) => q.from));
+    const counts = { idle:0, busy:0, waiting:0, stuck:0, offline:0 };
+    for (const a of state.roster) {
+      if (a.virtual || isBoss(a)) continue;       // boss 坐镇 / 纯装饰虚拟(intern) 不计入状态统计
+      const v = visualState(a, qFroms);
+      if (counts[v] != null) counts[v]++;            // done 瞬态不计入概览
+    }
+    const order = ['idle', 'busy', 'waiting', 'stuck', 'offline'];
+    $ovStats.innerHTML = order.map((k) =>
+      '<span class="ov-stat ' + k + '"><b>' + counts[k] + '</b> ' + esc(T.stat[k]) + '</span>'
+    ).join('<i class="ov-dot">·</i>');
+
+    // 图例小样: 形(.floater.<state> 同 CSS) + 字形(floaterGlyph 同事实源) + 色(var(--state)) 三处与场内同款
+    const legend = ['busy', 'idle', 'waiting', 'stuck', 'done', 'offline'];
+    $ovLegend.innerHTML = legend.map((k) =>
+      '<li><span class="lg-ico floater ' + k + '">' + esc(floaterGlyph(k)) + '</span>' +
+      '<span class="lg-label">' + esc(T.st[k]) + '</span></li>'
+    ).join('');
+  }
+
   // ---------- 详情面板 ----------
   function selectAgent(name) {
     selected = name;
@@ -309,31 +460,55 @@
     renderPanel();
   }
 
+  function showOverview() {
+    $panel.classList.add('empty');
+    document.getElementById('panel-body').classList.add('hidden');
+    $overview.classList.remove('hidden');
+    renderOverview();
+  }
+
   function renderPanel() {
-    if (!selected || !state) { $panel.classList.add('empty'); document.getElementById('panel-body').classList.add('hidden'); return; }
+    if (!selected || !state) { showOverview(); return; }
     const agent = state.roster.find((a) => a.name === selected);
-    if (!agent) { $panel.classList.add('empty'); document.getElementById('panel-body').classList.add('hidden'); return; }
+    if (!agent) { showOverview(); return; }
     $panel.classList.remove('empty');
+    $overview.classList.add('hidden');
     document.getElementById('panel-body').classList.remove('hidden');
 
     const qFroms = new Set(state.questions.map((q) => q.from));
-    const vis = visualState(agent, qFroms);
     document.getElementById('panel-name').textContent = agent.name;
     const pill = document.getElementById('panel-status');
-    pill.textContent = statusLabel(vis);
-    pill.className = 'status-pill ' + vis;
+    const $done = document.getElementById('panel-done');
+    const $q = document.getElementById('panel-q');
     document.getElementById('panel-role').textContent = (T.role + '：') + (agent.role || '—');
 
-    // 待答问题
-    const $q = document.getElementById('panel-q');
-    const myQ = state.questions.filter((q) => q.from === selected);
-    if (myQ.length) {
-      $q.classList.remove('hidden');
-      $q.innerHTML = '<div class="q-title">' + T.waiting + '</div>' +
-        myQ.map((q) => '<div>' + esc(q.question) + '</div>' +
-          (q.options || []).map((o) => '<div class="q-opt">· ' + esc(o) + '</div>').join('')).join('');
-    } else {
+    if (isBoss(agent)) {
+      // boss 坐镇: 中性标(非状态色), 不参与 6 态/强度, 无待答/无完成时间
+      pill.textContent = T.boss;
+      pill.className = 'status-pill boss';
+      $done.classList.add('hidden');
       $q.classList.add('hidden');
+    } else {
+      const vis = visualState(agent, qFroms);
+      pill.textContent = statusLabel(vis);
+      pill.className = 'status-pill ' + vis;
+      // 上次完成时间(即便错过 done 动画也能查)
+      if (lastDoneAt[selected]) {
+        $done.classList.remove('hidden');
+        $done.textContent = '✓ ' + T.lastDone + '：' + fmtTime(lastDoneAt[selected]);
+      } else {
+        $done.classList.add('hidden');
+      }
+      // 待答问题
+      const myQ = state.questions.filter((q) => q.from === selected);
+      if (myQ.length) {
+        $q.classList.remove('hidden');
+        $q.innerHTML = '<div class="q-title">' + T.waiting + '</div>' +
+          myQ.map((q) => '<div>' + esc(q.question) + '</div>' +
+            (q.options || []).map((o) => '<div class="q-opt">· ' + esc(o) + '</div>').join('')).join('');
+      } else {
+        $q.classList.add('hidden');
+      }
     }
 
     // 相关消息：from==name || to==name
@@ -357,23 +532,28 @@
   function render() {
     if (!state || !S) return;
     const roster = state.roster;
-    const desks = roster.filter((a) => !a.virtual);
-    const virtuals = roster.filter((a) => a.virtual);
+    const bossAgent = roster.find((a) => isBoss(a));
+    // 只渲染 ①真实工位成员(含 offline,留在工位屏黑灰) ②boss 主位; 其余纯装饰虚拟(intern 等)不渲染小人
+    const desks = roster.filter((a) => !a.virtual && !isBoss(a));
 
     $empty.classList.toggle('hidden', roster.length > 0);
 
-    const { W, floorTop, perRow, commonsTop } = layoutRoom(desks.length);
+    const L = layoutRoom(desks.length, !!bossAgent);
 
-    // done 闪：检测 busy→idle
+    // done 闪：检测 busy→idle(boss 不参与状态, 跳过)
     for (const a of roster) {
+      if (isBoss(a)) continue;
       const prev = prevStatus[a.name];
-      if (prev === 'busy' && a.status === 'idle') doneUntil[a.name] = Date.now() + DONE_MS;
+      if (prev === 'busy' && a.status === 'idle') {
+        doneUntil[a.name] = Date.now() + DONE_MS;
+        lastDoneAt[a.name] = Date.now();
+      }
       prevStatus[a.name] = a.status;
     }
 
     const qFroms = new Set(state.questions.map((q) => q.from));
 
-    // 增删工位
+    // 增删工位(boss 与其它虚拟不建工位)
     const want = new Set(desks.map((a) => a.name));
     for (const [name, rec] of stations) {
       if (!want.has(name)) { rec.el.remove(); stations.delete(name); }
@@ -381,14 +561,15 @@
     desks.forEach((a, idx) => {
       let rec = stations.get(a.name);
       if (!rec) rec = makeStation(a, idx, desks);
-      positionStation(rec.el, idx, perRow, floorTop);
+      positionStation(rec.el, idx, L);
       updateStation(rec, a, visualState(a, qFroms));
     });
 
     if (!booted) booted = true;
-    buildDecor(W, floorTop, commonsTop);
-    renderLounge(virtuals, W, commonsTop);
+    buildDecor(L);
+    renderBoss(bossAgent, L);
     renderPanel();
+    fitStage();
   }
 
   // 仅打字帧刷新（不重排）
@@ -460,7 +641,7 @@
     const root = document.documentElement.style;
     const p = S.palette || {};
     const map = { tileA:'tileA', tileB:'tileB', seam:'seam', wood:'wood', woodLo:'woodLo', base:'base',
-                  busy:'busy', waiting:'waiting', done:'done', offline:'offline', idle:'idle', warmGlow:'warmGlow' };
+                  busy:'busy', waiting:'waiting', stuck:'stuck', done:'done', offline:'offline', idle:'idle', warmGlow:'warmGlow' };
     for (const k in map) if (p[k]) root.setProperty('--' + map[k], p[k]);
     root.setProperty('--s', SCALE);
 
@@ -479,6 +660,13 @@
     await poll();
     setInterval(poll, POLL_MS);
     setInterval(tickFrame, FRAME_MS);
+
+    // 窗口缩放时重新 fit(debounce 100ms)
+    let rzT = null;
+    window.addEventListener('resize', () => {
+      clearTimeout(rzT);
+      rzT = setTimeout(fitStage, 100);
+    });
   }
 
   boot();

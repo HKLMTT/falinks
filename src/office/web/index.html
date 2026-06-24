@@ -27,13 +27,20 @@
     </main>
 
     <aside id="panel" class="empty">
-      <div id="panel-hint">点击工位查看详情</div>
+      <div id="panel-overview">
+        <div class="ov-title" id="ov-title">团队概览</div>
+        <div class="ov-stats" id="ov-stats"></div>
+        <div class="ov-legend-title" id="ov-legend-title">状态图例</div>
+        <ul class="ov-legend" id="ov-legend"></ul>
+        <div id="panel-hint">点击工位查看详情</div>
+      </div>
       <div id="panel-body" class="hidden">
         <div id="panel-head">
           <span id="panel-name"></span>
           <span id="panel-status" class="status-pill"></span>
         </div>
         <div id="panel-role"></div>
+        <div id="panel-done" class="hidden"></div>
         <div id="panel-q" class="hidden"></div>
         <div id="panel-msgs-label">相关消息</div>
         <ul id="panel-msgs"></ul>
