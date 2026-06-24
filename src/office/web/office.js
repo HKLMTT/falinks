@@ -78,6 +78,8 @@
   const doneUntil = {};          // name -> ts(ms) done 闪结束时刻
   const lastDoneAt = {};         // name -> 最近一次 busy→idle 完成时刻(ms)
   const prevStatus = {};         // name -> 上次原始 status
+  const busyTierShown = {};      // name -> 当前显示的繁忙强度档(0-3)
+  const busyDownSince = {};      // name -> 开始满足降档的时刻(ms; 1s 迟滞防抖)
   const stations = new Map();    // name -> {el, parts...}
 
   // ---------- 工具 ----------
@@ -126,6 +128,24 @@
 
   // boss 主位:独立分支渲染,不参与 6 态/强度。按 name 识别(falinks 约定的老板)。
   function isBoss(a) { return !!a && a.name === 'boss'; }
+
+  // 繁忙强度分档(仅 busy 内部子维度,不改 6 态):队列越长动得越凶。
+  // 档位 L0 queue0 / L1 1-2 / L2 3-4 / L3 ≥5;升档即时,降档 1s 迟滞防抖。
+  function busyTierFor(name, queue) {
+    const q = queue || 0;
+    const target = q >= 5 ? 3 : q >= 3 ? 2 : q >= 1 ? 1 : 0;
+    const shown = busyTierShown[name] || 0;
+    let next;
+    if (target >= shown) {                 // 升档(或持平)即时
+      next = target; busyDownSince[name] = 0;
+    } else {                                // 降档需持续 1s
+      if (!busyDownSince[name]) busyDownSince[name] = Date.now();
+      if (Date.now() - busyDownSince[name] >= 1000) { next = target; busyDownSince[name] = 0; }
+      else next = shown;
+    }
+    busyTierShown[name] = next;
+    return next;
+  }
 
   // 浮标字形：唯一事实源 = sprites.json.status[*].floater(key) → 字符。
   // 头顶浮标 / 右栏图例 都走这里，杜绝第二处硬编码(防漂移)。
@@ -384,10 +404,18 @@
 
   function updateStation(rec, agent, vis) {
     const el = rec.el;
-    el.classList.remove('s-offline', 's-launching', 's-stuck');
+    el.classList.remove('s-offline', 's-launching', 's-stuck', 'b1', 'b2', 'b3');
     if (vis === 'offline') el.classList.add('s-offline');
     if (vis === 'stuck') el.classList.add('s-stuck');
     if (agent.status === 'launching') el.classList.add('s-launching');
+
+    // 繁忙强度分档(仅 busy 内部子维度: 队列越长动得越凶; 升即时/降 1s 迟滞)
+    if (vis === 'busy') {
+      const tier = busyTierFor(agent.name, agent.queue);
+      if (tier > 0) el.classList.add('b' + tier);
+    } else {
+      busyTierShown[agent.name] = 0; busyDownSince[agent.name] = 0;
+    }
 
     // 工位屏幕状态列
     const wsCol = S.workstation.states[vis] ?? 0;
