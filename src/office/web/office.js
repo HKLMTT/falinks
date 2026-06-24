@@ -270,8 +270,11 @@
     $decor.appendChild(rug);
     if (sp.sofa_gray) add('sofa_gray', aX + 2 * s, gB - 29 * s, 2);     // 灰沙发(左)
     add('sofa_red', aX + 37 * s, gB - 30 * s, 2);                       // 红沙发(右, 与灰留 8px 缝、底对齐)
-    add('cat', aX + 3 * s, gB - 13 * s, 3);                             // 猫狗趴毯前缘, 间隙 12px 不相交
-    add('corgi', aX + 22 * s, gB - 11 * s, 3);
+    // 猫狗改为自由游走(独立 #pets 持久层, 不随 buildDecor 重置): 活动区 + 沙发避让 bbox 传给控制器
+    petSofa = { minX: aX + 2 * s, minY: gB - 30 * s, maxX: aX + 37 * s + sp.sofa_red[2] * s, maxY: gB - 14 * s };
+    petArea = { minX: PAD, minY: L.commonsTop + 8, maxX: Math.round(L.roomW * 0.38), maxY: L.commonsBottom - 4 };
+    mountPets();
+
 
     // ── B 茶水间(底右角): counter 已删 / vending2 移作书架排; 绿植+小长椅成组填脚印(8px 相邻, 非孤件) ──
     // 长椅右缘对齐 desk 块右沿 → 整组落在 zone C(deskRight+CLEAR)左侧, 两区互不相撞
@@ -294,6 +297,98 @@
       add('plant_tall', dX, L.desksTop + 4 * s, 1);
       add('plant_tall', dX, L.desksTop + L.deskBlockH - sh('plant_tall'), 1);
     }
+  }
+
+  // ---------- 猫狗自由游走(独立 #pets 层: rAF 推进 + 逐帧 clamp + 朝向翻转; reduced-motion 静止) ----------
+  // 解耦(同气泡/打盹): 外层 wrap 走"位置+翻转", 内层 .inner 走"步态/原地动作"(CSS), 互不拖拽。
+  // 沙发避让口径: 脚底着地点(底边中点)不落在沙发 bbox 内(= 不爬座面); 宠物 z=3 渲染在沙发(z=2)前, 身子可视觉重叠读作"站沙发前"。
+  const PET_DEFS = [{ key: 'cat', spd: [8, 12] }, { key: 'corgi', spd: [10, 14] }];
+  const petState = {};                  // key -> {wrap, inner, w, h, x, y, tx, ty, mode, until, spd, face, acting, actUntil, nextAct}
+  let petArea = null, petSofa = null, petLayer = null, petRAFid = 0, petLastTs = 0;
+  const petMql = (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)')) || { matches: false };
+  const prnd = (a, b) => a + Math.random() * (b - a);
+
+  function petOnSofa(p, x, y) {          // 脚底着地点落沙发 bbox 内 = 爬沙发(禁)
+    const gx = x + p.w / 2, gy = y + p.h;
+    return gx >= petSofa.minX && gx <= petSofa.maxX && gy >= petSofa.minY && gy <= petSofa.maxY;
+  }
+  function petClamp(p, x, y) {
+    return [Math.max(petArea.minX, Math.min(petArea.maxX - p.w, x)),
+            Math.max(petArea.minY, Math.min(petArea.maxY - p.h, y))];
+  }
+  function petPickTarget(p) {
+    for (let i = 0; i < 16; i++) {
+      const tx = prnd(petArea.minX, petArea.maxX - p.w), ty = prnd(petArea.minY, petArea.maxY - p.h);
+      if (!petOnSofa(p, tx, ty)) { p.tx = tx; p.ty = ty; return; }
+    }
+    p.tx = p.x; p.ty = p.y;              // 兜底原地
+  }
+  function petApply(p) {
+    p.wrap.style.left = Math.round(p.x) + 'px';
+    p.wrap.style.top = Math.round(p.y) + 'px';
+    p.wrap.style.setProperty('--face', p.face);
+  }
+  function petStep(p, dt, ts) {
+    if (petMql.matches) {                 // reduced-motion: 实时冻结(去游走/步态/原地动作), 静止当前点
+      if (p.mode === 'move') { p.mode = 'pause'; p.until = 0; }
+      p.acting = false; p.wrap.classList.remove('moving', 'acting');
+      petApply(p); return;
+    }
+    if (p.mode === 'move') {
+      const dx = p.tx - p.x, dy = p.ty - p.y, dist = Math.hypot(dx, dy), step = p.spd * dt;
+      if (dist <= step || dist < 0.5) {                       // 到点 → 停顿
+        p.x = p.tx; p.y = p.ty; p.mode = 'pause'; p.until = ts + prnd(2000, 6000);
+        p.wrap.classList.remove('moving');
+      } else {
+        const nx = p.x + dx / dist * step, ny = p.y + dy / dist * step;
+        if (petOnSofa(p, nx, ny)) {                           // 直线途经沙发 → 中止本段, 短停后重选点
+          p.mode = 'pause'; p.until = ts + prnd(600, 1500); p.wrap.classList.remove('moving');
+        } else {
+          if (Math.abs(dx) > 0.4) p.face = dx < 0 ? -1 : 1;   // 按 dx 水平翻转面向
+          [p.x, p.y] = petClamp(p, nx, ny);
+        }
+      }
+    } else {                                                  // pause: 偶发原地动作 + 到时再走
+      if (!p.acting && ts >= p.nextAct) { p.acting = true; p.wrap.classList.add('acting'); p.actUntil = ts + 850; p.nextAct = ts + prnd(5000, 10000); }
+      if (p.acting && ts >= p.actUntil) { p.acting = false; p.wrap.classList.remove('acting'); }
+      if (ts >= p.until) {
+        petPickTarget(p);
+        if (Math.abs(p.tx - p.x) + Math.abs(p.ty - p.y) > 1) { p.mode = 'move'; p.acting = false; p.wrap.classList.remove('acting'); p.wrap.classList.add('moving'); }
+        else { p.until = ts + prnd(1500, 3000); }
+      }
+    }
+    petApply(p);
+  }
+  function petLoop(ts) {
+    const dt = petLastTs ? Math.min(0.05, (ts - petLastTs) / 1000) : 0;
+    petLastTs = ts;
+    for (const d of PET_DEFS) { const p = petState[d.key]; if (p) petStep(p, dt, ts); }
+    petRAFid = requestAnimationFrame(petLoop);
+  }
+  function mountPets() {
+    if (!petLayer) { petLayer = document.createElement('div'); petLayer.id = 'pets'; $decor.insertAdjacentElement('afterend', petLayer); }
+    let stagger = 0;
+    for (const d of PET_DEFS) {
+      const sp = S.atlas.sprites[d.key];
+      let p = petState[d.key];
+      if (!p) {
+        const wrap = document.createElement('div'); wrap.className = 'pet pet-' + d.key;
+        const inner = mkSpr('decor-' + d.key, imgs.atlas, sp); inner.classList.add('inner');
+        inner.style.position = 'absolute'; inner.style.left = '0'; inner.style.top = '0';
+        wrap.appendChild(inner);
+        p = { wrap, inner, w: sp[2] * SCALE, h: sp[3] * SCALE, spd: prnd(d.spd[0], d.spd[1]),
+              x: 0, y: 0, tx: 0, ty: 0, mode: 'pause', until: 0, face: 1, acting: false, actUntil: 0, nextAct: 0 };
+        p.x = petArea.minX + 10 * SCALE + stagger; p.y = petArea.maxY - p.h;   // 初始落沙发前方(下沿), 错峰
+        [p.x, p.y] = petClamp(p, p.x, p.y);
+        petState[d.key] = p;
+      }
+      p.wrap.style.width = p.w + 'px'; p.wrap.style.height = p.h + 'px';
+      petLayer.appendChild(p.wrap);
+      [p.x, p.y] = petClamp(p, p.x, p.y);                     // 布局变化 → 重 clamp 进新活动区
+      petApply(p);
+      stagger += 30 * SCALE;
+    }
+    if (!petRAFid) { petLastTs = 0; petRAFid = requestAnimationFrame(petLoop); }   // rAF 常驻; reduced-motion 在 petStep 内实时冻结
   }
 
   // ---------- boss 主位(独立渲染分支: 不经 makeStation/updateStation, 无状态/无浮标/无强度) ----------

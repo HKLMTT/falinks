@@ -339,15 +339,24 @@ img, [class*="spr"] { image-rendering: pixelated; image-rendering: crisp-edges; 
   color: #E8DCC0; text-shadow: 0 1px 0 #5C3A20, 0 0 2px rgba(0,0,0,.6);
   opacity: 0; z-index: 7; pointer-events: none;
 }
-.station.dozing .person { animation: doze-nod var(--doze-dur, 16s) steps(1, end) var(--doze-delay, 0s) infinite; }
+.station.dozing .person {   /* 点头(transform) + 闭眼(切 sleep 帧), 同 dur/delay 同相位 */
+  animation: doze-nod  var(--doze-dur, 16s) steps(1, end) var(--doze-delay, 0s) infinite,
+             doze-eyes var(--doze-dur, 16s) steps(1, end) var(--doze-delay, 0s) infinite;
+}
 .station.dozing .zzz    { animation: doze-zzz var(--doze-dur, 16s) ease-in-out var(--doze-delay, 0s) infinite; }
-/* 气泡优先: 说话(=醒着)挂起打盹 */
+/* 气泡优先: 说话(=醒着)挂起打盹 → 取消全部打盹动画 → 回 rest 睁眼 */
 .station.talking .person { animation: none; }
 .station.talking .zzz    { animation: none; opacity: 0; }
 @keyframes doze-nod {        /* 仅后段点头: translateY 0→+2px, 整数像素(steps), 不 rotate */
   0%, 72%, 100% { transform: translateX(-50%) translateY(0); }
   76%, 86%, 96% { transform: translateX(-50%) translateY(2px); }
   81%, 91%      { transform: translateX(-50%) translateY(0); }
+}
+/* 打盹段闭眼: 离散切 --by 到 sleep 帧(frames.sleep=2 × ph=15 = 30); 与点头同相位.
+   未注册自定义属性→离散动画(中点跳变), 清醒段恒 rest(0)、打盹段恒 sleep(30), 无中间帧糊. */
+@keyframes doze-eyes {
+  0%, 71%   { --by: 0; }
+  72%, 100% { --by: 30; }
 }
 @keyframes doze-zzz {        /* 打盹段冒 2 次 Zzz, 飘升淡出 ~-10px */
   0%, 73%   { opacity: 0; transform: translateX(-50%) translateY(0); }
@@ -357,8 +366,8 @@ img, [class*="spr"] { image-rendering: pixelated; image-rendering: crisp-edges; 
   94%       { opacity: .95; transform: translateX(-50%) translateY(-6px); }
   100%      { opacity: 0; transform: translateX(-50%) translateY(-10px); }
 }
-@media (prefers-reduced-motion: reduce) {   /* 去点头; Zzz 不显 */
-  .station.dozing .person { animation: none; }
+@media (prefers-reduced-motion: reduce) {   /* 去点头/Zzz/眨眼循环; 打盹者静态保持 sleep 闭眼帧(安静睡着), 说话者除外(睁眼) */
+  .station.dozing:not(.talking) .person { animation: none; --by: 30 !important; }
   .station.dozing .zzz { animation: none; opacity: 0; }
 }
 
@@ -448,21 +457,25 @@ img, [class*="spr"] { image-rendering: pixelated; image-rendering: crisp-edges; 
 }
 .boss-hit { position: absolute; z-index: 6; cursor: pointer; pointer-events: auto; }
 
-/* 猫狗 idle 微动(纯 CSS transform; 平时静止, 偶尔 ~0.5s 微动; ≤2px 整数 step; 无 rotate; 错峰) */
-@keyframes pet-hop {   /* 猫: 小跳 */
-  0%, 88%, 100% { transform: translateY(0); }
-  92%           { transform: translateY(-2px); }
-  96%           { transform: translateY(-1px); }
+/* 猫狗自由游走: #pets 持久层; wrap=位置+朝向翻转, .inner=步态/原地动作(CSS), 二者解耦 */
+#pets { position: absolute; inset: 0; pointer-events: none; }
+.pet { position: absolute; z-index: 3; transform: scaleX(var(--face, 1)); transform-origin: center bottom; will-change: left, top; }
+.pet .inner { transform-origin: center bottom; }   /* 脚底锚定: squash 朝上压 */
+.pet.moving .inner { animation: pet-gait .5s steps(1, end) infinite; }      /* 移动: 8fps 步态 */
+.pet.acting .inner { animation: pet-act .85s steps(1, end); }               /* 停顿偶发: 伸懒腰/坐 bob */
+@keyframes pet-gait {     /* 上下 1-2px + 轻 squash, 整数像素 */
+  0%   { transform: translateY(0) scaleY(1); }
+  25%  { transform: translateY(-2px) scaleY(1.03); }
+  50%  { transform: translateY(0) scaleY(1); }
+  75%  { transform: translateY(-1px) scaleY(.97); }
 }
-@keyframes pet-shift { /* 狗: 小挪 */
-  0%, 90%, 100% { transform: translateX(0); }
-  94%           { transform: translateX(2px); }
-  97%           { transform: translateX(1px); }
+@keyframes pet-act {      /* 原地小动作: 克制, 不喧宾夺主 */
+  0%, 100% { transform: translateY(0) scaleY(1) scaleX(1); }
+  35%      { transform: translateY(-1px) scaleY(1.06) scaleX(.98); }
+  70%      { transform: translateY(0) scaleY(.96) scaleX(1.02); }
 }
-.decor-cat   { animation: pet-hop 6.5s steps(1, end) infinite; }
-.decor-corgi { animation: pet-shift 8.3s steps(1, end) infinite; animation-delay: 2.5s; }
-@media (prefers-reduced-motion: reduce) {
-  .decor-cat, .decor-corgi { animation: none; }
+@media (prefers-reduced-motion: reduce) {   /* 停游走(JS)+ 去步态/动作 → 静态单帧 */
+  .pet .inner { animation: none !important; }
 }
 
 /* ---- 右侧详情面板 ---- */

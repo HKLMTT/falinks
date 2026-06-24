@@ -26,7 +26,7 @@ PAL = {
     'wall': '#B8946A', 'wallLo': '#9C7850', 'base': '#5C3A20',
     'wood': '#9C6B3E', 'woodHi': '#C08B54', 'woodLo': '#7A4F2A', 'woodSeam': '#5C3A20',
     'screen': '#1E2A33', 'code': '#5FB0C8',
-    'idle': '#8893A8', 'busy': '#5FB84A', 'waiting': '#F2A33C', 'done': '#2FA4C8', 'offline': '#5A5A60',
+    'idle': '#8893A8', 'busy': '#5FB84A', 'waiting': '#F2A33C', 'stuck': '#D2483A', 'done': '#2FA4C8', 'offline': '#5A5A60',
     'warmGlow': '#F2C879',
 }
 def C(h):
@@ -56,7 +56,7 @@ PEOPLE = {
 }
 CELL_W, CELL_H = 20, 15   # 半身格; 头部居中, cx=10
 # 显示器上沿落在小人 y7 → 可见头 = y0–6, 眼固定在 y4 (上沿之上一点点), 全员同高.
-def draw_bust(im, ox, oy, hair, shirt, shirtSh, style, bob):
+def draw_bust(im, ox, oy, hair, shirt, shirtSh, style, bob, sleep=False):
     sk, ss = C(SKIN), C(SKIN_SH)
     hi, sh, shs, ey = C(hair), C(shirt), C(shirtSh), C(EYE)
     def R(x0, x1, y, col): rect(im, ox + x0, oy + y, x1 - x0 + 1, 1, col)
@@ -83,22 +83,26 @@ def draw_bust(im, ox, oy, hair, shirt, shirtSh, style, bob):
     R(6, 13, 5 + b, sk)
     R(7, 12, 6 + b, sk)             # 下巴收窄
     P(6, 5 + b, ss); P(13, 5 + b, ss)   # 颧影
-    # --- 眼 / 眼镜 ---
+    # --- 眼 / 眼镜 (sleep=闭眼: 横线/镜片后闭眼线) ---
     if style == 'glasses':
         P(7, 3 + b, hi); P(12, 3 + b, hi)               # 镜框上沿
-        P(7, 4 + b, C(GLASS)); P(8, 4 + b, C(GLASS_LENS))   # 左镜片
-        P(9, 4 + b, C(GLASS)); P(10, 4 + b, C(GLASS))       # 鼻梁
-        P(11, 4 + b, C(GLASS_LENS)); P(12, 4 + b, C(GLASS)) # 右镜片
+        lens = ey if sleep else C(GLASS_LENS)           # 闭眼时镜片像素改画闭眼线(藏镜片后), 镜框保留
+        P(7, 4 + b, C(GLASS)); P(8, 4 + b, lens)        # 左镜片
+        P(9, 4 + b, C(GLASS)); P(10, 4 + b, C(GLASS))   # 鼻梁
+        P(11, 4 + b, lens); P(12, 4 + b, C(GLASS))      # 右镜片
+    elif sleep:
+        R(7, 8, 4 + b, ey); R(11, 12, 4 + b, ey)        # 短横线闭眼 "—  —"
     else:
         P(8, 4 + b, ey); P(11, 4 + b, ey)
 def build_people(src):
     order = list(PEOPLE.keys())
-    sheet = newimg(CELL_W * len(order), CELL_H * 2)  # 行0=rest 行1=打字(头微点1px)
+    sheet = newimg(CELL_W * len(order), CELL_H * 3)  # 行0=rest 行1=打字(头微点1px) 行2=sleep(闭眼)
     for col, key in enumerate(order):
         hair, shirt, shirtSh, style = PEOPLE[key]
         ox = col * CELL_W
-        draw_bust(sheet, ox, 0,       hair, shirt, shirtSh, style, 0)   # rest
-        draw_bust(sheet, ox, CELL_H,  hair, shirt, shirtSh, style, 1)   # 打字: 头微点下移 1px
+        draw_bust(sheet, ox, 0,         hair, shirt, shirtSh, style, 0)               # rest
+        draw_bust(sheet, ox, CELL_H,    hair, shirt, shirtSh, style, 1)               # 打字: 头微点下移 1px
+        draw_bust(sheet, ox, CELL_H*2,  hair, shirt, shirtSh, style, 0, sleep=True)   # sleep: 闭眼(点头由 CSS 叠)
     sheet.save(os.path.join(ASSETS, 'people.png'))
     return order
 
@@ -190,6 +194,10 @@ def main():
     build_floor()
     build_wall()
     ws_states = build_workstation()
+    # stuck 暂复用 waiting 列(列2): 工位屏不新增列, stuck 的差异走地台/浮标/小人抖
+    st = {s: i for i, s in enumerate(ws_states)}
+    ws_state_map = {'idle': st['idle'], 'busy': st['busy'], 'waiting': st['waiting'],
+                    'stuck': st['waiting'], 'done': st['done'], 'offline': st['offline']}
 
     manifest = {
         '_credit': 'Office sprites by 2dPig (CC0). Warm recolor + seated busts + workstation for falinks.',
@@ -198,8 +206,9 @@ def main():
             'idle':    {'color': PAL['idle'],    'tileGlow': False, 'floater': None,  'note': '本色地砖, 肩慢呼吸'},
             'busy':    {'color': PAL['busy'],    'tileGlow': 'pulse','floater': 'dot', 'note': '绿脉冲, 打字头微点+屏滚动'},
             'waiting': {'color': PAL['waiting'], 'tileGlow': 'breath','floater':'dots','note': '琥珀地台(强对比+深描边), 屏顶琥珀提示条'},
-            'done':    {'color': PAL['done'],    'tileGlow': 'flash','floater': 'check','note': '青光闪1次后常亮1.5s'},
-            'offline': {'color': PAL['offline'], 'tileGlow': 'dim',  'floater': 'bang','note': '熄灭, 小人50%透明屏黑'},
+            'stuck':   {'color': PAL['stuck'],   'tileGlow': 'pulse-fast','floater':'bang-tri','note': '卡住/无响应: 警示红快脉冲(0.7s)+深环, 三角!浮标, 小人微抖'},
+            'done':    {'color': PAL['done'],    'tileGlow': 'flash','floater': 'check','note': '青光闪1次后余辉常亮再淡出(共3s), ✓ pop 入场'},
+            'offline': {'color': PAL['offline'], 'tileGlow': 'dim',  'floater': 'cross','note': '熄灭, 小人50%透明屏黑, ✕灰空心浮标'},
         },
         'atlas': {
             'image': '2dpig/PixelOfficeAssets.png',
@@ -208,16 +217,16 @@ def main():
         'people': {
             'image': 'people.png',
             'cell': [CELL_W, CELL_H],
-            'frames': {'rest': 0, 'type': 1},   # 行索引 (y = row*CELL_H)
+            'frames': {'rest': 0, 'type': 1, 'sleep': 2},   # 行索引 (y = row*CELL_H); sleep=闭眼(打盹)
             'order': people_order,              # 列索引 (x = col*CELL_W)
             'leadSuggest': 'p3_glasses',
-            'note': '统一 16-骨架坐姿半身(头+肩); 全员同头/眼骨架, 只换发色+衫色, lead 加眼镜. 眼固定行→露出锚点齐. 置于显示器上沿之后(下层).',
+            'note': '统一 16-骨架坐姿半身(头+肩); 全员同头/眼骨架, 只换发色+衫色, lead 加眼镜. 眼固定行→露出锚点齐. 置于显示器上沿之后(下层). sleep 行=闭眼(横线/镜片后), 打盹时由 office.js 切, 点头 bob 走 CSS.',
         },
         'floor':       {'image': 'floor.png', 'tile': 16, 'tiles': {'A': [0,0,16,16], 'B': [16,0,16,16]}},
         'wall':        {'image': 'wall.png', 'size': [16,40]},
         'workstation': {'image': 'workstation.png', 'cell': [WS_W, WS_H],
-                        'states': {s: i for i, s in enumerate(ws_states)},
-                        'note': '木桌+显示器(前层). 图层: 地砖 < 椅子 < 小人半身 < workstation < 头顶浮标.'},
+                        'states': ws_state_map,
+                        'note': '木桌+显示器(前层). stuck 暂复用 waiting 列(列2), 新列归 P1. 图层: 地砖 < 椅子 < 小人半身 < workstation < 头顶浮标.'},
         'layering': ['floor', 'wall', 'chair', 'person(bust)', 'workstation', 'floater'],
     }
     with open(os.path.join(ASSETS, 'sprites.json'), 'w') as f:
