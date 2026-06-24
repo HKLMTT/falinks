@@ -458,12 +458,12 @@
   // 头顶锚点(stage 坐标): 返回 {x: 头顶中线, y: 气泡底边(浮标带之上)}; 非在屏→null。
   function bubbleAnchor(name) {
     if (name === 'boss' && bossOnScreen && curL) {
-      return { x: curL.bossCX, y: curL.bossSeatTop - 10 };       // boss 头顶上方(无浮标)
+      return { x: curL.bossCX, y: curL.bossSeatTop - 8 };        // 压低让尾巴尖贴近 boss 头顶(无浮标)
     }
     const rec = stations.get(name);
     if (!rec) return null;
     const left = parseFloat(rec.el.style.left) || 0, top = parseFloat(rec.el.style.top) || 0;
-    return { x: left + STA_W / 2, y: top - 9 * SCALE };          // 浮标顶(top-7s)之上, 留 ≥2px
+    return { x: left + STA_W / 2, y: top - 7.5 * SCALE };        // 压低 9s→7.5s: 尾巴尖贴近浮标/头顶(连上), 仍在浮标带之上不压浮标
   }
 
   function positionBubble(b, anchor) {
