@@ -308,7 +308,8 @@
   // ---------- 猫狗自由游走(独立 #pets 层: rAF 推进 + 逐帧 clamp + 朝向翻转; reduced-motion 静止) ----------
   // 解耦(同气泡/打盹): 外层 wrap 走"位置+翻转", 内层 .inner 走"步态/原地动作"(CSS), 互不拖拽。
   // 避沙发: 活动区整块构造在沙发底沿之下 → 整身 bbox 在区内即不与任一沙发相交(无需逐帧判沙发)。
-  const PET_DEFS = [{ key: 'cat', spd: [8, 12] }, { key: 'corgi', spd: [10, 14] }];
+  // base: 基准精灵朝向(+1 朝右 / -1 朝左)。猫基准朝左(头/眼在左)、柯基朝右。有效 scaleX = face × base → 脸恒朝行进方向。
+  const PET_DEFS = [{ key: 'cat', spd: [8, 12], base: -1 }, { key: 'corgi', spd: [10, 14], base: 1 }];
   const petState = {};                  // key -> {wrap, inner, w, h, x, y, tx, ty, mode, until, spd, face, acting, actUntil, nextAct}
   let petArea = null, petLayer = null, petRAFid = 0, petLastTs = 0;
   const petMql = (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)')) || { matches: false };
@@ -325,7 +326,7 @@
   function petApply(p) {
     p.wrap.style.left = Math.round(p.x) + 'px';
     p.wrap.style.top = Math.round(p.y) + 'px';
-    p.wrap.style.setProperty('--face', p.face);
+    p.wrap.style.setProperty('--face', p.face * p.baseFace);   // 有效翻转 = 行进方向 × 基准朝向 → 脸朝行进方向
   }
   function petStep(p, dt, ts) {
     if (petMql.matches) {                 // reduced-motion: 实时冻结(去游走/步态/原地动作), 静止当前点
@@ -371,7 +372,7 @@
         const inner = mkSpr('decor-' + d.key, imgs.atlas, sp); inner.classList.add('inner');
         inner.style.position = 'absolute'; inner.style.left = '0'; inner.style.top = '0';
         wrap.appendChild(inner);
-        p = { wrap, inner, w: sp[2] * SCALE, h: sp[3] * SCALE, spd: prnd(d.spd[0], d.spd[1]),
+        p = { wrap, inner, w: sp[2] * SCALE, h: sp[3] * SCALE, spd: prnd(d.spd[0], d.spd[1]), baseFace: d.base,
               x: 0, y: 0, tx: 0, ty: 0, mode: 'pause', until: 0, face: 1, acting: false, actUntil: 0, nextAct: 0 };
         p.x = petArea.minX + 10 * SCALE + stagger; p.y = petArea.maxY - p.h;   // 初始落沙发前方(下沿), 错峰
         [p.x, p.y] = petClamp(p, p.x, p.y);
