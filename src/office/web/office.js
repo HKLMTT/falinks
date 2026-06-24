@@ -188,6 +188,7 @@
     // 二者纵向永不重叠 → 挤窗判定(≥0.5CELL 或 纵向不重叠)始终满足、中轴位恒成立,
     // 故 OFFICE-REDESIGN 的"先挪中央窗→退左上角"回退分支当前为死分支(YAGNI 未实现)。
     // ⚠️ 若日后改动 boss 位置或窗位置/尺寸,需重新评估此不变量与回退分支。
+    // 注: 左双窗已左移(x→PAD / PAD+128)让位 boss 身后书架排; 该不变量只涉纵向, 仍成立。
     const bossCX = Math.round(roomW / 2);
     const bossSeatTop = WALL_H - 4;
 
@@ -250,10 +251,14 @@
     const cBot = L.commonsBottom;
     const CLEAR = Math.round(0.75 * CELL);             // 离工位/boss 最小净距
 
-    // 墙上窗(暖光透入, 不动)
-    add('win_blue1', W * 0.12, WALL_H * 0.18);
-    add('win_blue2', W * 0.12 + (sp.win_blue1[2] + 6) * s, WALL_H * 0.18);
+    // 墙上窗(暖光透入): 左双窗左移让位 boss 身后书架排(只动 x→PAD/PAD+128, 纵向不变)
+    add('win_blue1', PAD, WALL_H * 0.18);
+    add('win_blue2', PAD + (sp.win_blue1[2] + 6) * s, WALL_H * 0.18);   // = PAD+128, 右缘≈260, 距书架排 ≥42px
     add('win_tall', W * 0.80, WALL_H * 0.08);
+
+    // 墙带·boss 正后方书架排: 3 个 vending2 当书架嵌墙(top=2s), 等距 12px 两两不相交
+    // 放 $decor(z 低于 boss 所在 $lounge) → 渲染在 boss 身后; cx 跟随 bossCX 恒居中
+    [-39, -12, 15].forEach((dx) => add('vending2', L.bossCX + dx * s, 2 * s, 1));
 
     // ── A 休息区(底左角): 沙发并排留缝(无侧面 sprite) + 圆角矩形暖毯锚 + 猫狗(ux 精确坐标) ──
     const aX = PAD, gB = L.roomH - 2 * s;                   // gB = 舞台底基线(贴底, 留满间距)
@@ -268,12 +273,12 @@
     add('cat', aX + 3 * s, gB - 13 * s, 3);                             // 猫狗趴毯前缘, 间隙 12px 不相交
     add('corgi', aX + 22 * s, gB - 11 * s, 3);
 
-    // ── B 茶水间(底右角): counter 角 + vending2 立其端 + 角落绿植烘暖 ──
-    const counterLeft = W - sw('counter') - PAD;
-    const bBot = cBot - sh('counter') - 4;
-    add('counter', counterLeft, bBot, 2);
-    add('vending2', counterLeft - sw('vending2') + 2 * s, bBot - (sh('vending2') - sh('counter')), 2);
-    add('plant_tall', W - sw('plant_tall') - PAD, bBot - sh('plant_tall') - 1 * s, 1);
+    // ── B 茶水间(底右角): counter 已删 / vending2 移作书架排; 绿植+小长椅成组填脚印(8px 相邻, 非孤件) ──
+    // 长椅右缘对齐 desk 块右沿 → 整组落在 zone C(deskRight+CLEAR)左侧, 两区互不相撞
+    const bBase = cBot - 4;                                            // 公共带底基线
+    const benchL = deskRight - sw('bench_sm');
+    add('bench_sm', benchL, bBase - sh('bench_sm'), 2);
+    add('plant_tall', benchL - sw('plant_tall') - 2 * s, bBase - sh('plant_tall'), 1);   // 绿植贴长椅左(8px 相邻, 底对齐)
 
     // ── C 绿植/洽谈角(右侧 desk 列右侧, 填右半空白 P1#18): 绿植+小长椅 紧凑成组(竖向, 离桌 ≥0.75CELL) ──
     const cX = deskRight + CLEAR;
