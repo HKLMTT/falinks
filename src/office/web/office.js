@@ -43,6 +43,7 @@
   const $decor = document.getElementById('decor');
   const $lounge = document.getElementById('lounge');
   const $desks = document.getElementById('desks');
+  const $bubbles = document.getElementById('bubbles');
   const $empty = document.getElementById('empty');
   const $banner = document.getElementById('banner');
   const $panel = document.getElementById('panel');
@@ -74,7 +75,9 @@
   let misses = 0;                // 连续失败计数
   let booted = false;
   const lastMsgTs = {};          // name -> 最近一次已展示气泡的消息 ts
-  const bubbleTimers = {};       // name -> timeout
+  const bubbleState = {};        // name -> { el, timer } 说话气泡(每人至多 1)
+  let curL = null;               // 最近一次布局(供气泡锚点/边界用)
+  let bossOnScreen = false;      // 当前 roster 是否含 boss(气泡锚点判定)
   const doneUntil = {};          // name -> ts(ms) done 闪结束时刻
   const lastDoneAt = {};         // name -> 最近一次 busy→idle 完成时刻(ms)
   const prevStatus = {};         // name -> 上次原始 status
@@ -443,18 +446,67 @@
     el.classList.toggle('sel', selected === agent.name);
   }
 
-  // ---------- 气泡 ----------
-  function showBubble(name, body) {
+  // ---------- 说话气泡(独立 #bubbles 层: 不挂 .person/.station → 不被繁忙抖动/jolt 晃; 含 boss) ----------
+  // 头顶锚点(stage 坐标): 返回 {x: 头顶中线, y: 气泡底边(浮标带之上)}; 非在屏→null。
+  function bubbleAnchor(name) {
+    if (name === 'boss' && bossOnScreen && curL) {
+      return { x: curL.bossCX, y: curL.bossSeatTop - 10 };       // boss 头顶上方(无浮标)
+    }
     const rec = stations.get(name);
-    if (!rec) return;
-    const old = rec.el.querySelector('.bubble');
-    if (old) old.remove();
-    const b = document.createElement('div');
-    b.className = 'bubble';
-    b.textContent = body.length > 60 ? body.slice(0, 58) + '…' : body;
-    rec.el.appendChild(b);
-    clearTimeout(bubbleTimers[name]);
-    bubbleTimers[name] = setTimeout(() => b.remove(), BUBBLE_MS);
+    if (!rec) return null;
+    const left = parseFloat(rec.el.style.left) || 0, top = parseFloat(rec.el.style.top) || 0;
+    return { x: left + STA_W / 2, y: top - 9 * SCALE };          // 浮标顶(top-7s)之上, 留 ≥2px
+  }
+
+  function positionBubble(b, anchor) {
+    const halfW = (b.offsetWidth || 80) / 2;
+    const roomW = curL ? curL.roomW : 0, roomH = curL ? curL.roomH : 0;
+    let cx = anchor.x;
+    cx = Math.max(4 + halfW, Math.min(roomW - 4 - halfW, cx));   // 整体平移回舞台(≥4px 边距)
+    b.style.left = Math.round(cx - halfW) + 'px';
+    b.style.bottom = Math.round(roomH - anchor.y) + 'px';
+    b.style.setProperty('--tail-dx', Math.round(anchor.x - cx) + 'px');  // 尾巴仍指说话人
+  }
+
+  function fadeOutBubble(name) {
+    const st = bubbleState[name];
+    if (!st || !st.el) return;
+    const el = st.el;
+    el.classList.add('fade');
+    setTimeout(() => { if (el.parentNode) el.remove(); }, 260);
+    bubbleState[name] = null;
+  }
+
+  function showBubble(name, body) {
+    const anchor = bubbleAnchor(name);
+    if (!anchor) return;                                          // 非在屏不弹
+    const text = body.length > 48 ? body.slice(0, 47) + '…' : body;
+    let st = bubbleState[name];
+    let b;
+    if (st && st.el && st.el.isConnected) {                       // 同人已有气泡 → 替换文本(只显最新, 不排队)
+      b = st.el; b.classList.remove('fade');
+    } else {
+      b = document.createElement('div'); b.className = 'bubble';
+      $bubbles.appendChild(b);
+      b.style.animation = 'bubble-pop .15s steps(3, end)';        // pop 仅新气泡
+      st = bubbleState[name] = { el: b, timer: 0 };
+    }
+    b.textContent = text;
+    positionBubble(b, anchor);                                    // 量 offsetWidth 后定位+夹边
+    const dwell = Math.max(2500, Math.min(6000, 2500 + 35 * text.length));
+    clearTimeout(st.timer);
+    st.timer = setTimeout(() => fadeOutBubble(name), dwell);
+  }
+
+  // 每次重绘按当前头顶坐标重定位活动气泡(防 roster 重排/缩放后气泡飘离头顶); 说话人离屏则移除。
+  function repositionBubbles() {
+    for (const name in bubbleState) {
+      const st = bubbleState[name];
+      if (!st || !st.el || !st.el.isConnected) continue;
+      const anchor = bubbleAnchor(name);
+      if (anchor) positionBubble(st.el, anchor);
+      else { clearTimeout(st.timer); st.el.remove(); bubbleState[name] = null; }
+    }
   }
 
   // 未选中态：团队概览 + 常驻状态图例(图例小样与场内浮标同款)
@@ -567,6 +619,8 @@
     $empty.classList.toggle('hidden', roster.length > 0);
 
     const L = layoutRoom(desks.length, !!bossAgent);
+    curL = L;
+    bossOnScreen = !!bossAgent;
 
     // done 闪：检测 busy→idle(boss 不参与状态, 跳过)
     for (const a of roster) {
@@ -597,6 +651,7 @@
     buildDecor(L);
     renderBoss(bossAgent, L);
     renderPanel();
+    repositionBubbles();      // 重排后按当前头顶坐标重定位活动气泡
     fitStage();
   }
 
@@ -617,16 +672,16 @@
   }
 
   // ---------- 轮询 ----------
+  function onScreen(name) {                       // 在屏说话人: 工位成员 或 boss 主位(其余未渲染虚拟不弹)
+    return stations.has(name) || (name === 'boss' && bossOnScreen);
+  }
   function diffBubbles() {
     if (!state) return;
     for (const m of state.log) {
       const prev = lastMsgTs[m.from] || 0;
-      if (m.ts > prev && stations.has(m.from)) {
-        lastMsgTs[m.from] = m.ts;
-        showBubble(m.from, m.body);
-      } else if (m.ts > (lastMsgTs[m.from] || 0)) {
-        lastMsgTs[m.from] = m.ts;          // 虚拟成员等无工位的，仅记录不冒泡
-      }
+      if (m.ts <= prev) continue;
+      lastMsgTs[m.from] = m.ts;
+      if (onScreen(m.from)) showBubble(m.from, m.body);   // 只弹 from 且在屏(含 boss)
     }
   }
 
