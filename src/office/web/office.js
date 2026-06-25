@@ -717,8 +717,21 @@
   }
 
   // ---------- 渲染一帧状态 ----------
+  // §7 多办公室: 非默认办公室在页眉/标题挂 ` · <office>` 后缀; 默认('default'/falsy)零变化。
+  function applyOfficeName(office) {
+    const named = office && office !== 'default';
+    const sub = document.getElementById('subtitle');
+    if (named) {
+      sub.textContent = T.subtitle + ' · ' + office;
+      document.title = 'falinks · ' + T.subtitle + ' · ' + office;
+    } else {
+      sub.textContent = T.subtitle;            // 默认: 页眉保持原样; 标题保留 index.html 静态值(零变化)
+    }
+  }
+
   function render() {
     if (!state || !S) return;
+    applyOfficeName(state.office);
     const roster = state.roster;
     const bossAgent = roster.find((a) => isBoss(a));
     // 只渲染 ①真实工位成员(含 offline,留在工位屏黑灰) ②boss 主位; 其余纯装饰虚拟(intern 等)不渲染小人

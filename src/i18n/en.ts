@@ -154,6 +154,27 @@ export const en: typeof zh = {
   busMultiple: (n: number, list: string) => `${n} falinks instances are running; run this in the matching directory:\n${list}`,
   busInstanceLine: (cwd: string, port: number) => `  ${cwd} (port ${port})`,
 
+  // —— multi-office · see docs/MULTI-OFFICE-DESIGN.md Appendix A ——
+  // A1 --office help (shared by up/console etc.)
+  optOffice: '--office <name>   Target a named office (config: .falinks/<name>.config.json). Omit for the default office.',
+  // A2 bare falinks interactive pick
+  officePickHeader: 'falinks — pick an office (↑↓ select · Enter confirm)',
+  officeItemDefaultRunning: '(default office)  · running — open its console',
+  officeItemDefaultStopped: '(default office)  · stopped — start it',
+  officeItemRunning: (name: string) => `${name}  · running — open its console`,
+  officeItemStopped: (name: string) => `${name}  · stopped — start it`,
+  officeItemNew: '＋ New office…',
+  officeNamePrompt: 'Office name (a-z 0-9 . _ - , 1–32 chars):',
+  // A3 errors
+  officeNameInvalid: (x: string) => `Invalid office name "${x}". Use 1–32 chars: lowercase letters, digits, . _ - (no / or ..).`,
+  officeNameReserved: '"default" is reserved. For the default office just run `falinks` or `falinks up` (no --office).',
+  officeNotRunning: (name: string) => `Office "${name}" isn't running in this directory. Start it: \`falinks up --office ${name}\`.`,
+  officeConfigNotFound: (name: string) => `No office "${name}" here (looked for .falinks/${name}.config.json). Create it: \`falinks up --office ${name}\`.`,
+  // supplementary (not in appendix; needed by impl): status lines + console office-match guard
+  officeOpening: (office: string) => `Connecting to office "${office}"…`,
+  officeStarting: (office: string) => `Starting office "${office}"…`,
+  officeMismatch: (want: string, got: string) => `Office mismatch: you asked for "${want}" but this instance is "${got}". Use --office ${got} or go to the matching office.`,
+
   // —— cli.ts ——
   exitUpdateHint: (cmd: string) => `Exited. Update command: ${cmd}`,
   defaultBootstrap: 'You are an AI worker in the office, concise in style.',

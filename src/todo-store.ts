@@ -1,6 +1,7 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
-import { runtimeDir, projectKey } from './runtime.js';
+import { runtimeDir } from './runtime.js';
+import { DEFAULT_OFFICE, keyFor } from './core/office.js';
 
 export interface TodoTask {
   seq: number;
@@ -21,14 +22,14 @@ export interface TodoState {
 
 const EMPTY = (): TodoState => ({ state: 'idle', nudgeMinutes: 10, tasks: [], completedSinceLeadReset: 0 });
 
-/** 每个项目一份:~/.falinks/todos/<projectKey>.json。root 可注入便于测试。 */
-export function todoPath(launchCwd: string, root = runtimeDir()): string {
-  return join(root, 'todos', `${projectKey(launchCwd)}.json`);
+/** 每个 (项目, 办公室) 一份:~/.falinks/todos/<key>.json。root 可注入便于测试。默认办公室==projectKey(逐字节兼容)。 */
+export function todoPath(launchCwd: string, root = runtimeDir(), office: string = DEFAULT_OFFICE): string {
+  return join(root, 'todos', `${keyFor(launchCwd, office)}.json`);
 }
 
 /** 读档;不存在/损坏返回空壳。文件说 running 一律降 paused——进程死过,由 boss /todo resume 决定续跑。 */
-export function loadTodo(launchCwd: string, root = runtimeDir()): TodoState {
-  const p = todoPath(launchCwd, root);
+export function loadTodo(launchCwd: string, root = runtimeDir(), office: string = DEFAULT_OFFICE): TodoState {
+  const p = todoPath(launchCwd, root, office);
   if (!existsSync(p)) return EMPTY();
   try {
     const raw = JSON.parse(readFileSync(p, 'utf8'));
@@ -45,8 +46,8 @@ export function loadTodo(launchCwd: string, root = runtimeDir()): TodoState {
   }
 }
 
-export function saveTodo(launchCwd: string, st: TodoState, root = runtimeDir()): void {
-  const p = todoPath(launchCwd, root);
+export function saveTodo(launchCwd: string, st: TodoState, root = runtimeDir(), office: string = DEFAULT_OFFICE): void {
+  const p = todoPath(launchCwd, root, office);
   mkdirSync(dirname(p), { recursive: true });
   writeFileSync(p, JSON.stringify(st, null, 2));
 }

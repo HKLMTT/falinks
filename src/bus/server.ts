@@ -5,6 +5,7 @@ import * as z from 'zod/v4';
 import type { Router } from '../core/router.js';
 import { t } from '../i18n/index.js';
 import { handleOfficeRequest } from '../office/serve.js';
+import { DEFAULT_OFFICE } from '../core/office.js';
 
 const PATH_RE = /^\/agent\/([^/]+)\/mcp$/;
 
@@ -71,8 +72,8 @@ export interface Bus {
 }
 
 export interface BusOptions {
-  /** 实例身份,/admin/info 返回它(寻址方核对 cwd 用)。 */
-  identity?: { cwd: string; startedAt: number };
+  /** 实例身份,/admin/info 返回它(寻址方核对 cwd / office 用)。 */
+  identity?: { cwd: string; startedAt: number; office?: string };
   /** 显式端口被占用、回退系统分配后回调(告警呈现交给调用方)。 */
   onPortFallback?(wanted: number, got: number): void;
 }
@@ -204,13 +205,14 @@ export async function startBus(deps: BusDeps, port: number, opts?: BusOptions): 
     cwd: opts?.identity?.cwd ?? process.cwd(),
     pid: process.pid,
     startedAt: opts?.identity?.startedAt ?? Date.now(),
+    office: opts?.identity?.office ?? DEFAULT_OFFICE,
   };
   const questions = new QuestionStore();
   const httpServer = http.createServer(async (req, res) => {
     const url = new URL(req.url ?? '', `http://${req.headers.host}`);
 
     // ---- /office 像素办公室彩蛋(只读静态页 + state 聚合)----
-    if (handleOfficeRequest(req, res, { router: deps.router, questions })) return;
+    if (handleOfficeRequest(req, res, { router: deps.router, questions, office: identity.office })) return;
 
     // ---- admin 路由（人/老板入口）----
     if (url.pathname.startsWith('/admin/')) {

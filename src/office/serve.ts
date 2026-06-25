@@ -2,10 +2,12 @@ import { createReadStream, existsSync, statSync } from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { DEFAULT_OFFICE } from '../core/office.js';
 
 /** /office/state 返回结构(与前端约定)。 */
 export interface OfficeState {
   ts: number;
+  office: string; // 办公室 id(默认办公室=DEFAULT_OFFICE);frontend 页眉据此显示 `· <office>` 后缀。
   roster: Array<{ name: string; role: string; status: string; virtual: boolean; lead: boolean; unresponsive: boolean; queue: number }>;
   log: Array<{ id: string; from: string; to: string; body: string; ts: number; thread?: string }>;
   questions: Array<{ id: string; from: string; question: string; options: string[]; ts: number }>;
@@ -18,6 +20,8 @@ export interface OfficeDeps {
     messages(): Array<{ id: string; from: string; to: string; body: string; ts: number; thread?: string }>;
   };
   questions: { list(): Array<{ id: string; from: string; question: string; options: string[]; ts: number }> };
+  /** 本实例的办公室 id(由 bus identity 透入);缺省=默认办公室。 */
+  office?: string;
   /** 静态根覆盖(测试用);缺省=本模块同级 web/(dist/office/web 或 src/office/web)。 */
   webRoot?: string;
   /** 时间源(测试用)。 */
@@ -43,7 +47,7 @@ export function buildOfficeState(deps: OfficeDeps): OfficeState {
   const all = deps.router.messages();
   const log = all.slice(-MAX_LOG).map((m) => ({ id: m.id, from: m.from, to: m.to, body: m.body, ts: m.ts, thread: m.thread }));
   const questions = deps.questions.list().map((q) => ({ id: q.id, from: q.from, question: q.question, options: q.options, ts: q.ts }));
-  return { ts: now(), roster, log, questions };
+  return { ts: now(), office: deps.office ?? DEFAULT_OFFICE, roster, log, questions };
 }
 
 const CONTENT_TYPES: Record<string, string> = {

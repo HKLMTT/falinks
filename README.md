@@ -113,6 +113,16 @@ falinks doctor                  # environment self-check
 falinks lang                    # switch UI language (set before launch)
 ```
 
+## Multiple offices
+
+By default one project directory = one office. You can also run **several independent offices in the same directory** — each with its own config, port, roster, messages, lead memory, and `/office` page.
+
+- The **default office** (no name) keeps the old paths and behavior — existing projects need **zero changes**.
+- A **named office**: `falinks up --office <name>` (config saved to `.falinks/<name>.config.json`). Run bare `falinks` in a terminal to list this project's offices (each marked running/stopped) and open one or create a new one. Connect a console with `falinks console --office <name>`.
+- Office names are lowercase `a-z 0-9 . _ -`, 1–32 chars; **`default` is reserved** (just use `falinks` / `falinks up` for it). `.falinks/` appears only when you first create a named office, and whether to commit configs is up to you.
+
+No migration: the default office is byte-for-byte the old behavior. See [docs/OFFICE.md](docs/OFFICE.md) for details.
+
 ## Config `falinks.config.json`
 
 ```jsonc

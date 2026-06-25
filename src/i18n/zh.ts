@@ -160,6 +160,27 @@ export const zh = {
   busMultiple: (n: number, list: string) => `有 ${n} 个 falinks 在运行，请到对应目录执行：\n${list}`,
   busInstanceLine: (cwd: string, port: number) => `  ${cwd}（端口 ${port}）`,
 
+  // —— 多办公室(multi-office)·文案见 docs/MULTI-OFFICE-DESIGN.md 附录 A ——
+  // A1 --office help(up/console 等通用)
+  optOffice: '--office <名字>   指定具名办公室(配置:.falinks/<名字>.config.json);不填即默认办公室。',
+  // A2 裸 falinks 交互选择
+  officePickHeader: 'falinks — 选择办公室(↑↓ 选 · Enter 确认)',
+  officeItemDefaultRunning: '(默认办公室)  · 运行中 — 打开控制台',
+  officeItemDefaultStopped: '(默认办公室)  · 已停 — 启动',
+  officeItemRunning: (name: string) => `${name}  · 运行中 — 打开控制台`,
+  officeItemStopped: (name: string) => `${name}  · 已停 — 启动`,
+  officeItemNew: '＋ 新建办公室…',
+  officeNamePrompt: '办公室名字(a-z 0-9 . _ - ,1–32 字符):',
+  // A3 错误提示
+  officeNameInvalid: (x: string) => `办公室名 "${x}" 非法。请用 1–32 个字符:小写字母、数字、. _ -(不能含 / 或 ..)。`,
+  officeNameReserved: '"default" 是保留名。要用默认办公室,直接 `falinks` / `falinks up`(不要加 --office)。',
+  officeNotRunning: (name: string) => `办公室 "${name}" 在本目录没有运行。启动它:\`falinks up --office ${name}\`。`,
+  officeConfigNotFound: (name: string) => `本目录没有办公室 "${name}"(找不到 .falinks/${name}.config.json)。创建:\`falinks up --office ${name}\`。`,
+  // 补充(非附录,实现需要):状态行 + console 连错办公室校验
+  officeOpening: (office: string) => `连接办公室「${office}」…`,
+  officeStarting: (office: string) => `启动办公室「${office}」…`,
+  officeMismatch: (want: string, got: string) => `办公室不匹配:你要连「${want}」,但该实例是「${got}」。用 --office ${got} 或到对应办公室。`,
+
   // —— cli.ts ——
   exitUpdateHint: (cmd: string) => `已退出。更新命令：${cmd}`,
   defaultBootstrap: '你是办公室里的 AI 员工，风格简练。',

@@ -21,10 +21,16 @@ async function start(port: number, opts?: Parameters<typeof startBus>[2]) {
   return b;
 }
 
-test('GET /admin/info 返回身份(cwd/pid/startedAt)', async () => {
+test('GET /admin/info 返回身份(cwd/pid/startedAt/office),office 缺省=default', async () => {
   const b = await start(0, { identity: { cwd: '/proj/a', startedAt: 42 } });
   const info = await (await fetch(`http://127.0.0.1:${b.port}/admin/info`)).json();
-  expect(info).toEqual({ cwd: '/proj/a', pid: process.pid, startedAt: 42 });
+  expect(info).toEqual({ cwd: '/proj/a', pid: process.pid, startedAt: 42, office: 'default' });
+});
+
+test('GET /admin/info 透出具名 office', async () => {
+  const b = await start(0, { identity: { cwd: '/proj/a', startedAt: 42, office: 'review' } });
+  const info = await (await fetch(`http://127.0.0.1:${b.port}/admin/info`)).json();
+  expect(info.office).toBe('review');
 });
 
 test('未传 identity 也有兜底身份', async () => {

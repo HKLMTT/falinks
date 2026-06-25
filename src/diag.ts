@@ -2,6 +2,7 @@ import { appendFileSync, readFileSync, writeFileSync, mkdirSync, existsSync, rmS
 import { createHash } from 'node:crypto';
 import { join, dirname } from 'node:path';
 import { runtimeDir } from './runtime.js';
+import { DEFAULT_OFFICE, officeSuffix } from './core/office.js';
 
 /**
  * 诊断事件流水:记录"会悄悄打断协作流程"的事件,便于反复卡死后回溯定位。
@@ -25,22 +26,23 @@ export type DiagEvent =
   | { kind: 'bootstrap-fail'; name: string; error: string; ts: number }
   | { kind: 'poll-frozen'; streak: number; error: string; ts: number } // 批量轮询连续整轮失败(状态冻结);
 
-/** 每个项目目录一份诊断流水:~/.falinks/diag/<cwd 的 sha1 前16位>.jsonl。root 可注入便于测试。 */
-export function diagPath(cwd: string, root = runtimeDir()): string {
-  const key = createHash('sha1').update(cwd).digest('hex').slice(0, 16);
+/** 每个 (项目目录, 办公室) 一份诊断流水:~/.falinks/diag/<sha1(cwd)前16位[--office]>.jsonl。root 可注入便于测试。
+ *  注:base 沿用 sha1(cwd)(与 message-log 同款,未 realpath),为默认办公室逐字节兼容而保留;office 后缀规则与全局一致。 */
+export function diagPath(cwd: string, root = runtimeDir(), office: string = DEFAULT_OFFICE): string {
+  const key = createHash('sha1').update(cwd).digest('hex').slice(0, 16) + officeSuffix(office);
   return join(root, 'diag', `${key}.jsonl`);
 }
 
 /** 追加一条诊断事件(O(1) 追加)。 */
-export function appendDiag(cwd: string, ev: DiagEvent, root = runtimeDir()): void {
-  const p = diagPath(cwd, root);
+export function appendDiag(cwd: string, ev: DiagEvent, root = runtimeDir(), office: string = DEFAULT_OFFICE): void {
+  const p = diagPath(cwd, root, office);
   mkdirSync(dirname(p), { recursive: true });
   appendFileSync(p, JSON.stringify(ev) + '\n');
 }
 
 /** 读最近 cap 条;坏行跳过;文件超过 2×cap 行时顺手压缩重写。 */
-export function loadDiag(cwd: string, cap = DIAG_CAP, root = runtimeDir()): DiagEvent[] {
-  const p = diagPath(cwd, root);
+export function loadDiag(cwd: string, cap = DIAG_CAP, root = runtimeDir(), office: string = DEFAULT_OFFICE): DiagEvent[] {
+  const p = diagPath(cwd, root, office);
   if (!existsSync(p)) return [];
   let lines: string[];
   try {
@@ -58,7 +60,7 @@ export function loadDiag(cwd: string, cap = DIAG_CAP, root = runtimeDir()): Diag
   return tail;
 }
 
-/** 清空某项目的诊断流水(删除文件)。不存在为 no-op。 */
-export function clearDiag(cwd: string, root = runtimeDir()): void {
-  rmSync(diagPath(cwd, root), { force: true });
+/** 清空某 (项目, 办公室) 的诊断流水(删除文件)。不存在为 no-op。 */
+export function clearDiag(cwd: string, root = runtimeDir(), office: string = DEFAULT_OFFICE): void {
+  rmSync(diagPath(cwd, root, office), { force: true });
 }

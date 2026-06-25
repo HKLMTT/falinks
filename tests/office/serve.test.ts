@@ -31,6 +31,7 @@ function fakeDeps(over: any = {}) {
 test('buildOfficeState 字段齐全', () => {
   const s = buildOfficeState(fakeDeps());
   expect(s.ts).toBe(999);
+  expect(s.office).toBe('default'); // 缺省=默认办公室
   expect(s.roster).toEqual([
     { name: 'lead', role: '组长', status: 'busy', virtual: false, lead: true, unresponsive: false, queue: 0 },
     { name: 'boss', role: '老板', status: 'idle', virtual: true, lead: false, unresponsive: false, queue: 0 },
@@ -56,8 +57,12 @@ test('roster 缺省 role 归一为空串', () => {
   expect(s.roster[0]).toEqual({ name: 'x', role: '', status: 'idle', virtual: false, lead: false, unresponsive: false, queue: 0 });
 });
 
-test('roster 暴露 queue:inbox.length 优先,queue 字段次之,缺省 0', () => {
-  const s = buildOfficeState(fakeDeps({ roster: [
+test('buildOfficeState 透出具名 office', () => {
+  const s = buildOfficeState({ ...fakeDeps(), office: 'review' } as any);
+  expect(s.office).toBe('review');
+});
+
+test('roster 暴露 queue:inbox.length 优先,queue 字段次之,缺省 0', () => {  const s = buildOfficeState(fakeDeps({ roster: [
     { name: 'a', status: 'busy', inbox: [{}, {}, {}] }, // 真实 inbox → 3
     { name: 'b', status: 'busy', queue: 7 },            // 无 inbox,给 queue → 7
     { name: 'c', status: 'idle' },                      // 都没有 → 0
@@ -109,6 +114,7 @@ test('GET /office/state 返回 JSON', async () => {
   expect(j.roster[0].name).toBe('lead');
   expect(typeof j.roster[0].queue).toBe('number');
   expect(Array.isArray(j.log)).toBe(true);
+  expect(typeof j.office).toBe('string'); // 多办公室:/office/state 透出 office(frontend §7 页眉据此显示后缀)
 });
 
 test('GET /office/office.css 带正确 content-type', async () => {

@@ -1,19 +1,20 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
-import { runtimeDir, projectKey } from '../runtime.js';
+import { runtimeDir } from '../runtime.js';
+import { DEFAULT_OFFICE, keyFor } from '../core/office.js';
 
 export interface AgentSession { cli: string; sessionId: string; }
 export interface SessionStore { cwd: string; agents: Record<string, AgentSession>; }
 
-/** 每个项目目录一份存档：~/.falinks/sessions/<projectKey>.json。root 可注入便于测试。
- *  key 走 projectKey(realpath + sha1)——与 runtime 实例档案同一规范化,符号链接路径不会对不上。 */
-export function sessionStorePath(launchCwd: string, root = runtimeDir()): string {
-  return join(root, 'sessions', `${projectKey(launchCwd)}.json`);
+/** 每个 (项目目录, 办公室) 一份存档：~/.falinks/sessions/<key>.json。root 可注入便于测试。
+ *  key 走 keyFor(realpath + sha1 [+ --office])——与 runtime 实例档案同一规范化,符号链接路径不会对不上。 */
+export function sessionStorePath(launchCwd: string, root = runtimeDir(), office: string = DEFAULT_OFFICE): string {
+  return join(root, 'sessions', `${keyFor(launchCwd, office)}.json`);
 }
 
 /** 读存档；不存在或损坏都返回空壳。 */
-export function loadStore(launchCwd: string, root = runtimeDir()): SessionStore {
-  const p = sessionStorePath(launchCwd, root);
+export function loadStore(launchCwd: string, root = runtimeDir(), office: string = DEFAULT_OFFICE): SessionStore {
+  const p = sessionStorePath(launchCwd, root, office);
   if (!existsSync(p)) return { cwd: launchCwd, agents: {} };
   try {
     const data = JSON.parse(readFileSync(p, 'utf8'));
@@ -24,8 +25,8 @@ export function loadStore(launchCwd: string, root = runtimeDir()): SessionStore 
 }
 
 /** 写存档（自动建目录）。 */
-export function saveStore(launchCwd: string, store: SessionStore, root = runtimeDir()): void {
-  const p = sessionStorePath(launchCwd, root);
+export function saveStore(launchCwd: string, store: SessionStore, root = runtimeDir(), office: string = DEFAULT_OFFICE): void {
+  const p = sessionStorePath(launchCwd, root, office);
   mkdirSync(dirname(p), { recursive: true });
   writeFileSync(p, JSON.stringify(store, null, 2));
 }

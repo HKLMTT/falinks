@@ -2,6 +2,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { realpathSync, writeFileSync, readFileSync, unlinkSync, mkdirSync, readdirSync } from 'node:fs';
+import { DEFAULT_OFFICE, officeSuffix } from './core/office.js';
 
 /** falinks 的运行时目录 ~/.falinks。 */
 export function runtimeDir(): string {
@@ -24,8 +25,8 @@ export function consoleLaunchCommand(selfScript: string, execPath: string, port?
     : `${execPath} ${selfScript} console${suffix}`;
 }
 
-/** 运行中的办公室实例档案:~/.falinks/runtime/<projectKey>.json。 */
-export interface InstanceInfo { port: number; pid: number; cwd: string; startedAt: number; }
+/** 运行中的办公室实例档案:~/.falinks/runtime/<projectKey[--office]>.json。office 缺省=默认办公室。 */
+export interface InstanceInfo { port: number; pid: number; cwd: string; startedAt: number; office?: string; }
 
 /** cwd 的规范形(realpath,失败回退原值)——所有 hash 前必须先过这层,防符号链接路径对不上。 */
 export function realCwd(cwd: string): string {
@@ -37,14 +38,14 @@ export function projectKey(cwd: string): string {
   return createHash('sha1').update(realCwd(cwd)).digest('hex').slice(0, 16);
 }
 
-/** 实例档案路径：<root>/runtime/<projectKey>.json。 */
-export function instancePath(cwd: string, root = runtimeDir()): string {
-  return join(root, 'runtime', `${projectKey(cwd)}.json`);
+/** 实例档案路径：<root>/runtime/<projectKey[--office]>.json。office 缺省=默认办公室(无后缀,逐字节兼容旧路径)。 */
+export function instancePath(cwd: string, root = runtimeDir(), office: string = DEFAULT_OFFICE): string {
+  return join(root, 'runtime', `${projectKey(cwd)}${officeSuffix(office)}.json`);
 }
 
-/** 写实例档案。默认 wx 排他创建(挡同目录双开竞态),已存在返回 false;force 覆盖。 */
+/** 写实例档案。默认 wx 排他创建(挡同 (cwd,office) 双开竞态),已存在返回 false;force 覆盖。office 取自 info.office。 */
 export function writeInstance(info: InstanceInfo, root = runtimeDir(), opts?: { force?: boolean }): boolean {
-  const p = instancePath(info.cwd, root);
+  const p = instancePath(info.cwd, root, info.office ?? DEFAULT_OFFICE);
   mkdirSync(join(root, 'runtime'), { recursive: true });
   try {
     writeFileSync(p, JSON.stringify(info), { flag: opts?.force ? 'w' : 'wx' });
@@ -56,18 +57,18 @@ export function writeInstance(info: InstanceInfo, root = runtimeDir(), opts?: { 
 }
 
 /** 读实例档案;不存在或损坏返回 null。 */
-export function readInstance(cwd: string, root = runtimeDir()): InstanceInfo | null {
+export function readInstance(cwd: string, root = runtimeDir(), office: string = DEFAULT_OFFICE): InstanceInfo | null {
   try {
-    const d = JSON.parse(readFileSync(instancePath(cwd, root), 'utf8'));
+    const d = JSON.parse(readFileSync(instancePath(cwd, root, office), 'utf8'));
     return typeof d?.port === 'number' && typeof d?.cwd === 'string' ? d : null;
   } catch { return null; }
 }
 
 /** 删除实例档案,但只删自己的(pid 匹配)——退出清理用,防误删后启实例的档案。 */
-export function removeInstanceIfOwner(cwd: string, pid: number, root = runtimeDir()): void {
-  const i = readInstance(cwd, root);
+export function removeInstanceIfOwner(cwd: string, pid: number, root = runtimeDir(), office: string = DEFAULT_OFFICE): void {
+  const i = readInstance(cwd, root, office);
   if (i?.pid !== pid) return;
-  try { unlinkSync(instancePath(cwd, root)); } catch { /* 已不在,无所谓 */ }
+  try { unlinkSync(instancePath(cwd, root, office)); } catch { /* 已不在,无所谓 */ }
 }
 
 /** 无条件删除实例档案(stale 清理用)。 */

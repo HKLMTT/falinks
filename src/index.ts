@@ -28,10 +28,11 @@ import { TodoEngine } from './core/todo.js';
 import { loadTodo, saveTodo } from './todo-store.js';
 import type { TodoTask } from './todo-store.js';
 import { loadLeadState, saveLeadState, clearLeadState } from './leadstate-store.js';
+import { DEFAULT_OFFICE } from './core/office.js';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-export async function up(configPath: string) {
+export async function up(configPath: string, office: string = DEFAULT_OFFICE) {
   const cfg = parseConfig(JSON.parse(readFileSync(configPath, 'utf8')));
   const driver = new ITerm2Driver();
   let n = 0;
@@ -44,7 +45,7 @@ export async function up(configPath: string) {
   const lastDeliverAt = new Map<string, number>();
   // 注入失败 = 消息已出队却没进 pane（永久丢失,发件人却以为发出去了）→ 落盘诊断,让其可见。
   const baseDeliverer = makeDeliverer(driver, (agent, msg, err) => {
-    try { appendDiag(launchCwd, { kind: 'inject-fail', to: agent.name, error: String((err as any)?.message ?? err), msgId: msg.id, ts: Date.now() }); } catch { /* 诊断落盘失败不致命 */ }
+    try { appendDiag(launchCwd, { kind: 'inject-fail', to: agent.name, error: String((err as any)?.message ?? err), msgId: msg.id, ts: Date.now() }, runtimeDir(), office); } catch { /* 诊断落盘失败不致命 */ }
   });
   const deliverer = {
     deliver(agent: AgentRuntime, msg: Message) {
@@ -77,24 +78,24 @@ export async function up(configPath: string) {
   // 失联告警:边沿触发(router 标志首转才落盘),花名册 ⚠ 由 /admin/roster 透出、警告行由控制台渲染。
   const alarmUnresponsive = (name: string, rule: 'register-timeout' | 'mute') => {
     if (!router.markUnresponsive(name, rule)) return;
-    try { appendDiag(launchCwd, { kind: 'agent-unresponsive', name, rule, ts: Date.now() }); } catch { /* 诊断落盘失败不致命 */ }
+    try { appendDiag(launchCwd, { kind: 'agent-unresponsive', name, rule, ts: Date.now() }, runtimeDir(), office); } catch { /* 诊断落盘失败不致命 */ }
   };
   const historyCap = cfg.historyCap ?? MESSAGE_LOG_CAP;
   const router = new Router(deliverer, {
     now: () => Date.now(), genId: () => `m${++n}`, routes: cfg.routes, guards,
     logCap: historyCap,
-    onLog: (msg) => { try { appendMessageLog(launchCwd, msg); } catch { /* 持久化失败不致命 */ } },
+    onLog: (msg) => { try { appendMessageLog(launchCwd, msg, runtimeDir(), office); } catch { /* 持久化失败不致命 */ } },
     // 守卫拦下并丢弃消息（turn-cap/loop/rate-limit）→ 落盘诊断,让"悄悄丢消息"可回溯。
-    onDrop: (d) => { try { appendDiag(launchCwd, { kind: 'guard-drop', from: d.from, to: d.to, reason: d.reason, thread: d.thread, ts: Date.now() }); } catch { /* 诊断落盘失败不致命 */ } },
+    onDrop: (d) => { try { appendDiag(launchCwd, { kind: 'guard-drop', from: d.from, to: d.to, reason: d.reason, thread: d.thread, ts: Date.now() }, runtimeDir(), office); } catch { /* 诊断落盘失败不致命 */ } },
   });
   router.addVirtual('boss');
-  const seeded = loadMessageLog(launchCwd, historyCap) as Message[];
+  const seeded = loadMessageLog(launchCwd, historyCap, runtimeDir(), office) as Message[];
   router.seedLog(seeded); // 恢复历史消息流水
   // genId 形如 m${n};新会话 n 从 0 起会与持久化恢复的旧消息(也 m${k})撞号 → 控制台同 key 警告/漏渲染。
   // 把 n 推到已恢复消息里最大序号之后,新消息 id 不再与历史冲突。
   for (const msg of seeded) { const mt = /^m(\d+)$/.exec(msg.id); if (mt) n = Math.max(n, Number(mt[1])); }
 
-  const store: SessionStore = loadStore(launchCwd);
+  const store: SessionStore = loadStore(launchCwd, runtimeDir(), office);
   pruneToAgents(store, cfg.agents.map((a) => a.name));
 
   // todolist 引擎:回调全在此拼装(模板/落盘),引擎纯逻辑。下发/巡查以 boss 名义(lead 回 boss 无害);
@@ -124,18 +125,18 @@ export async function up(configPath: string) {
     announceSuspended: () => { router.send('falinks', 'boss', t().todoSuspendedMsg); },
     announceWorkersTimeout: () => {
       router.send('falinks', 'boss', t().todoWorkersTimeoutMsg);
-      try { appendDiag(launchCwd, { kind: 'todo-workers-timeout', ts: Date.now() }); } catch { /* 诊断落盘失败不致命 */ }
+      try { appendDiag(launchCwd, { kind: 'todo-workers-timeout', ts: Date.now() }, runtimeDir(), office); } catch { /* 诊断落盘失败不致命 */ }
     },
     announceSendFailing: () => {
       router.send('falinks', 'boss', t().todoSendFailingMsg);
-      try { appendDiag(launchCwd, { kind: 'todo-send-failing', ts: Date.now() }); } catch { /* 诊断落盘失败不致命 */ }
+      try { appendDiag(launchCwd, { kind: 'todo-send-failing', ts: Date.now() }, runtimeDir(), office); } catch { /* 诊断落盘失败不致命 */ }
     },
     announceWaiting: (task, minutes, reason) => {
       router.send('falinks', 'boss', t().todoWaitingMsg(task.seq, minutes, reason));
     },
     announceStalled: (task, n, intervalMinutes) => {
       router.send('falinks', 'boss', t().todoStalledMsg(task.seq, n, intervalMinutes));
-      try { appendDiag(launchCwd, { kind: 'todo-stalled', seq: task.seq, n, ts: Date.now() }); } catch { /* 诊断落盘失败不致命 */ }
+      try { appendDiag(launchCwd, { kind: 'todo-stalled', seq: task.seq, n, ts: Date.now() }, runtimeDir(), office); } catch { /* 诊断落盘失败不致命 */ }
     },
     resetWorkers: () => {
       const lead = currentLead();
@@ -156,21 +157,21 @@ export async function up(configPath: string) {
     resetLead: () => {
       const lead = currentLead();
       if (!cfg.todo?.leadReset.enabled || !lead) return;
-      if (!loadLeadState(launchCwd)) { // 无文档:重置会致失忆,跳过 + 边沿提醒
+      if (!loadLeadState(launchCwd, runtimeDir(), office)) { // 无文档:重置会致失忆,跳过 + 边沿提醒
         router.send('falinks', 'boss', t().leadResetSkippedNoDoc);
         return;
       }
       void clearOneWorker(lead).catch(() => {}); // 重注入含文档的 bootstrap;下一条任务经 hold 队列在其后落地
     },
     wipeLeadMemory: () => {
-      clearLeadState(launchCwd);
+      clearLeadState(launchCwd, runtimeDir(), office);
       const lead = currentLead();
       if (lead) { const spec = cfg.agents.find((x) => x.name === lead); if (spec) bootstraps.set(lead, composeBootstrap(spec)); }
     },
     leadResetEvery: () => (cfg.todo?.leadReset.enabled ? cfg.todo.leadReset.everyTasks : 0),
     removedByBossText: () => t().todoRemovedByBoss,
-    persist: (st) => { try { saveTodo(launchCwd, st); } catch { /* 落盘失败不致命,内存继续 */ } },
-  }, loadTodo(launchCwd));
+    persist: (st) => { try { saveTodo(launchCwd, st, runtimeDir(), office); } catch { /* 落盘失败不致命,内存继续 */ } },
+  }, loadTodo(launchCwd, runtimeDir(), office));
   const tmp = mkdtempSync(join(tmpdir(), 'falinks-'));
   let bus: Bus;
   let lastRight = '';      // 上次新建的右侧 pane,作为下次分屏的首选锚点
@@ -182,7 +183,7 @@ export async function up(configPath: string) {
     let s = `${t().houseRules}\n${t().identityLine(a.name, a.role)}${a.bootstrap ?? ''}`;
     if (a.lead) {
       s += `\n${t().coordinatorRules}`;
-      const doc = cfg.todo?.leadReset.enabled ? loadLeadState(launchCwd) : '';
+      const doc = cfg.todo?.leadReset.enabled ? loadLeadState(launchCwd, runtimeDir(), office) : '';
       if (doc) s += `\n【项目状态(续接用,这是你上一段会话沉淀的记忆)】\n${doc}`;
     }
     return s;
@@ -291,29 +292,30 @@ export async function up(configPath: string) {
         // 落盘：拿到 id 才记；codex 没抓到则删掉旧条目，确保下次 fresh 而非误 resume。
         if (sid2) store.agents[a.name] = { cli: a.cli, sessionId: sid2 };
         else delete store.agents[a.name];
-        saveStore(launchCwd, store);
+        saveStore(launchCwd, store, runtimeDir(), office);
       } catch (e: any) {
         // 后台准备失败(pane 没了/注入炸了):落盘诊断;A-1 已布防,90s 内会亮 ⚠
-        try { appendDiag(launchCwd, { kind: 'bootstrap-fail', name: a.name, error: String(e?.message ?? e), ts: Date.now() }); } catch { /* 诊断落盘失败不致命 */ }
+        try { appendDiag(launchCwd, { kind: 'bootstrap-fail', name: a.name, error: String(e?.message ?? e), ts: Date.now() }, runtimeDir(), office); } catch { /* 诊断落盘失败不致命 */ }
       }
     })();
 
     return sid;
   }
 
-  // 防双开:同目录的 sessions/messages 是共享的,双开必然互相污染。
-  const existing = readInstance(launchCwd);
+  // 防双开:同 (目录,办公室) 的 sessions/messages 是共享的,双开必然互相污染。不同办公室同目录放行(各自独立端口与实例)。
+  const existing = readInstance(launchCwd, undefined, office);
   if (existing) {
     const p = await probeBus(existing.port);
-    if (p.state === 'alive' && p.info.cwd === launchCwd) {
+    const sameOffice = p.state === 'alive' && (p.info.office ?? DEFAULT_OFFICE) === office;
+    if (p.state === 'alive' && p.info.cwd === launchCwd && sameOffice) {
       console.error(t().instanceAlreadyRunning(existing.port));
       process.exit(1);
     }
     if (p.state === 'unknown') {
-      console.error(t().instanceMaybeRunning(existing.port, instancePath(launchCwd)));
+      console.error(t().instanceMaybeRunning(existing.port, instancePath(launchCwd, undefined, office)));
       process.exit(1);
     }
-    removeInstanceFile(instancePath(launchCwd)); // 确认死了/张冠李戴:清掉尸体
+    removeInstanceFile(instancePath(launchCwd, undefined, office)); // 确认死了/张冠李戴/办公室不符:清掉尸体
   }
 
   // 单员工清空序列:/clear → 等待 → 重注入 bootstrap(恢复身份+重新 register)。onClear 与 todo resetWorkers 共用,避免逻辑漂移。
@@ -333,7 +335,7 @@ export async function up(configPath: string) {
       // 故删 store 条目:重启走 fresh(全新会话+重注入 bootstrap;lead 还会重载 leadstate 文档),
       // 绝不 --resume 到 clear 之前的旧会话。代价:clear 后那段会话重启不恢复(对「清空」语义可接受)。
       delete store.agents[nm];
-      saveStore(launchCwd, store);
+      saveStore(launchCwd, store, runtimeDir(), office);
       return true;
     } finally {
       clearing.delete(nm);
@@ -348,7 +350,7 @@ export async function up(configPath: string) {
     if (restarting.has(name) || clearing.has(name)) return { ok: false, error: t().restartBusy(name) };
     restarting.add(name);
     try {
-      if (fresh) { delete store.agents[name]; saveStore(launchCwd, store); }
+      if (fresh) { delete store.agents[name]; saveStore(launchCwd, store, runtimeDir(), office); }
       router.markLaunching(name); // inbox 保留,重新 register 后照常投递
       forgetAgentState(name);
       const sid = sessions.get(name);
@@ -417,7 +419,7 @@ export async function up(configPath: string) {
         .filter((nm) => !restarting.has(nm));
       // lead 文档:/clear 删档(白纸)。重启前抹掉,launchInto 的 composeBootstrap 现读即得空档。
       const lead = currentLead();
-      if (lead && targets.includes(lead)) clearLeadState(launchCwd);
+      if (lead && targets.includes(lead)) clearLeadState(launchCwd, runtimeDir(), office);
       // /clear 改为「重启换新 session id」:重启 falinks 时能 --resume 到 clear 后的会话(而非 clear 前的旧会话)。
       // 重启关旧 pane+切新 pane,不可并行(锚点竞态),故串行;比注入 /clear 慢,但可恢复。
       const cleared: string[] = [];
@@ -428,8 +430,8 @@ export async function up(configPath: string) {
       // 指定某个 AI 时只清那一个 pane 的上下文，boss 历史保留。
       if (!name) {
         router.clearLog();
-        try { clearMessageLog(launchCwd); } catch { /* 持久化清理失败不致命 */ }
-        try { clearDiag(launchCwd); } catch { /* 同上 */ }
+        try { clearMessageLog(launchCwd, runtimeDir(), office); } catch { /* 持久化清理失败不致命 */ }
+        try { clearDiag(launchCwd, runtimeDir(), office); } catch { /* 同上 */ }
       }
       return { ok: true, cleared };
     },
@@ -505,13 +507,13 @@ export async function up(configPath: string) {
       state: () => todo.state(),
       leadstate: (content: string) => {
         if (!cfg.todo?.leadReset.enabled) return { ok: false, error: t().leadMemoryOff };
-        saveLeadState(launchCwd, content);
+        saveLeadState(launchCwd, content, runtimeDir(), office);
         const lead = currentLead();
         if (lead) { const spec = cfg.agents.find((x) => x.name === lead); if (spec) bootstraps.set(lead, composeBootstrap(spec)); }
         return { ok: true };
       },
     },
-    getDiag: () => { try { return loadDiag(launchCwd); } catch { return []; } },
+    getDiag: () => { try { return loadDiag(launchCwd, undefined, runtimeDir(), office); } catch { return []; } },
     onLeadReset: async ({ enabled, every }) => {
       if (!cfg.todo) cfg.todo = { leadReset: { enabled: true, everyTasks: 5 } };
       if (enabled !== undefined) cfg.todo.leadReset.enabled = enabled;
@@ -527,31 +529,31 @@ export async function up(configPath: string) {
       return { ok: true, enabled: cfg.todo.leadReset.enabled, every: cfg.todo.leadReset.everyTasks };
     },
   }, cfg.busPort ?? 0, {
-    identity: { cwd: launchCwd, startedAt: Date.now() },
+    identity: { cwd: launchCwd, startedAt: Date.now(), office },
     onPortFallback: (wanted, got) => { portWarning = t().portFallback(wanted, got); },
   });
   mkdirSync(runtimeDir(), { recursive: true });
   rmSync(runtimePath(), { force: true }); // 旧版全局 runtime.json:一次性迁移清理
-  const inst = { port: bus.port, pid: process.pid, cwd: launchCwd, startedAt: Date.now() };
+  const inst = { port: bus.port, pid: process.pid, cwd: launchCwd, startedAt: Date.now(), office };
   // 安全前提：writeInstance 必须在 pane 创建循环之前执行。
   // 若败者在 exit(1) 时尚未建任何 pane，可安全退出而不留残局。
   // 请勿将 pane 创建逻辑移到此块之前。
   if (!writeInstance(inst)) {
     // wx 失败=毫秒级竞态里别人先写了:再探一次,确认死亡才覆盖,unknown 保守拒绝。
-    const race = readInstance(launchCwd);
+    const race = readInstance(launchCwd, undefined, office);
     const p = race ? await probeBus(race.port) : null;
-    if (p?.state === 'alive' && p.info.cwd === launchCwd) {
+    if (p?.state === 'alive' && p.info.cwd === launchCwd && (p.info.office ?? DEFAULT_OFFICE) === office) {
       console.error(t().instanceAlreadyRunningShort(race!.port));
       process.exit(1);
     }
     if (p?.state === 'unknown') {
-      console.error(t().instanceMaybeRunning(race!.port, instancePath(launchCwd)));
+      console.error(t().instanceMaybeRunning(race!.port, instancePath(launchCwd, undefined, office)));
       process.exit(1);
     }
-    // p === null（档案读不到）、p.state === 'dead'、或 alive 但 cwd 不符（张冠李戴）:确认死亡,安全覆盖。
+    // p === null（档案读不到）、p.state === 'dead'、或 alive 但 cwd/office 不符（张冠李戴）:确认死亡,安全覆盖。
     writeInstance(inst, undefined, { force: true });
   }
-  process.on('exit', () => removeInstanceIfOwner(launchCwd, process.pid));
+  process.on('exit', () => removeInstanceIfOwner(launchCwd, process.pid, undefined, office));
   process.on('SIGTERM', () => process.exit(0)); // 默认 SIGTERM 不走 exit 钩子,显式转一下
   process.on('SIGINT', () => process.exit(0));  // 非控制台模式 Ctrl-C(控制台模式 raw mode 自行处理)
 
@@ -618,7 +620,7 @@ export async function up(configPath: string) {
           pollFailStreak++;
           if (pollFailStreak >= 10 && !pollFailAnnounced) {
             pollFailAnnounced = true;
-            try { appendDiag(launchCwd, { kind: 'poll-frozen', streak: pollFailStreak, error: String(e?.message ?? e), ts: Date.now() }); } catch { /* 诊断落盘失败不致命 */ }
+            try { appendDiag(launchCwd, { kind: 'poll-frozen', streak: pollFailStreak, error: String(e?.message ?? e), ts: Date.now() }, runtimeDir(), office); } catch { /* 诊断落盘失败不致命 */ }
           }
           return;
         }
@@ -677,7 +679,7 @@ export async function up(configPath: string) {
                 idleThreshold: IDLE_STREAK,
               });
               if (DEBUG_BUSY) {
-                try { appendDiag(launchCwd, { kind: 'poll', name, status: a.status, proc, scrape: scrapeBusy, paneBusy, grace, streak, action, bottom, ts: Date.now() }); } catch { /* ignore */ }
+                try { appendDiag(launchCwd, { kind: 'poll', name, status: a.status, proc, scrape: scrapeBusy, paneBusy, grace, streak, action, bottom, ts: Date.now() }, runtimeDir(), office); } catch { /* ignore */ }
               }
               if (action === 'mark-idle') {
                 const since = Date.now() - (lastDeliverAt.get(name) ?? 0);
@@ -686,7 +688,7 @@ export async function up(configPath: string) {
                 if (mv.reset) router.clearMute(name);
                 // 仅"投递后零 MCP 调用且降闲过快"才记可疑(mv.count=有活无声);调过工具的快速响应是健康的,不算可疑。
                 if (since < SUSPECT_FAST_IDLE_MS && mv.count) {
-                  try { appendDiag(launchCwd, { kind: 'auto-idle', name, sinceDeliverMs: since, ts: Date.now() }); } catch { /* 诊断落盘失败不致命 */ }
+                  try { appendDiag(launchCwd, { kind: 'auto-idle', name, sinceDeliverMs: since, ts: Date.now() }, runtimeDir(), office); } catch { /* 诊断落盘失败不致命 */ }
                 }
                 if (mv.count && router.bumpMute(name) >= MUTE_THRESHOLD) alarmUnresponsive(name, 'mute');
                 router.onIdle(name);

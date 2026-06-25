@@ -108,6 +108,16 @@ falinks doctor                  # 环境自检
 falinks lang                    # 切换界面语言（启动前设置）
 ```
 
+## 多办公室
+
+默认「一个项目目录 = 一间办公室」。你也可以在**同一目录下并行开多间独立办公室**——每间各自独立：配置、端口、roster、消息、lead 记忆、`/office` 页面。
+
+- **默认办公室**（不填名）沿用旧路径与旧行为——老项目**零改动**。
+- **具名办公室**：`falinks up --office <名字>`（配置存 `.falinks/<名字>.config.json`）。在终端裸跑 `falinks` 会列出本项目所有办公室（标注运行中/已停），可打开某间或新建。连控制台用 `falinks console --office <名字>`。
+- 办公室名为小写 `a-z 0-9 . _ -`、1–32 字符；**`default` 为保留名**（默认办公室直接用 `falinks` / `falinks up`）。`.falinks/` 仅在首次创建具名办公室时出现，配置是否提交由你决定。
+
+无需迁移：默认办公室与旧版逐字节一致。详见 [docs/OFFICE.md](docs/OFFICE.md)。
+
 ## 配置 `falinks.config.json`
 
 ```jsonc
