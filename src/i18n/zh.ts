@@ -194,7 +194,9 @@ export const zh = {
   defaultHelp:
     'falinks — 在当前目录把多个 AI CLI 编排成一间办公室。\n' +
     '直接运行：  falinks            （首次自动生成配置并启动）\n' +
+    '办公室简写：falinks <名字>     （= falinks up --office <名字>，起/建具名办公室）\n' +
     '子命令：    falinks init | doctor | lang | up [config] | say <agent> <msg> | broadcast <msg> | roster | log',
+  cliUnknownHint: '名字非法或未知命令。',
 
   // —— setup/app.tsx ——
   setupUpdateFound: (latest: string, current: string) => `🆕 发现新版 ${latest}（当前 v${current}）`,

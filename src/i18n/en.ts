@@ -188,7 +188,10 @@ export const en: typeof zh = {
   defaultHelp:
     'falinks — orchestrate several AI CLIs into one office in the current directory.\n' +
     'Run directly:  falinks            (generates config and starts on first run)\n' +
+    'Office shortcut: falinks <name>   (= falinks up --office <name>, start/create a named office)\n' +
     'Subcommands:   falinks init | doctor | lang | up [config] | say <agent> <msg> | broadcast <msg> | roster | log',
+  cliUnknownHint: 'Invalid name or unknown command.',
+
 
   // —— setup/app.tsx ——
   setupUpdateFound: (latest: string, current: string) => `🆕 New version ${latest} available (current v${current})`,

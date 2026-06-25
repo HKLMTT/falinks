@@ -8,6 +8,7 @@ import { resolveBus } from './discovery.js';
 import { initLocale, setLocale, detectLocale, t } from './i18n/index.js';
 import { loadSettings, saveSettings } from './settings.js';
 import { DEFAULT_OFFICE, assertOfficeName, resolveConfigPath, listOffices } from './core/office.js';
+import { resolveCliAction } from './cli-route.js';
 
 const PKG: { name: string; version: string } = (() => {
   try {
@@ -181,6 +182,17 @@ function doctor() {
   console.log(t().doctorPermHint);
 }
 
+/** 启动具名办公室:config = .falinks/<office>.config.json;不存在则 TTY 走向导 / 非 TTY 写默认,再启动。
+ *  `falinks up --office <名字>` 与 `falinks <名字>` 简写共用,避免复制粘贴。 */
+async function startNamedOffice(office: string): Promise<void> {
+  const cfgPath = resolveConfigPath(process.cwd(), office);
+  if (!existsSync(cfgPath)) {
+    if (process.stdin.isTTY) { await chooseTeam(null, cfgPath); if (!existsSync(cfgPath)) return; } // 向导取消未写 → 不启动
+    else writeDefaultConfig(cfgPath);
+  }
+  await up(cfgPath, office);
+}
+
 async function main() {
   initLocale();
   const { office, rest: argv } = extractOffice(process.argv.slice(2));
@@ -193,13 +205,7 @@ async function main() {
   switch (cmd) {
     case 'up': {
       if (office !== DEFAULT_OFFICE) {
-        // 具名办公室:config = .falinks/<office>.config.json;不存在则走向导(TTY)/写默认(非 TTY)再启动。
-        const cfgPath = resolveConfigPath(process.cwd(), office);
-        if (!existsSync(cfgPath)) {
-          if (process.stdin.isTTY) { await chooseTeam(null, cfgPath); if (!existsSync(cfgPath)) return; }
-          else writeDefaultConfig(cfgPath);
-        }
-        await up(cfgPath, office);
+        await startNamedOffice(office);
       } else {
         const cfgPath = rest[0] ?? 'falinks.config.json';
         if (!existsSync(cfgPath)) {
@@ -258,6 +264,12 @@ async function main() {
       console.log(JSON.stringify(await admin('GET', '/admin/log', undefined, office), null, 2));
       break;
     default:
+      // `falinks <名字>` = `falinks up --office <名字>` 简写(未带 --office、合法办公室名、无多余参数)。
+      if (resolveCliAction(cmd, office, rest) === 'office-shorthand') {
+        await startNamedOffice(cmd);
+        break;
+      }
+      console.error(t().cliUnknownHint);
       console.log(t().defaultHelp + '\n' + t().optOffice);
       process.exit(1);
   }
