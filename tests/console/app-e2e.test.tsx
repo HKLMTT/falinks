@@ -178,8 +178,12 @@ renderE2E('e2e:Esc 开取消排队浮层,Enter 取消选中条 → 等送达计�
   const stdin = fakeStdin();
   const inst = render(<App port={bus.port} />, { stdout, stdin, exitOnCtrlC: false, patchConsole: false });
   const lastFrame = () => (stdout.frames as string[]).map(strip).filter((x) => x.trim()).at(-1) ?? '';
+  // 等送达徽标行(含目标与 ×N 计数)。注意:不能对整帧 includes('×2') ——
+  // 顶部 banner 标语 "v0.14.0 · 7×24 …" 含子串 "×2",会与徽标的 ×2 撞车;
+  // 且 banner 是否落在滚动视口内随渲染时序变化 → 误判 flaky。故只在徽标行内判 ×N。
+  const pendingLine = () => lastFrame().split('\n').find((l) => l.includes('等送达')) ?? '';
   try {
-    await waitFor(() => lastFrame().includes('等送达') && lastFrame().includes('×2'));
+    await waitFor(() => pendingLine().includes('×2'));
 
     stdin.emit('data', '\x1b'); // Esc → 取消排队浮层
     await waitFor(() => lastFrame().includes('排队消息(共'));
@@ -187,13 +191,8 @@ renderE2E('e2e:Esc 开取消排队浮层,Enter 取消选中条 → 等送达计�
     expect(lastFrame()).toContain('排队-乙');
 
     stdin.emit('data', '\r'); // Enter 取消选中(第一条:排队-甲)
-    try {
-      await waitFor(() => lastFrame().includes('已取消 1 条排队消息'));
-    } catch (e) {
-      console.error('DEBUG cancel frame:', JSON.stringify(lastFrame().split('\n')));
-      throw e;
-    }
-    await waitFor(() => !lastFrame().includes('×2')); // 等送达从 ×2 缩到 1 条
+    await waitFor(() => lastFrame().includes('已取消 1 条排队消息'));
+    await waitFor(() => !pendingLine().includes('×2')); // 等送达从 ×2 缩到 1 条(只看徽标行,不被 banner 标语干扰)
     await waitFor(() => lastFrame().includes('✗已取消')); // 历史行标记
 
     stdin.emit('data', '\x1b'); // Esc 关浮层(若仍开着)
