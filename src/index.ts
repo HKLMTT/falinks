@@ -44,14 +44,14 @@ export async function up(configPath: string, office: string = DEFAULT_OFFICE) {
   for (const a of cfg.agents) a.cwd = resolve(launchCwd, a.cwd);
   // 包一层 deliverer：记录每个员工"最近一次被投递"的时刻，给自动空闲检测做投递后宽限（防投递空窗误判）。
   const lastDeliverAt = new Map<string, number>();
-  // 注入失败 = 消息已出队却没进 pane（永久丢失,发件人却以为发出去了）→ 落盘诊断,让其可见。
-  const baseDeliverer = makeDeliverer(driver, (agent, msg, err) => {
-    try { appendDiag(launchCwd, { kind: 'inject-fail', to: agent.name, error: String((err as any)?.message ?? err), msgId: msg.id, ts: Date.now() }, runtimeDir(), office); } catch { /* 诊断落盘失败不致命 */ }
+  // 注入失败 = 这批消息已出队却没进 pane（永久丢失,发件人却以为发出去了）→ 落盘诊断,让其可见。
+  const baseDeliverer = makeDeliverer(driver, (agent, msgs, err) => {
+    try { appendDiag(launchCwd, { kind: 'inject-fail', to: agent.name, error: String((err as any)?.message ?? err), msgId: msgs.map((m) => m.id).join(','), ts: Date.now() }, runtimeDir(), office); } catch { /* 诊断落盘失败不致命 */ }
   });
   const deliverer = {
-    deliver(agent: AgentRuntime, msg: Message) {
+    deliver(agent: AgentRuntime, msgs: Message[]) {
       lastDeliverAt.set(agent.name, Date.now());
-      baseDeliverer.deliver(agent, msg);
+      baseDeliverer.deliver(agent, msgs);
     },
   };
   const sessions = new Map<string, string>();

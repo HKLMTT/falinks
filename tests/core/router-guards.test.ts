@@ -5,7 +5,7 @@ import type { AgentRuntime, Message } from '../../src/core/types.js';
 
 function setup(guardCfg = { maxTurnsPerThread: 3, maxInjectionsPerMinute: 100, loopWindow: 3 }, now: () => number = () => 0) {
   const delivered: { agent: AgentRuntime; msg: Message }[] = [];
-  const deliverer: Deliverer = { deliver: (agent, msg) => delivered.push({ agent, msg }) };
+  const deliverer: Deliverer = { deliver: (agent, msgs) => { for (const msg of msgs) delivered.push({ agent, msg }); } };
   let n = 0;
   const guards = new Guards(guardCfg, now);
   const router = new Router(deliverer, { now: () => 0, genId: () => `m${++n}`, guards });

@@ -4,7 +4,7 @@ import type { AgentRuntime, Message } from '../../src/core/types.js';
 
 function makeRouter() {
   const delivered: Message[] = [];
-  const deliverer: Deliverer = { deliver: (_a: AgentRuntime, m: Message) => { delivered.push(m); } };
+  const deliverer: Deliverer = { deliver: (_a: AgentRuntime, msgs: Message[]) => { delivered.push(...msgs); } };
   let n = 0;
   const r = new Router(deliverer, { now: () => 1, genId: () => `m${++n}` });
   r.addVirtual('boss');

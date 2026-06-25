@@ -218,6 +218,9 @@ export const zh = {
   // —— orchestrator.ts:注入目标窗口的消息格式 ——
   incomingMsg: (from: string, body: string) =>
     `【来自 ${from}】${body}\n(回复请调用 sendmsg(to="${from}", message="..."))`,
+  /** 收件箱合并投递:≥2 条排队消息一并送达时的头部提示(单条不走此分支)。 */
+  inboxBatchHeader: (n: number) =>
+    `你有 ${n} 条新消息(已合并),请结合最新情况一并处理、不要只回最早那条:`,
 
   // —— index.ts:注入员工的协作规则 + 启动日志 ——
   houseRules:

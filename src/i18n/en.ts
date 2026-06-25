@@ -212,6 +212,9 @@ export const en: typeof zh = {
   // —— orchestrator.ts: message format injected into the target window ——
   incomingMsg: (from: string, body: string) =>
     `[From ${from}] ${body}\n(Reply via sendmsg(to="${from}", message="..."))`,
+  /** Inbox coalescing: header shown when ≥2 queued messages are delivered together (single message skips this). */
+  inboxBatchHeader: (n: number) =>
+    `You have ${n} new messages (coalesced); handle them together with the latest state in mind, don't just reply to the oldest:`,
 
   // —— index.ts: collaboration rules injected into workers + startup logs ——
   houseRules:

@@ -5,7 +5,7 @@ import type { AgentRuntime, Message } from '../../src/core/types.js';
 function setup(routes?: Record<string, string>) {
   const delivered: { agent: AgentRuntime; msg: Message }[] = [];
   const deliverer: Deliverer = {
-    deliver: (agent, msg) => delivered.push({ agent, msg }),
+    deliver: (agent, msgs) => { for (const msg of msgs) delivered.push({ agent, msg }); },
   };
   let n = 0;
   const router = new Router(deliverer, {

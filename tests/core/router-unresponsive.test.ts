@@ -7,7 +7,7 @@ function mkRouter() {
   let now = 1000;
   const delivered: Message[] = [];
   const r = new Router(
-    { deliver: (_a: AgentRuntime, m: Message) => delivered.push(m) },
+    { deliver: (_a: AgentRuntime, msgs: Message[]) => delivered.push(...msgs) },
     { now: () => now, genId: () => `m${++n}` },
   );
   return { r, delivered, setNow: (v: number) => { now = v; } };

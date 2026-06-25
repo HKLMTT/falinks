@@ -9,22 +9,40 @@ export function formatMessage(msg: Message): string {
 }
 
 /**
- * 用 driver 构造一个 Deliverer：注入格式化文本并提交（提交的可靠性由 driver 负责）。
- * onFail：注入失败时回调——此时消息已被 pump 出 inbox、却没进 pane（消息丢失,发件人却以为发出去了）,
+ * 合并投递的文本:
+ * - 1 条 → 等同 formatMessage(单条),**行为零变化、无任何包装**(单条不加噪声)。
+ * - ≥2 条 → 头部提示 inboxBatchHeader(n) + 编号列表,每条保留 from 归属(复用 formatMessage 的 `【来自 X】body`,
+ *   去掉每条末尾的逐条"(回复…)"行,避免 N 行回复提示刷屏;回复语义由头部统一承载)。多行 body 安全(只剥最后一行)。
+ */
+export function formatBatch(msgs: Message[]): string {
+  if (msgs.length === 1) return formatMessage(msgs[0]);
+  const header = t().inboxBatchHeader(msgs.length);
+  const items = msgs.map((m, i) => {
+    const full = formatMessage(m);
+    const cut = full.lastIndexOf('\n'); // formatMessage 末行恒为单行"(回复…)"提示;剥掉它,保留 `【来自 X】<多行 body>`
+    return `[${i + 1}] ${cut >= 0 ? full.slice(0, cut) : full}`;
+  });
+  return `${header}\n${items.join('\n')}`;
+}
+
+/**
+ * 用 driver 构造一个 Deliverer：把一批排队消息合并成一次注入并提交（提交的可靠性由 driver 负责）。
+ * onFail：注入失败时回调——此时这批消息已被 pump 出 inbox、却没进 pane（消息丢失,发件人却以为发出去了）,
  * 上层据此落盘诊断,让"悄悄丢消息"可见。
  */
 export function makeDeliverer(
   driver: TerminalDriver,
-  onFail?: (agent: AgentRuntime, msg: Message, err: unknown) => void,
+  onFail?: (agent: AgentRuntime, msgs: Message[], err: unknown) => void,
 ): Deliverer {
   return {
-    deliver(agent: AgentRuntime, msg: Message): void {
+    deliver(agent: AgentRuntime, msgs: Message[]): void {
       if (!agent.sessionId) throw new Error(`deliver: agent ${agent.name} has no sessionId`);
-      const text = formatMessage(msg);
-      // 注入是异步 I/O；Router 不等待。失败时打日志 + 回调（消息此刻已丢失）。
+      if (msgs.length === 0) return;
+      const text = formatBatch(msgs);
+      // 注入是异步 I/O；Router 不等待。失败时打日志 + 回调（这批消息此刻已丢失）。
       void driver.inject(agent.sessionId, text, true).catch((e) => {
         console.error(`[deliver] inject to ${agent.name} failed:`, e);
-        onFail?.(agent, msg, e);
+        onFail?.(agent, msgs, e);
       });
     },
   };

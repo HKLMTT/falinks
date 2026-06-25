@@ -5,7 +5,7 @@ import { Guards } from '../../src/core/guards.js';
 
 function makeRouter(guards?: Guards) {
   const delivered: Message[] = [];
-  const deliverer: Deliverer = { deliver: (_a: AgentRuntime, m: Message) => { delivered.push(m); } };
+  const deliverer: Deliverer = { deliver: (_a: AgentRuntime, msgs: Message[]) => { delivered.push(...msgs); } };
   let n = 0;
   const r = new Router(deliverer, { now: () => 1, genId: () => `m${++n}`, guards });
   r.addVirtual('boss');

@@ -2,8 +2,9 @@ import type { AgentName, AgentRuntime, Message } from './types.js';
 import type { Guards } from './guards.js';
 
 export interface Deliverer {
-  /** Router 决定"现在该把 msg 投给 agent 了"时调用；实现负责真正注入（副作用）。 */
-  deliver(agent: AgentRuntime, msg: Message): void;
+  /** Router 决定"现在该把这批消息投给 agent 了"时调用;实现负责合并成一次注入（副作用）。
+   *  单条(含 urgent 直送)= 长度 1 的数组,实现侧 formatBatch 对单条零包装。 */
+  deliver(agent: AgentRuntime, msgs: Message[]): void;
 }
 
 export interface RouterDeps {
@@ -255,15 +256,17 @@ export class Router {
     return { ok: false, reason: 'gone' };
   }
 
-  /** 若 agent 空闲且 inbox 非空，取出一条投递并标 busy。 */
+  /** 若 agent 空闲且 inbox 非空，取走**当前全部**排队消息合并成一批投递并标 busy(P1 收件箱合并)。 */
   private pump(a: AgentRuntime): void {
     if (a.status !== 'idle') return;
-    const msg = a.inbox.shift();
-    if (!msg) return;
+    const batch = a.inbox.splice(0); // 取走当前全部排队消息(含队首被 unshift 的 urgent,顺序保留)
+    if (batch.length === 0) return;
     a.status = 'busy';
-    a.handling = msg.thread;
-    a.handlingFrom = msg.from;
-    this.deliverer.deliver(a, msg);
+    // 线程续接/turn-cap 记账(启发式):同 sender 自然=最后一条;多 sender 用最后一条。
+    const last = batch[batch.length - 1];
+    a.handling = last.thread;
+    a.handlingFrom = last.from;
+    this.deliverer.deliver(a, batch);
   }
 
   /** 插队直送:闲时插到队首走 pump(置 busy、记 handling——"闲时等价 pump"由复用保证);
@@ -274,7 +277,7 @@ export class Router {
       this.pump(a);
       return;
     }
-    this.deliverer.deliver(a, msg);
+    this.deliverer.deliver(a, [msg]); // 忙/卡:单元素数组=立即直送,绕过普通批次(urgent 红线)
   }
 
   /** 从花名册移除一个 agent（运行时删员工）。未知名为 no-op。 */
