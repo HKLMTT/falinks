@@ -6,6 +6,7 @@ export interface AgentConfig {
   cwd: string;
   role?: string;
   lead?: boolean; // 组长/协调者:注入"协调者工作法"(先对齐需求→完整设计→定稿→才拆解分派)
+  assistant?: boolean; // 助理(对称 lead):注入"执行不决策"工作法;与 lead 互斥
   model?: string; // 模型名,透传给 CLI(claude --model / codex -m);缺省=CLI 全局默认
   bootstrap: string;
 }
@@ -58,7 +59,10 @@ export function parseConfig(raw: any): FalinksConfig {
     names.add(a.name);
     if (a.model !== undefined && typeof a.model !== 'string')
       throw new Error(`config.agents[${i}].model must be a string`);
-    return { name: a.name, cli: a.cli, cwd: a.cwd, role: a.role, lead: a.lead === true, bootstrap: a.bootstrap, model: a.model || undefined };
+    // assistant 与 lead 互斥:一个 agent 不能既是组长又是助理。
+    if (a.assistant === true && a.lead === true)
+      throw new Error(`config.agents[${i}] cannot be both lead and assistant`);
+    return { name: a.name, cli: a.cli, cwd: a.cwd, role: a.role, lead: a.lead === true, assistant: a.assistant === true, bootstrap: a.bootstrap, model: a.model || undefined };
   });
 
   const routes: Record<string, AgentName> = raw.routes ?? {};

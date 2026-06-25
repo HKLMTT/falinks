@@ -20,6 +20,7 @@ import { decideClaudeSession, decideCodexSession } from './session/decide.js';
 import { parseStatusSessionId } from './session/capture.js';
 import { addAgentToConfigFile, removeAgentFromConfigFile } from './team-persist.js';
 import { bootstrapForRole } from './templates.js';
+import { composeBootstrap } from './core/bootstrap.js';
 import { loadMessageLog, appendMessageLog, clearMessageLog, MESSAGE_LOG_CAP } from './message-log.js';
 import { appendDiag, clearDiag, loadDiag } from './diag.js';
 import { t, setLocale, detectLocale } from './i18n/index.js';
@@ -166,7 +167,7 @@ export async function up(configPath: string, office: string = DEFAULT_OFFICE) {
     wipeLeadMemory: () => {
       clearLeadState(launchCwd, runtimeDir(), office);
       const lead = currentLead();
-      if (lead) { const spec = cfg.agents.find((x) => x.name === lead); if (spec) bootstraps.set(lead, composeBootstrap(spec)); }
+      if (lead) { const spec = cfg.agents.find((x) => x.name === lead); if (spec) bootstraps.set(lead, bootstrapWithState(spec)); }
     },
     leadResetEvery: () => (cfg.todo?.leadReset.enabled ? cfg.todo.leadReset.everyTasks : 0),
     removedByBossText: () => t().todoRemovedByBoss,
@@ -179,25 +180,21 @@ export async function up(configPath: string, office: string = DEFAULT_OFFICE) {
 
   // 组装员工完整 bootstrap:协作规则 + 身份 + 职责;组长额外追加"协调者工作法"(设计优先)。
   // launchInto 与运行时 /lead(onSetLead)共用,保证 /clear 重注入、换 lead 后内容一致。
-  const composeBootstrap = (a: { name: string; role?: string; lead?: boolean; bootstrap?: string }): string => {
-    let s = `${t().houseRules}\n${t().identityLine(a.name, a.role)}${a.bootstrap ?? ''}`;
-    if (a.lead) {
-      s += `\n${t().coordinatorRules}`;
-      const doc = cfg.todo?.leadReset.enabled ? loadLeadState(launchCwd, runtimeDir(), office) : '';
-      if (doc) s += `\n【项目状态(续接用,这是你上一段会话沉淀的记忆)】\n${doc}`;
-    }
-    return s;
+  // 运行期 bootstrap:纯组装(可单测的 composeBootstrap)+ lead 的「项目状态档」磁盘读取(IO 留在 caller,作为参数传入)。
+  const bootstrapWithState = (a: { name: string; role?: string; lead?: boolean; assistant?: boolean; bootstrap?: string }): string => {
+    const leadStateDoc = a.lead && cfg.todo?.leadReset.enabled ? (loadLeadState(launchCwd, runtimeDir(), office) || undefined) : undefined;
+    return composeBootstrap(a, cfg, { leadStateDoc });
   };
 
   async function launchInto(
     anchor: string,
     dir: 'vertical' | 'horizontal',
-    a: { name: string; cli: string; cwd: string; role?: string; lead?: boolean; bootstrap?: string; model?: string },
+    a: { name: string; cli: string; cwd: string; role?: string; lead?: boolean; assistant?: boolean; bootstrap?: string; model?: string },
   ): Promise<string> {
     const cfgPath = join(tmp, `${a.name}-mcp.json`);
     writeFileSync(cfgPath, JSON.stringify(mcpConfigFor(a.name, bus.port)));
 
-    const fullBootstrap = composeBootstrap(a);
+    const fullBootstrap = bootstrapWithState(a);
     bootstraps.set(a.name, fullBootstrap); // 供 /clear 后重注入
     // codex 首启把 bootstrap 作为命令行参数——长 bootstrap 内联会被 write-text 截断,故写临时文件、命令里 $(cat) 读取。
     const bootstrapFile = join(tmp, `${a.name}-bootstrap.txt`);
@@ -237,7 +234,7 @@ export async function up(configPath: string, office: string = DEFAULT_OFFICE) {
     const sid = await driver.splitFrom(anchor, dir, { cwd: a.cwd, command });
     sessions.set(a.name, sid);
     if (router.get(a.name)) router.markLaunching(a.name); // restart:保留 inbox,状态回 launching
-    else router.addAgent(a.name, a.role, a.lead);
+    else router.addAgent(a.name, a.role, a.lead, a.assistant);
     await driver.setName(sid, a.name).catch(() => {}); // pane 标题=员工名
     if (themed) await driver.setBackgroundColor(sid, paneBgColor(paneIdx)).catch(() => {}); // 角色底色(CLI 改不掉,建 pane 时设一次即可)
 
@@ -471,7 +468,7 @@ export async function up(configPath: string, office: string = DEFAULT_OFFICE) {
       } catch { /* 写回失败不致命,本次运行仍按内存标记生效 */ }
       // 重建受影响 agent 的 bootstrap(供 /clear 重注入保留)
       for (const ag of cfg.agents) {
-        if (ag.name === name || ag.name === cur) bootstraps.set(ag.name, composeBootstrap(ag));
+        if (ag.name === name || ag.name === cur) bootstraps.set(ag.name, bootstrapWithState(ag));
       }
       // 当场生效(不必 /clear):新 lead 收到工作法、旧 lead 收到卸任(走正常投递,忙则排队)
       router.send('boss', name, `${t().leadAssignedMsg}\n${t().coordinatorRules}`);
@@ -509,7 +506,7 @@ export async function up(configPath: string, office: string = DEFAULT_OFFICE) {
         if (!cfg.todo?.leadReset.enabled) return { ok: false, error: t().leadMemoryOff };
         saveLeadState(launchCwd, content, runtimeDir(), office);
         const lead = currentLead();
-        if (lead) { const spec = cfg.agents.find((x) => x.name === lead); if (spec) bootstraps.set(lead, composeBootstrap(spec)); }
+        if (lead) { const spec = cfg.agents.find((x) => x.name === lead); if (spec) bootstraps.set(lead, bootstrapWithState(spec)); }
         return { ok: true };
       },
     },

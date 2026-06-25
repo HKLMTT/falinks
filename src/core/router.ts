@@ -44,8 +44,8 @@ export class Router {
 
   constructor(private deliverer: Deliverer, private deps: RouterDeps) {}
 
-  addAgent(name: AgentName, role?: string, lead?: boolean): void {
-    this.agents.set(name, { name, role, status: 'launching', inbox: [], lead: !!lead });
+  addAgent(name: AgentName, role?: string, lead?: boolean, assistant?: boolean): void {
+    this.agents.set(name, { name, role, status: 'launching', inbox: [], lead: !!lead, assistant: !!assistant });
   }
 
   /** 指定组长(协调者):该 agent lead=true、其余全部清零(强制全队唯一)。未知名抛错。 */

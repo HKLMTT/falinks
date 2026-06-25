@@ -284,6 +284,19 @@ export const en: typeof zh = {
   tplResearchWriter: 'Writer, turns the research into prose',
   tplResearchEditor: "Editor, reviews and polishes the writer's output",
 
+  // —— preset "lead + assistants" + assistant working rules (ux final; see design Appendix A) ——
+  tplAssistedName: 'Lead + assistants (researcher + curator + drafter)',
+  tplAssistedLead: 'Lead, coordinates and decides: breaks work down, assigns to assistants, decides and reviews — hands-off on the doing',
+  tplAssistedResearcher: 'Researcher, investigation and fact-checking: reads code / looks things up / runs commands, produces structured findings',
+  tplAssistedCurator: 'Curator, organizes research output into structured, usable material/checklists',
+  tplAssistedDrafter: "Drafter, drafts docs/summaries per the lead's intent and hands first drafts back to the lead for finalizing",
+  assistantRules:
+    "[Assistant playbook] You are the team lead's assistant. Your job: carry out the concrete work the lead hands you — investigation, reading code / looking things up, running commands, organizing & drafting, aggregating output — and hand the conclusions and results back to the lead. " +
+    "You do NOT make decisions: do not settle approach/architecture/priorities, do not assign work to other members, and do not answer the boss's decision questions on the lead's behalf. At any fork that needs a call, write up \"the options + each one's pros/cons + your recommendation\" and send it to the lead to decide. " +
+    'For clarification go to the lead, not directly to the boss for decisions. When done, report to the lead and idle.',
+  coordinatorAssistAddendum:
+    '[When you have assistants] This team has assistants: push the hands-on legwork (investigation, reading & verifying, organizing material, drafting, aggregating) out to them in parallel as much as possible, and focus yourself on decisions, design, task breakdown, review, and communicating with the boss — do not get heads-down doing it yourself. Assistants only execute, not decide; after they report, the call is yours.',
+
   // —— todolist message templates (dispatch/nudge sent as boss; summary sent as falinks) ——
   todoDispatchMsg: (seq: number, pos: number, total: number, body: string, isResend: boolean) =>
     `[Task #${seq} · ${pos}/${total}]${isResend ? ' (resend)' : ''} ${body}\n` +

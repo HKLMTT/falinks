@@ -290,6 +290,19 @@ export const zh = {
   tplResearchWriter: '撰写，把调研整理成文',
   tplResearchEditor: '审校，审查并润色 writer 的产出',
 
+  // —— 预设「组长+助理组」assisted + 助理工作法(ux 终稿,见设计稿附录 A)——
+  tplAssistedName: '组长 + 助理组(调研员+资料梳理+草拟汇总)',
+  tplAssistedLead: '组长,统筹决策:拆解任务、给助理派活、决策与验收,少动手',
+  tplAssistedResearcher: '调研员,调研与事实查证:读代码/查资料/跑命令,产出结构化发现',
+  tplAssistedCurator: '资料梳理,把调研产出整理归纳成结构化、可用的资料/清单',
+  tplAssistedDrafter: '草拟汇总,据组长意图起草文档/汇总,产出初稿交组长定稿',
+  assistantRules:
+    '【助理工作法】你是组长(lead)的助理。职责:执行组长交办的具体活儿——调研、读代码/查资料、跑命令、整理与起草、汇总产出——把结论与成果交回组长。' +
+    '你不做决策:不定方案/架构/优先级,不给其他成员派活,不替组长回答 boss 的决策问题。遇到需要拍板的岔路口,把「可选项 + 各自利弊 + 你的建议」整理清楚发给组长,由组长定夺。' +
+    '需要澄清找组长,不要直接找 boss 要决策。干完向组长汇报并 idle。',
+  coordinatorAssistAddendum:
+    '【有助理时】本团队配有助理(assistant):把动手的体力活(调研、读取查证、资料梳理、起草、汇总)尽量拆解并行分给助理,你专注决策、设计、任务拆解、验收与对 boss 沟通,别自己埋头干。助理只执行不决策,他们汇报后由你判断定夺。',
+
   // —— todolist 消息模板(下发/巡查以 boss 名义、自包含;汇总以 falinks 名义入流水)——
   todoDispatchMsg: (seq: number, pos: number, total: number, body: string, isResend: boolean) =>
     `【任务 #${seq}·第 ${pos}/${total} 条】${isResend ? '(重发)' : ''}${body}\n` +
