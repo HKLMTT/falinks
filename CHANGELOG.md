@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.15.0
+
+- **多办公室(multi-office)**:同一项目目录下可并行开多个独立办公室,各自独立 config / bus 端口 / roster / 消息 / leadstate / `/office` 页。默认办公室(不填名)沿用旧路径,老项目**零迁移、逐字节兼容**。具名办公室 `falinks up --office <name>`(config 存 `.falinks/<name>.config.json`),裸 `falinks` 进交互列表(列出本项目所有办公室、标 running/stopped,选一个或新建),`falinks console --office <name>` 连控制台。办公室名小写 `a-z 0-9 . _ -`、1–32 字符;`default` 为保留名(直接用 `falinks` / `falinks up`)。
+- **`falinks <name>` 裸名快捷方式**:等价 `falinks up --office <name>`,省去 `up --office`。
+- **「组长 + 助理组」预设 `assisted`**:1 组长 + 3 助理(调研员 / 资料梳理 / 草拟汇总)。新增 `assistant` 一等标记(对称 `lead`),助理「只执行不决策」——决策类工具本就组长专属,叠加 bootstrap 行为约束(岔路口给组长列选项、不直接找 boss 要决策);组长在有助理时 bootstrap 追加「把体力活并行分给助理」。`assistant && lead` 互斥。
+- **收件箱合并投递(inbox coalescing)**:员工空闲轮到时,把收件箱里所有排队消息**合并成一轮**送达(编号 + from 归属),使其针对「当前全貌」作答,消除「逐条回最旧消息」的交叉错位。单条消息行为零变化;guards(loop/turn-cap/rate-limit)仍在 send 时生效。
+- **像素办公室细节打磨**:idle 打盹闭眼(reduced-motion 兼容)、猫狗自由漫游(避开沙发、修正移动朝向)。
+- **助理角标 + 默认面板团队对话(/office)**:助理头顶画冷青单层 V(chevron),区别于 lead 金冠;未选中成员时右栏图例下方展示全局消息流(from→to + 时间 + 正文,最新在底、自动跟随),选中成员仍显示其相关消息。
+
+## 0.14.0
+
+- **像素办公室 live view(`/office`)**:新增浏览器实时俯视图——`falinks office` 起 `/office` 页 + `/office/state` 聚合接口(roster + 最近消息 + 待答问题),自研像素美术(暖色 cozy 俯视),按队伍规模 fit-to-viewport 自适应布局。
+- **6 态可读性编码**:idle / busy / waiting / stuck / done / offline 各有固定形状 + 主色 + 脚下地台表现 + 右栏图例,三处单一事实源(sprites.json),缩略图/色弱也能分;busy 按队列深度分 L0–L3 强度;done 瞬态可感知。
+- **游戏式聊天气泡**:说话时员工头顶弹对话气泡,尾巴指向说话人头部、贴边自动收拢。
+- **办公室布局与陈设**:家具分区、名字上桌、boss 行政位 + 身后书架背景,沙发休息区(不重叠)、宠物、地毯等 cozy 装饰;idle 员工随机打盹动画。
+- **引导员工空闲即等待**,减少空转打转(stuck-spinning);控制台接 `/office` 命令;跨平台 openBrowser;i18n 与文档同步。
+
 ## 0.13.3
 
 - **修复:todo 模式(无人值守)禁止向 boss 提问**:todolist 运行中,AI 调 `ask(to="boss")` 会进 pending 等人回答 → 无人值守的长任务被卡住。现 running 时硬拦截 ask→boss,返回提示让 lead/员工自行按最优推荐方案继续、把假设与取舍写进结果或项目状态档。问同事/lead 的 ask(协作、不等人)照常;启动前「建单 → ask boss 同意 → todostart」的审批 ask(状态 idle)不受影响。todo 下发模板同步加一句【无人值守】提醒,让 lead 遇决策点自行拍板。
