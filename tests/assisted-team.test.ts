@@ -67,8 +67,8 @@ describe('回归:configFromMembers 的 lead 透传不变', () => {
       ],
       '/proj',
     );
-    const lead = cfg.agents.find((a: any) => a.name === 'lead');
-    const dev = cfg.agents.find((a: any) => a.name === 'dev');
+    const lead = cfg.agents.find((a: any) => a.name === 'lead')!;
+    const dev = cfg.agents.find((a: any) => a.name === 'dev')!;
     expect(lead.lead).toBe(true);
     expect(dev.lead).toBeFalsy();
   });
