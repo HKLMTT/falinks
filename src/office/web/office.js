@@ -14,14 +14,16 @@
   // ---- i18n（内联小词典，?lang= 切换；key 对齐 zh/en） ----
   const LANG = (new URLSearchParams(location.search).get('lang') || 'zh').toLowerCase().startsWith('en') ? 'en' : 'zh';
   const T = {
-    zh: { subtitle: '像素办公室', empty: '暂无成员', hint: '点击工位查看详情', disconnected: '连接已断开，正在重试…',
+    zh: { subtitle: '像素办公室', empty: '暂无成员', hint: '点击工位查看成员详情', disconnected: '连接已断开，正在重试…',
           role: '角色', messages: '相关消息', waiting: '待回答', noMessages: '暂无相关消息',
           overview: '团队概览', legend: '状态图例', lastDone: '上次完成', resting: '离座', boss: '坐镇',
+          chat: '团队对话', noChat: '暂无对话',
           st: { idle:'空闲', busy:'忙碌', waiting:'等待', stuck:'卡住', done:'完成', offline:'离线' },
           stat: { idle:'在岗', busy:'忙', waiting:'等待', stuck:'卡住', offline:'离线' } },
-    en: { subtitle: 'Pixel Office', empty: 'No members', hint: 'Click a desk for details', disconnected: 'Disconnected — retrying…',
+    en: { subtitle: 'Pixel Office', empty: 'No members', hint: 'Click a desk for member details', disconnected: 'Disconnected — retrying…',
           role: 'Role', messages: 'Related messages', waiting: 'Awaiting answer', noMessages: 'No related messages',
           overview: 'Team', legend: 'Legend', lastDone: 'Last done', resting: 'Away', boss: 'Overseeing',
+          chat: 'Team chat', noChat: 'No messages yet',
           st: { idle:'Idle', busy:'Busy', waiting:'Waiting', stuck:'Stuck', done:'Done', offline:'Offline' },
           stat: { idle:'Idle', busy:'Busy', waiting:'Wait', stuck:'Stuck', offline:'Offline' } },
   }[LANG];
@@ -32,6 +34,7 @@
   document.getElementById('panel-hint').textContent = T.hint;
   document.getElementById('ov-title').textContent = T.overview;
   document.getElementById('ov-legend-title').textContent = T.legend;
+  document.getElementById('ov-chat-title').textContent = T.chat;
   document.getElementById('panel-msgs-label').textContent = T.messages;
   document.getElementById('banner').textContent = T.disconnected;
 
@@ -50,6 +53,7 @@
   const $overview = document.getElementById('panel-overview');
   const $ovStats = document.getElementById('ov-stats');
   const $ovLegend = document.getElementById('ov-legend');
+  const $ovChat = document.getElementById('ov-chat');
 
   // ---- 几何（与 SPRITE-SPEC 一致） ----
   const SCALE = 4;
@@ -475,6 +479,11 @@
       const crown = document.createElement('div');
       crown.className = 'crown';
       el.appendChild(crown);
+    } else if (agent.assistant) {
+      // 助理:头顶冷青单层 V 角标(区别于 lead 金冠);lead/assistant 互斥,不会同时出现。
+      const chev = document.createElement('div');
+      chev.className = 'assist';
+      el.appendChild(chev);
     }
 
     const floater = document.createElement('div'); floater.className = 'floater hidden';
@@ -638,6 +647,19 @@
       '<li><span class="lg-ico floater ' + k + '">' + esc(floaterGlyph(k)) + '</span>' +
       '<span class="lg-label">' + esc(T.st[k]) + '</span></li>'
     ).join('');
+
+    // 团队对话: 全局消息流(最新在底), 默认面板的主内容; 贴底时跟随新消息, 用户上滚则不打断。
+    const msgs = state.log.slice(-80);
+    const nearBottom = $ovChat.scrollHeight - $ovChat.scrollTop - $ovChat.clientHeight < 48;
+    if (!msgs.length) {
+      $ovChat.innerHTML = '<li class="m-empty">' + esc(T.noChat) + '</li>';
+    } else {
+      $ovChat.innerHTML = msgs.map((m) =>
+        '<li><div class="m-head"><span class="m-route">' + esc(m.from) + ' → ' + esc(m.to) +
+        '</span><span class="m-time">' + fmtTime(m.ts) + '</span></div>' +
+        '<div class="m-body">' + esc(m.body) + '</div></li>').join('');
+      if (nearBottom) $ovChat.scrollTop = $ovChat.scrollHeight;
+    }
   }
 
   // ---------- 详情面板 ----------
@@ -845,7 +867,7 @@
     const root = document.documentElement.style;
     const p = S.palette || {};
     const map = { tileA:'tileA', tileB:'tileB', seam:'seam', wood:'wood', woodHi:'woodHi', woodLo:'woodLo', base:'base',
-                  busy:'busy', waiting:'waiting', stuck:'stuck', done:'done', offline:'offline', idle:'idle', warmGlow:'warmGlow' };
+                  busy:'busy', waiting:'waiting', stuck:'stuck', done:'done', offline:'offline', idle:'idle', warmGlow:'warmGlow', code:'code' };
     for (const k in map) if (p[k]) root.setProperty('--' + map[k], p[k]);
     root.setProperty('--s', SCALE);
 

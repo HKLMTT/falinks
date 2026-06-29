@@ -8,7 +8,7 @@ import { DEFAULT_OFFICE } from '../core/office.js';
 export interface OfficeState {
   ts: number;
   office: string; // 办公室 id(默认办公室=DEFAULT_OFFICE);frontend 页眉据此显示 `· <office>` 后缀。
-  roster: Array<{ name: string; role: string; status: string; virtual: boolean; lead: boolean; unresponsive: boolean; queue: number }>;
+  roster: Array<{ name: string; role: string; status: string; virtual: boolean; lead: boolean; assistant: boolean; unresponsive: boolean; queue: number }>;
   log: Array<{ id: string; from: string; to: string; body: string; ts: number; thread?: string }>;
   questions: Array<{ id: string; from: string; question: string; options: string[]; ts: number }>;
 }
@@ -16,7 +16,7 @@ export interface OfficeState {
 /** buildOfficeState/handleOfficeRequest 的依赖:复用 router 取数 + 待答问题源。 */
 export interface OfficeDeps {
   router: {
-    roster(): Array<{ name: string; role?: string; status: string; virtual?: boolean; lead?: boolean; unresponsive?: boolean; inbox?: unknown[]; queue?: number }>;
+    roster(): Array<{ name: string; role?: string; status: string; virtual?: boolean; lead?: boolean; assistant?: boolean; unresponsive?: boolean; inbox?: unknown[]; queue?: number }>;
     messages(): Array<{ id: string; from: string; to: string; body: string; ts: number; thread?: string }>;
   };
   questions: { list(): Array<{ id: string; from: string; question: string; options: string[]; ts: number }> };
@@ -39,6 +39,7 @@ export function buildOfficeState(deps: OfficeDeps): OfficeState {
     status: a.status,
     virtual: !!a.virtual,
     lead: !!a.lead,
+    assistant: !!a.assistant,
     unresponsive: !!a.unresponsive,
     // 队列深度 = 该 agent 仍在 inbox 排队、尚未投出的消息数,用于表现繁忙程度。
     // 优先取真实 inbox.length;mock/测试可直接给 queue;拿不到则 0(健壮)。

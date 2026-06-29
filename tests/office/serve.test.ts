@@ -9,6 +9,7 @@ function fakeDeps(over: any = {}) {
   const roster = over.roster ?? [
     { name: 'lead', role: '组长', status: 'busy', virtual: false, lead: true, unresponsive: false },
     { name: 'boss', role: '老板', status: 'idle', virtual: true, lead: false, unresponsive: false },
+    { name: 'researcher', role: '调研员', status: 'idle', virtual: false, lead: false, assistant: true, unresponsive: false },
   ];
   const messages = over.messages ?? [
     { id: 'm1', from: 'lead', to: 'backend', body: 'hi', ts: 1 },
@@ -33,8 +34,9 @@ test('buildOfficeState 字段齐全', () => {
   expect(s.ts).toBe(999);
   expect(s.office).toBe('default'); // 缺省=默认办公室
   expect(s.roster).toEqual([
-    { name: 'lead', role: '组长', status: 'busy', virtual: false, lead: true, unresponsive: false, queue: 0 },
-    { name: 'boss', role: '老板', status: 'idle', virtual: true, lead: false, unresponsive: false, queue: 0 },
+    { name: 'lead', role: '组长', status: 'busy', virtual: false, lead: true, assistant: false, unresponsive: false, queue: 0 },
+    { name: 'boss', role: '老板', status: 'idle', virtual: true, lead: false, assistant: false, unresponsive: false, queue: 0 },
+    { name: 'researcher', role: '调研员', status: 'idle', virtual: false, lead: false, assistant: true, unresponsive: false, queue: 0 },
   ]);
   expect(s.log).toEqual([
     { id: 'm1', from: 'lead', to: 'backend', body: 'hi', ts: 1 },
@@ -54,7 +56,16 @@ test('log 截断为最近 200 条且时间升序', () => {
 
 test('roster 缺省 role 归一为空串', () => {
   const s = buildOfficeState(fakeDeps({ roster: [{ name: 'x', status: 'idle' }] }));
-  expect(s.roster[0]).toEqual({ name: 'x', role: '', status: 'idle', virtual: false, lead: false, unresponsive: false, queue: 0 });
+  expect(s.roster[0]).toEqual({ name: 'x', role: '', status: 'idle', virtual: false, lead: false, assistant: false, unresponsive: false, queue: 0 });
+});
+
+test('assistant 标记透出到 /office roster(供前端画角标)', () => {
+  const s = buildOfficeState(fakeDeps());
+  const r = s.roster.find((a) => a.name === 'researcher');
+  expect(r?.assistant).toBe(true);
+  // lead 与普通虚拟成员不应被误标为 assistant
+  expect(s.roster.find((a) => a.name === 'lead')?.assistant).toBe(false);
+  expect(s.roster.find((a) => a.name === 'boss')?.assistant).toBe(false);
 });
 
 test('buildOfficeState 透出具名 office', () => {
